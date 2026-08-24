@@ -1,24 +1,25 @@
 # CI/CD for substate-admin.
 #
-# Iteration 1 proves the whole road to production BEFORE any application code exists: lint the
+# This pipeline proves the whole road to production BEFORE any application code exists: lint the
 # provisioning script, validate the Caddy config, then build and ship a static placeholder page
 # and assert — over the public https URL — that the commit just pushed is the commit being
 # served. A deploy pipeline that is written after the app is a deploy pipeline that has never
 # been wrong yet.
 #
-# There is no backend/ or frontend/ directory at this point, so nothing below may reference one.
-# This comment is the seam; there is deliberately no commented-out YAML further down.
+# There is no backend/ or frontend/ directory yet, so nothing below may reference one. This
+# comment is the seam; there is deliberately no commented-out YAML further down.
 #
-#   PR 2 (backend) adds a `backend` job — uv sync --frozen, ruff check, ruff format --check,
-#     mypy --strict, pytest against a postgres service container — and puts it in `needs:` of
-#     `deploy`. The deploy job grows: rsync backend/ into releases/<sha>/api, uv sync --frozen,
-#     alembic upgrade head, sync-permissions, restart substate-admin-api. The smoke check moves
-#     off the placeholder page onto GET /api/health and asserts the JSON `commit` field.
+#   When the backend lands it brings a `backend` job — uv sync --frozen, ruff check, ruff format
+#     --check, mypy --strict, pytest against a postgres service container — which joins `needs:`
+#     of `deploy`. The deploy job grows: rsync backend/ into releases/<sha>/api, uv sync
+#     --frozen, alembic upgrade head, sync-permissions, restart substate-admin-api. The smoke
+#     check moves off the placeholder page onto GET /api/health and asserts the JSON `commit`.
 #
-#   PR 3 (frontend) adds a `frontend` job (npm ci, vue-tsc, eslint, vitest, npm run build) and an
-#     `e2e` job. The "Build the static payload" step below is replaced by a build in CI plus an
-#     rsync of frontend/dist, and deploy/placeholder/ is deleted. The front end is never built on
-#     the server: it is a 2 GB box that also runs Postgres, and a Vite build there is a real OOM.
+#   When the frontend lands it brings a `frontend` job (npm ci, vue-tsc, eslint, vitest, npm run
+#     build) and an `e2e` job. The "Build the static payload" step below is replaced by a build
+#     in CI plus an rsync of frontend/dist, and deploy/placeholder/ is deleted. The front end is
+#     never built on the server: it is a 2 GB box that also runs Postgres, and a Vite build there
+#     is a real OOM.
 
 name: ci
 
@@ -202,8 +203,8 @@ jobs:
           ssh target true
           echo "ssh: authenticated against the pinned host key"
 
-      # PR 3 replaces this step with `npm ci && npm run build` in a frontend job and rsyncs
-      # frontend/dist instead. The token substitution is what makes the smoke check meaningful:
+      # Once the frontend exists this step becomes `npm ci && npm run build` in a frontend job,
+      # rsyncing frontend/dist instead. The token substitution is what makes the smoke check meaningful:
       # the page carries the sha of the release that produced it.
       - name: Build the static payload
         run: |
@@ -277,7 +278,7 @@ jobs:
           # `root * /srv/substate-admin/current/web` per request, so the swap is live the instant
           # rename(2) returns. Reloading would need a sudoers rule for a unit the deploy user has
           # no other business touching, and the deploy user's privileges are kept to exactly one:
-          # restarting substate-admin-api.service, which PR 2 starts needing.
+          # restarting substate-admin-api.service, which the backend will need.
 
           # Keep the last 3 releases, by mtime, and never touch the two that are reachable.
           cd "$root/releases"
@@ -304,7 +305,7 @@ jobs:
       # the certificate, Caddy and the symlink in one shot — the things a reviewer clicking the
       # link actually depends on. Ten attempts, three seconds apart.
       #
-      # From PR 2 this moves to $SITE_URL/api/health and asserts the JSON `commit` field, which
+      # Once the API exists this moves to $SITE_URL/api/health and asserts the JSON `commit`, which
       # additionally proves uvicorn is up and Postgres answered SELECT 1. It stays on the public
       # URL and it keeps asserting the sha: an assertion of "200 OK" alone would pass against a
       # stale release, and — if Caddy ever stripped the /api prefix — against the SPA's index.html.

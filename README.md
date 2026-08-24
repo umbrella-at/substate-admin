@@ -7,18 +7,15 @@ machine that fast-forwards subscription lifecycles in front of you.
 
 ## Status
 
-Iteration 1 of 5.
+The delivery path is live: every merge to `main` builds in CI, ships to a single origin behind
+Caddy, verifies the release over the public https URL, and rolls the symlink back to the previous
+release if that check fails. What it currently serves is a placeholder page — that is deliberate,
+the delivery path is proven before there is any application code to blame when it breaks.
 
-What exists today: repository hygiene, a green CI pipeline, and a deploy pipeline that builds in CI,
-ships to a single origin behind Caddy, verifies the release over public https, and rolls the symlink
-back to the previous release if the smoke check fails. What it currently serves is a placeholder
-page — that is deliberate: the delivery path is proven before there is any application code to
-blame when it breaks.
-
-Next: the FastAPI backend with Postgres, Alembic and authentication (PR 2), then the Vue frontend
-with a login page and one protected route (PR 3). There is no screenshot in this README and no
-install instructions, because there is nothing to photograph and nothing to run yet. Both arrive
-with the code they describe.
+The application itself is next: the FastAPI backend with Postgres, Alembic and authentication, then
+the Vue frontend with a login page and one protected route. There is no screenshot in this README
+and no install instructions, because there is nothing to photograph and nothing to run yet. Both
+arrive with the code they describe.
 
 ## Stack
 
@@ -32,7 +29,7 @@ with the code they describe.
 
 ## Design note: authentication
 
-The shape below is fixed and is what the backend in PR 2 implements. It is written down here
+The shape below is fixed and is what the backend implements once it lands. It is written down here
 because it is the one part of this project where the interesting decisions are not obvious from the
 code.
 
@@ -58,7 +55,7 @@ endpoints that have any business seeing it. That is the better trade, and giving
 the price.
 
 **One uvicorn worker, deliberately.** Not a sizing decision. The login rate limiter is in-memory,
-and iteration 2's world registry — the state behind the time machine — is in-memory too. Both are
+and the world registry — the state behind the time machine — is in-memory too. Both are
 correct only in a single process. Scaling out would mean moving that state to Redis or Postgres
 first, not adding `--workers`.
 
@@ -76,9 +73,9 @@ first, not adding `--workers`.
 ## Repository layout
 
 ```
-backend/    FastAPI app, async SQLAlchemy models, Alembic migrations, tests   (arrives in PR 2)
-frontend/   Vue 3.5 SPA, built in CI and never on the server                  (arrives in PR 3)
-deploy/     provisioning script, systemd unit, Caddyfile, and the iteration-1 placeholder page
+backend/    FastAPI app, async SQLAlchemy models, Alembic migrations, tests   (not yet written)
+frontend/   Vue 3.5 SPA, built in CI and never on the server                  (not yet written)
+deploy/     provisioning script, systemd unit, Caddyfile, and the placeholder page
 ```
 
 `backend/` and `frontend/` do not exist yet. The deploy pipeline that will carry them does.
