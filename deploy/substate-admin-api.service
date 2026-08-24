@@ -1,0 +1,173 @@
+# substate-admin — FastAPI backend (uvicorn behind Caddy)
+#
+# Installed by provisioning to /etc/systemd/system/substate-admin-api.service
+#   install -o root -g root -m 644 deploy/substate-admin-api.service \
+#       /etc/systemd/system/substate-admin-api.service
+#   systemctl daemon-reload && systemctl enable --now substate-admin-api
+#
+# The application code itself lands in a later PR; this unit ships now because
+# provisioning installs it before there is anything to run.
+
+[Unit]
+Description=substate-admin API (FastAPI/uvicorn)
+Documentation=https://github.com/umbrella-at/substate-admin
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+# postgresql.service on Debian/Ubuntu is a oneshot wrapper around the per-cluster
+# units, so "After=" orders the start but does NOT guarantee the cluster is
+# accepting connections. That gap is covered at the application layer instead:
+# GET /api/health returns 503 while the DB is unreachable, and Restart=always
+# below picks the service back up if it exits during a slow Postgres start.
+
+# StartLimit* belongs in [Unit], not [Service] — systemd moved it in v230 and
+# silently ignores it (with a warning) if it is left in [Service].
+#
+# Default behaviour is "give up permanently after 5 restarts in 10 s". For a
+# single-node deployment that is the worst possible failure mode: a transient
+# fault at boot (Postgres not up yet, a five-second network blip) burns the
+# budget, systemd marks the unit failed, and the site stays dead until a human
+# with shell access notices. 0 disables the limit — keep retrying forever.
+StartLimitIntervalSec=0
+
+# Do not attempt to start before a release exists. Provisioning enables this
+# unit, but the application code arrives in a later PR — so on a box that is
+# provisioned and then rebooted before its first deploy, WantedBy would start a
+# service whose WorkingDirectory does not exist. systemd fails it with
+# status=200/CHDIR, and Restart=always + RestartSec=2 + StartLimitIntervalSec=0
+# means there is no brake: a failed start every two seconds, forever, burying
+# the journal. A failed Condition= is not a failure — systemd skips the start
+# quietly and the unit comes up on its own with the first deploy.
+ConditionPathExists=/srv/substate-admin/current/api/pyproject.toml
+
+[Service]
+Type=exec
+User=deploy
+Group=deploy
+
+# "current" is a symlink into releases/<git-sha>. systemd resolves
+# WorkingDirectory at every start, so the deploy sequence (swap symlink ->
+# systemctl restart) is what actually promotes a release.
+WorkingDirectory=/srv/substate-admin/current/api
+
+# Secrets only: DATABASE_URL, JWT_SECRET, IP_HASH_PEPPER, APP_ENV.
+# root:deploy 0640, written by provisioning. CI never touches this file.
+EnvironmentFile=/etc/substate-admin/api.env
+
+# The whole stack — Postgres cluster, app, logs — is UTC. No local time anywhere.
+Environment=TZ=UTC
+
+# Load-bearing for logging. Logs are structured JSON, one object per line, to
+# stdout, and journald is the only sink. Without this, Python buffers stdout
+# into a 4 KB block because it is a pipe rather than a tty, so log lines appear
+# in `journalctl -f` minutes late — or never, if the process is killed first.
+Environment=PYTHONUNBUFFERED=1
+
+# ProtectSystem=strict (below) makes the release tree read-only at runtime, so
+# CPython cannot write __pycache__ for the application package. It fails
+# silently, but asking for it at all is just wasted syscalls on every import.
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# uv insists on a writable cache — it memoises interpreter introspection there
+# even when it has nothing to download. The default is ~/.cache/uv, which
+# ProtectHome=read-only makes unwritable. CacheDirectory= has systemd create
+# and own /var/cache/substate-admin (0755 deploy:deploy) and punch it through
+# ProtectSystem=strict, so this is the service's only writable path.
+CacheDirectory=substate-admin
+Environment=UV_CACHE_DIR=/var/cache/substate-admin/uv
+
+# ---------------------------------------------------------------------------
+# --workers 1 IS LOAD-BEARING. It is not a sizing decision and must not be
+# "tuned up" when the box gets bigger.
+#
+# Two pieces of state live in the process, not in Postgres:
+#   * the WorldRegistry of sandboxed substate worlds (iteration 2), and
+#   * the login rate limiter.
+#
+# Neither is shared between processes, and neither fails loudly with a second
+# worker — they degrade silently, which is worse:
+#   * a sandbox created on worker A is a 404 on worker B, so worlds appear to
+#     vanish at random between requests;
+#   * every worker keeps its own attempt counter, so N workers means N times
+#     the configured login attempts before anyone is locked out.
+# Concurrency comes from async I/O inside this one process. If a second process
+# is ever genuinely needed, both structures must move to shared storage first.
+#
+# The other flags:
+#   --no-access-log        uvicorn's per-request access log is plain text and
+#                          would interleave with our JSON lines; the app emits
+#                          its own structured request log instead.
+#   --proxy-headers        trust X-Forwarded-* so the app sees the real scheme.
+#   --forwarded-allow-ips  ...but only from Caddy on loopback, so a client
+#                          cannot forge its own X-Forwarded-For.
+#   --host 127.0.0.1       never bind a public interface; Caddy is the only
+#                          way in, and it proxies /api/* WITHOUT stripping the
+#                          prefix (FastAPI owns /api).
+#   --no-sync              the release directory is read-only at runtime and
+#                          `uv sync --frozen` already ran during deploy; this
+#                          stops uv from trying to lock or mutate .venv here.
+# ---------------------------------------------------------------------------
+ExecStart=/usr/local/bin/uv run --frozen --no-sync \
+    uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 \
+    --workers 1 \
+    --no-access-log \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1
+
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+
+# One JSON object per line, journald only — no log files, no logrotate.
+# journald is capped at SystemMaxUse=200M by provisioning.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=substate-admin-api
+
+# --- Resource limits ------------------------------------------------------
+# The box has 2 GB of RAM shared with Postgres and Caddy. Capping this service
+# well below the total means a runaway request (a pathological substate world,
+# an unbounded query result) gets this cgroup OOM-killed and restarted two
+# seconds later, instead of the kernel's global OOM killer picking the fattest
+# process on the machine — which is Postgres. Losing the API for two seconds is
+# a blip; losing the database is an outage plus a recovery.
+MemoryMax=700M
+
+# --- Hardening ------------------------------------------------------------
+# Deliberately stops short of the settings that fight a CPython web app:
+# no RestrictAddressFamilies (netlink is used by getaddrinfo), no PrivateUsers
+# (breaks the uv-managed interpreter), MemoryDenyWriteExecute stays off.
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Entire filesystem read-only except /dev, /proc, /sys. The app only ever reads
+# its release directory under /srv/substate-admin, so no ReadWritePaths= is
+# needed here: the single writable location is the CacheDirectory= above, which
+# systemd adds to the write allow-list automatically. If a future feature needs
+# to write (uploads, a socket), add an explicit ReadWritePaths= line with a
+# reason rather than relaxing ProtectSystem.
+ProtectSystem=strict
+
+# read-only rather than tmpfs: deploy's home holds the ssh keys (which must not
+# be modifiable) but also the uv-managed Python 3.13 under ~/.local/share/uv,
+# which the interpreter must still be able to read and execute.
+ProtectHome=read-only
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Must stay false: CPython's own allocator and any C extension using a JIT or
+# trampoline (ctypes/cffi) need W+X pages. Setting it true crashes at startup.
+MemoryDenyWriteExecute=false
+
+SystemCallFilter=@system-service
+# Blocks the classic 32-bit-syscall escape from the filter above.
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
