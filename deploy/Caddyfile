@@ -1,0 +1,192 @@
+# Caddyfile — substate-admin
+#
+# Serves the built SPA and reverse-proxies the API from a SINGLE origin. That is
+# not a packaging convenience: same-origin is what makes the refresh cookie's
+# SameSite=Lax attribute correct, and it means the browser never sends a CORS
+# preflight to the API at all.
+#
+# Installed to /etc/caddy/Caddyfile by deploy/provision.sh.
+#
+# ALWAYS validate before reloading — a bad config on reload takes the site down.
+# provision.sh already does this and refuses to install a file that fails:
+#
+#     caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+#     systemctl reload caddy
+#
+# This file names the product's own public domain and nothing else. No server
+# hostname, no IP address, no credentials — those live in GitHub Secrets and in
+# /etc/substate-admin/api.env, which is never written by CI.
+
+# ── Global options ───────────────────────────────────────────────────────────
+# The access log is defined HERE, not inside the site block, and that placement
+# is the point. A logger declared inside a site is bound to that host only; the
+# catch-all block below would then fall through to the unfiltered default logger
+# and write raw client IPs for anyone who sends an unknown Host header. Defined
+# globally, the mask applies to every request Caddy serves.
+#
+# stdout, one JSON object per line, so journalctl shows Caddy's lines and the
+# API's own structured lines interleaved in a single stream.
+#
+# Caddy redacts Authorization and Cookie/Set-Cookie unless the global
+# `log_credentials` option is switched on. It is not, and must not be.
+{
+	log {
+		output stdout
+		format filter {
+			wrap json
+
+			# House rule: no raw client IP reaches the logs. /24 and /64 still
+			# identify a noisy network without retaining an identifier for one
+			# person.
+			#
+			# BOTH fields have to be named. Caddy logs the peer address as
+			# remote_ip and its idea of the real client as client_ip, and masking
+			# only the first leaves the address sitting in plain view one key
+			# further along.
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 64
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 64
+				}
+			}
+		}
+	}
+}
+
+substate-admin.umbrella-at.uk {
+	root * /srv/substate-admin/current/web
+
+	encode zstd gzip
+
+	# ── Security headers ─────────────────────────────────────────────────────
+	# Applied to every response, the proxied API responses included.
+	header {
+		# One year. Deliberately no includeSubDomains and no preload: this host
+		# is one label under umbrella-at.uk and has no business making promises
+		# on behalf of its siblings.
+		Strict-Transport-Security "max-age=31536000"
+
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+
+		# The SPA loads only its own hashed bundles from this origin.
+		# 'unsafe-inline' is confined to style-src because Vue injects component
+		# styles as <style> tags at runtime; script-src inherits default-src
+		# 'self' and stays clean.
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	# ── API ──────────────────────────────────────────────────────────────────
+	# Matches bare /api too, so that a request to /api itself cannot slip past
+	# into the SPA fallback below and come back as a cheerful 200 of HTML.
+	@api path /api /api/*
+	handle @api {
+		# `handle`, NEVER `handle_path`. The /api prefix MUST survive the hop —
+		# FastAPI owns it and mounts its own routes under it. `handle_path`
+		# strips the matched prefix, and both halves of that are disasters:
+		#
+		#   1. The refresh cookie is issued with Path=/api/auth. With the prefix
+		#      stripped, FastAPI would see /auth/... and set Path=/auth — a path
+		#      the browser then never sends the cookie back to. Every page
+		#      reload silently logs the user out, in production only, on a code
+		#      path no local run can reproduce.
+		#
+		#   2. The SPA fallback below answers ANY unmatched path with index.html
+		#      and 200. The /api prefix is the only thing keeping API paths out
+		#      of it. Strip it and /api/health stops matching this block, falls
+		#      through, and returns index.html with a permanent 200 whatever the
+		#      backend is doing — a green deploy smoke check over a dead API.
+		#      (This is also why the smoke check compares the returned commit
+		#      and does not merely assert a 200.)
+
+		# Caddy sets X-Forwarded-For, -Proto and -Host on its own, so there is
+		# deliberately no header_up block here — writing them by hand only earns
+		# an "unnecessary header_up" warning from `caddy validate`.
+		#
+		# The security-relevant half is the default nobody reads: no proxy is
+		# trusted unless you name one, and for an untrusted hop Caddy DISCARDS
+		# whatever X-Forwarded-For the client sent and SETS the header to the
+		# real peer address rather than appending to it. Caddy is the edge here
+		# — Cloudflare's proxy is off, grey cloud — so that is exactly right.
+		# The login rate limiter keys on the client IP, and if a forged entry
+		# survived, an attacker could rotate through invented IPs and never hit
+		# the limit. Landing exactly one value also makes the perennial
+		# "leftmost or rightmost entry?" question moot.
+		#
+		# So do NOT add `trusted_proxies`, here or in the global options.
+		# Nothing sits in front of Caddy, and trusting a hop is precisely what
+		# switches the behaviour above back to append-and-believe-the-client.
+		#
+		# uvicorn runs with --proxy-headers --forwarded-allow-ips=127.0.0.1, so
+		# it honours these headers only because they arrive from Caddy over the
+		# loopback.
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# ── Hashed build output ──────────────────────────────────────────────────
+	handle /assets/* {
+		# Vite content-hashes every filename in here, so the name changes
+		# whenever the bytes do. The cache never needs invalidating, only
+		# outliving.
+		header Cache-Control "public, max-age=31536000, immutable"
+
+		# Deliberately no try_files: a missing chunk must 404. Falling back to
+		# index.html would return an HTML document under a .js URL with a 200,
+		# and the browser would report a MIME type error pointing nowhere near
+		# the actual problem.
+		file_server
+	}
+
+	# ── SPA ──────────────────────────────────────────────────────────────────
+	handle {
+		# no-cache means "revalidate before use", not "do not store": the
+		# browser still keeps index.html and still gets a cheap 304 when nothing
+		# changed.
+		#
+		# This pairing only works one way round. Cache index.html and leave
+		# /assets/* uncached and you get the failure with no symptom: a
+		# returning visitor's stale index.html asks for the hashed bundles of a
+		# release from three deploys ago, those files were pruned when we
+		# dropped to the last 3 releases, every script 404s, and the page is
+		# white. Nothing is wrong on the server. The access log shows only 404s
+		# for filenames nobody recognises. And with Cloudflare proxying off
+		# there is no edge cache to purge — the stale copy lives in a browser
+		# you cannot reach.
+		header Cache-Control "no-cache"
+
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── Everything that is not this site ─────────────────────────────────────────
+# Requests to the bare IP, stale DNS pointing here from some other domain, and
+# the steady background hum of scanners probing for /wp-login.php. They get a
+# 404 and learn nothing about what runs here.
+#
+# Two things about this block look like omissions and are not:
+#
+#   * It does not swallow http://substate-admin.umbrella-at.uk. Caddy inserts
+#     the automatic HTTP->HTTPS redirect "after your routes with a host matcher,
+#     but before a user-defined catch-all route", so the named site above is
+#     matched first and this block only ever sees what is left over. ACME
+#     HTTP-01 challenges on port 80 are handled ahead of site routes too, so
+#     certificates still issue and renew normally.
+#
+#   * There is deliberately no `tls internal`. Adding it would let the :443 half
+#     finish a handshake and return a literal 404, but there is no certificate
+#     that legitimately belongs to a bare IP, and a cert configured on a
+#     catch-all block has a history of being served for more specific sites as
+#     well (caddyserver/caddy#5933, fixed in #6712) — not a neighbourhood worth
+#     re-entering for a 404 nobody reads. Without it, an HTTPS request carrying
+#     an unknown SNI or none at all simply fails the handshake and never becomes
+#     an HTTP request, which is a strictly smaller surface than answering it.
+#     Port 80 returns the real 404.
+:80, :443 {
+	respond 404
+}
