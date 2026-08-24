@@ -1,0 +1,52 @@
+# PostgreSQL for local development. Nothing else lives here.
+#
+# The application is deliberately not a service in this file: it runs from the checkout under
+# `uv run`, where a traceback lands in the terminal and a code change takes effect on the next
+# request. Containerising it would only put an image rebuild between typing and seeing.
+#
+# The version is the one the server runs, and the database is created the way the server's is
+# created (deploy/provision.sh): the builtin locale provider and C.UTF-8. That is not a detail —
+# the locale provider decides collation, collation decides what `ORDER BY email` means, and a
+# laptop on a glibc locale would page the user list in an order production does not have.
+
+name: substate-admin
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: substate_admin
+
+      # initdb runs exactly once, against an empty volume, and template1 keeps whatever it is
+      # given — so every database created later, the test one included, inherits this locale
+      # without anyone having to remember it.
+      POSTGRES_INITDB_ARGS: "--locale-provider=builtin --builtin-locale=C.UTF-8 --encoding=UTF8"
+
+      # Every timestamp in this system is timestamptz and every clock in it is UTC: the server's
+      # cluster, the systemd unit, the logs. A laptop is the one place that is not, by default.
+      TZ: UTC
+      PGTZ: UTC
+
+      # Named rather than left to the image. Postgres 18 moved its default data directory, so
+      # "the volume below is the data directory" is only true while the two are written down
+      # together — and the failure when they drift is a database that quietly forgets everything
+      # on `docker compose down`.
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Bound to loopback. A bare "5432:5432" publishes the database on every interface the
+      # machine has, which on café wifi is an open Postgres with the password in this file.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # `alembic upgrade head` typed one second after `docker compose up` would otherwise race
+      # initdb, which on a cold image is several seconds of work.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d substate_admin"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
