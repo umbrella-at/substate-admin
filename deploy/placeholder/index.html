@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>substate-admin — under construction</title>
+<meta name="description" content="Admin panel for substate. Under construction.">
+<meta name="color-scheme" content="light">
+<!-- Empty data: URI so the browser never requests /favicon.ico (which does not exist). -->
+<link rel="icon" href="data:,">
+<!--
+  This page is deployed by .github/workflows/ci.yml as the iteration-1 payload: it exists to
+  prove DNS + TLS + Caddy + the release symlink before any application code is written.
+  It must stay self-contained — the CSP in deploy/Caddyfile is default-src 'self', so no
+  external fonts, scripts, or images may be referenced. A single <style> block is allowed
+  because style-src includes 'unsafe-inline'; inline event handlers are not (and none are used).
+  The build-id token in the footer below is substituted with the deployed short sha at release
+  time (see the sed step in .github/workflows/ci.yml). Do not write that token anywhere else
+  in this file: the substitution is global, and the smoke check greps the served page for the
+  sha it just deployed.
+-->
+<style>
+  :root {
+    --ink: #16181d;
+    --muted: #5c6470;
+    --line: #e2e5ea;
+    --bg: #fbfbfc;
+    --accent: #2f5bd7;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, "Noto Sans", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    display: flex;
+    justify-content: center;
+  }
+  main { width: 100%; max-width: 34rem; }
+  h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+  }
+  .tagline { margin: 0 0 1.75rem; color: var(--muted); }
+  .status {
+    display: inline-block;
+    margin-bottom: 1.5rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1.5rem; padding-left: 1.15rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); }
+  a:hover { text-decoration: none; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+    font-size: 0.9em;
+  }
+  footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  footer p { margin: 0 0 0.3rem; }
+</style>
+</head>
+<body>
+<main>
+  <p class="status">Iteration 1 of 5 &middot; under construction</p>
+
+  <h1>substate-admin</h1>
+  <p class="tagline">The web admin panel for <strong>substate</strong>, a subscription library.</p>
+
+  <p>
+    There is no application here yet — on purpose. This page is the payload of the first
+    iteration, whose only job is to prove the delivery path end to end before a single line of
+    product code is written: a provisioned host, a release directory per commit, an atomic
+    symlink swap, HTTPS from a real certificate, and a smoke check that fails the pipeline
+    unless the commit it just pushed is the commit being served.
+  </p>
+
+  <p>What lands next:</p>
+  <ul>
+    <li>a FastAPI backend on Postgres, with migrations, auth, and permissions;</li>
+    <li>a Vue&nbsp;3 + TypeScript front end, built in CI and served as static files.</li>
+  </ul>
+
+  <p>
+    Source: <a href="https://github.com/umbrella-at/substate-admin">github.com/umbrella-at/substate-admin</a><br>
+    The library it administers:
+    <a href="https://github.com/umbrella-at/substate">github.com/umbrella-at/substate</a>
+  </p>
+
+  <footer>
+    <p>build <code>__COMMIT__</code></p>
+    <p>MIT &middot; &copy; 2026 Andrei Tarunin</p>
+  </footer>
+</main>
+</body>
+</html>
