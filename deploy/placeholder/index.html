@@ -9,8 +9,8 @@
 <!-- Empty data: URI so the browser never requests /favicon.ico (which does not exist). -->
 <link rel="icon" href="data:,">
 <!--
-  This page is deployed by .github/workflows/ci.yml as the iteration-1 payload: it exists to
-  prove DNS + TLS + Caddy + the release symlink before any application code is written.
+  This page is deployed by .github/workflows/ci.yml as the payload that proves the delivery
+  path: DNS + TLS + Caddy + the release symlink, before any application code is written.
   It must stay self-contained — the CSP in deploy/Caddyfile is default-src 'self', so no
   external fonts, scripts, or images may be referenced. A single <style> block is allowed
   because style-src includes 'unsafe-inline'; inline event handlers are not (and none are used).
@@ -80,17 +80,16 @@
 </head>
 <body>
 <main>
-  <p class="status">Iteration 1 of 5 &middot; under construction</p>
+  <p class="status">Deployment pipeline is live &middot; the application is on its way</p>
 
   <h1>substate-admin</h1>
   <p class="tagline">The web admin panel for <strong>substate</strong>, a subscription library.</p>
 
   <p>
-    There is no application here yet — on purpose. This page is the payload of the first
-    iteration, whose only job is to prove the delivery path end to end before a single line of
-    product code is written: a provisioned host, a release directory per commit, an atomic
-    symlink swap, HTTPS from a real certificate, and a smoke check that fails the pipeline
-    unless the commit it just pushed is the commit being served.
+    There is no application here yet — on purpose. This page exists to prove the delivery path
+    end to end before a single line of product code is written: a provisioned host, a release
+    directory per commit, an atomic symlink swap, HTTPS from a real certificate, and a smoke
+    check that fails the pipeline unless the commit just pushed is the commit being served.
   </p>
 
   <p>What lands next:</p>

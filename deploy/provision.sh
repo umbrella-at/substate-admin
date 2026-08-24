@@ -26,8 +26,8 @@
 #   * print the database password, JWT_SECRET or IP_HASH_PEPPER — ever;
 #   * rewrite /etc/substate-admin/api.env once it exists (rotating JWT_SECRET
 #     logs every user out; rotating IP_HASH_PEPPER invalidates every ip_hash);
-#   * start substate-admin-api.service — there is no application code before
-#     PR 2, and a crash-looping unit would only spam the journal;
+#   * start substate-admin-api.service — there is no application code on the
+#     host yet, and a crash-looping unit would only spam the journal;
 #   * run migrations or touch the database schema. Migration 001 creates the
 #     `admin` schema so CI, local and production bootstrap the same way.
 #
@@ -1125,9 +1125,9 @@ EOF
   ${n}. Confirm the DNS A record for ${APP_NAME}.umbrella-at.uk points here with
      Cloudflare proxying OFF — Caddy needs HTTP-01 on port 80 to issue its certificate.
 
-  $((n + 1)). Push to main. The deploy replaces the placeholder with the iteration-1 page.
-     ${API_UNIT} stays stopped until the backend PR ships application code — it is enabled,
-     but ConditionPathExists keeps it from starting against an empty release directory.
+  $((n + 1)). Push to main. The deploy replaces the pre-deploy holding page with the one from
+     the repository. ${API_UNIT} stays stopped until application code is deployed — it is
+     enabled, but ConditionPathExists keeps it from starting against an empty release directory.
 
 EOF
 }

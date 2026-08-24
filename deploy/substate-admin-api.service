@@ -5,7 +5,7 @@
 #       /etc/systemd/system/substate-admin-api.service
 #   systemctl daemon-reload && systemctl enable --now substate-admin-api
 #
-# The application code itself lands in a later PR; this unit ships now because
+# The application code itself is not written yet; this unit ships now because
 # provisioning installs it before there is anything to run.
 
 [Unit]
@@ -31,7 +31,7 @@ Wants=network-online.target postgresql.service
 StartLimitIntervalSec=0
 
 # Do not attempt to start before a release exists. Provisioning enables this
-# unit, but the application code arrives in a later PR — so on a box that is
+# unit, but no application code is deployed yet — so on a box that is
 # provisioned and then rebooted before its first deploy, WantedBy would start a
 # service whose WorkingDirectory does not exist. systemd fails it with
 # status=200/CHDIR, and Restart=always + RestartSec=2 + StartLimitIntervalSec=0
@@ -81,7 +81,7 @@ Environment=UV_CACHE_DIR=/var/cache/substate-admin/uv
 # "tuned up" when the box gets bigger.
 #
 # Two pieces of state live in the process, not in Postgres:
-#   * the WorldRegistry of sandboxed substate worlds (iteration 2), and
+#   * the WorldRegistry of sandboxed substate worlds, and
 #   * the login rate limiter.
 #
 # Neither is shared between processes, and neither fails loudly with a second
