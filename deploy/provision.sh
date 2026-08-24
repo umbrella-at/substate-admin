@@ -230,20 +230,109 @@ preflight() {
 
 require_root_authorized_key() {
     local keys="/root/.ssh/authorized_keys"
-    # This check is the only thing standing between the operator and a box they
-    # can never log into again once passwords are off, so it has to be a real
-    # parse, not a grep for "a line that isn't a comment". A truncated paste, a
-    # key wrapped across lines by an editor, or an options-only line all satisfy
-    # a grep and none of them authenticate. ssh-keygen -lf skips blanks and
-    # comments and prints one fingerprint per usable key.
+    # A cheap precondition only. It is NOT the thing that authorises turning
+    # passwords off — prove_pubkey_login_works() below does that by logging in.
     if [[ -s "${keys}" ]] && [[ "$(ssh-keygen -lf "${keys}" 2>/dev/null | wc -l)" -ge 1 ]]; then
-        ok "root has $(ssh-keygen -lf "${keys}" 2>/dev/null | wc -l) usable key(s) in ${keys}"
+        ok "root has $(ssh-keygen -lf "${keys}" 2>/dev/null | wc -l) parsable key(s) in ${keys}"
         return 0
     fi
-    die "root has no key in ${keys}; disabling password auth now would lock you out.
+    die "root has no usable key in ${keys}; disabling password auth now would lock you out.
   Install your key first (from your workstation):
       ssh-copy-id root@<server>
   then re-run this script."
+}
+
+# The key question before passwords are switched off is not "does this file look
+# like a key" — it is "does logging in with a key actually succeed right now, on
+# this sshd, with these file permissions". Those are different questions, and
+# only the second one is worth anything: a parsable key in a directory sshd
+# refuses to read (StrictModes, a 0777 home, an SELinux label) passes every
+# format check ever written and authenticates nobody.
+#
+# So we answer it the only honest way: mint a throwaway keypair, put it in root's
+# authorized_keys, and open a real SSH session to ourselves with passwords
+# explicitly disabled on the client side. If that session opens, the public-key
+# path works end to end. The throwaway key is removed immediately afterwards,
+# on every exit path.
+EPHEMERAL_KEY_MARKER="substate-admin-provision-selftest"
+
+remove_ephemeral_key() {
+    local keys="/root/.ssh/authorized_keys"
+    if [[ -f "${keys}" ]] && grep -qF "${EPHEMERAL_KEY_MARKER}" "${keys}"; then
+        grep -vF "${EPHEMERAL_KEY_MARKER}" "${keys}" >"${keys}.tmp" || true
+        install -o root -g root -m 600 "${keys}.tmp" "${keys}"
+        rm -f "${keys}.tmp"
+    fi
+}
+
+prove_pubkey_login_works() {
+    local label="$1"
+    local keys="/root/.ssh/authorized_keys"
+    local key="${WORK_DIR}/selftest_ed25519"
+
+    rm -f "${key}" "${key}.pub"
+    ssh-keygen -t ed25519 -N '' -C "${EPHEMERAL_KEY_MARKER}" -f "${key}" -q \
+        || die "could not generate the self-test keypair"
+
+    remove_ephemeral_key
+    if [[ -s "${keys}" ]] && [[ -n "$(tail -c1 "${keys}")" ]]; then
+        printf '\n' >>"${keys}"
+    fi
+    cat "${key}.pub" >>"${keys}"
+    chown root:root "${keys}"
+    chmod 600 "${keys}"
+
+    local out=0
+    ssh -i "${key}" \
+        -o BatchMode=yes \
+        -o PasswordAuthentication=no \
+        -o KbdInteractiveAuthentication=no \
+        -o PreferredAuthentications=publickey \
+        -o IdentitiesOnly=yes \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=10 \
+        -o LogLevel=ERROR \
+        root@127.0.0.1 true >/dev/null 2>&1 || out=$?
+
+    remove_ephemeral_key
+    rm -f "${key}" "${key}.pub"
+
+    if [[ ${out} -eq 0 ]]; then
+        ok "public-key login verified by opening a real session (${label})"
+        return 0
+    fi
+    return 1
+}
+
+# Which method authenticated the session this script is running in. If the
+# operator got here with a password, then nothing has yet demonstrated that they
+# hold a working key, and switching passwords off would strand them.
+report_operator_session_auth() {
+    if [[ -z "${SSH_CONNECTION:-}" ]]; then
+        warn "not running inside an SSH session (provider console?); relying on the loopback proof alone"
+        return 0
+    fi
+    local cip cport method
+    cip="$(awk '{print $1}' <<<"${SSH_CONNECTION}")"
+    cport="$(awk '{print $2}' <<<"${SSH_CONNECTION}")"
+    method="$(journalctl -u ssh -u sshd --no-pager -n 2000 2>/dev/null \
+        | grep -F "from ${cip} port ${cport}" \
+        | grep -oE 'Accepted (publickey|password|keyboard-interactive)' \
+        | tail -n1 | awk '{print $2}')"
+    case "${method}" in
+        publickey)
+            ok "your current session authenticated with a public key"
+            ;;
+        password|keyboard-interactive)
+            die "your current session authenticated with a PASSWORD, not a key.
+  Disabling password auth would end your access at the next login.
+  Log in with your key first, confirm it works, then re-run this script."
+            ;;
+        *)
+            warn "could not determine how the current session authenticated; relying on the loopback proof"
+            ;;
+    esac
 }
 
 # Ubuntu ships /etc/ssh/sshd_config.d/50-cloud-init.conf on cloud images, and
@@ -305,6 +394,19 @@ harden_ssh() {
     step "SSH: disable password and keyboard-interactive authentication"
 
     require_root_authorized_key
+    report_operator_session_auth
+
+    # Prove the public-key path works BEFORE touching the config. If it does not
+    # work now, it will not start working because we disabled passwords, and the
+    # box would simply become unreachable.
+    prove_pubkey_login_works "before hardening" \
+        || die "a real public-key login to root@127.0.0.1 FAILED, so password
+  authentication is being left ON. Nothing was changed.
+  Fix key login first, then re-run. Usual causes:
+    - /root or /root/.ssh has group/other write permission (sshd StrictModes)
+    - AuthorizedKeysFile points somewhere other than ~/.ssh/authorized_keys
+    - PubkeyAuthentication is disabled in an earlier sshd_config drop-in
+  Diagnose with:  sshd -T | grep -iE 'pubkey|authorizedkeysfile|strictmodes'"
 
     local changed=0
     if write_managed_file "${SSHD_DROPIN}" 0644 root:root <<EOF
@@ -337,6 +439,19 @@ EOF
 
     reload_sshd
 
+    # And prove it again against the config that is now live. A reload that
+    # parses is not the same as a reload that still lets a key in; this is the
+    # last moment at which rolling back is free.
+    if ! prove_pubkey_login_works "after hardening"; then
+        if [[ ${changed} -eq 1 ]]; then
+            rm -f "${SSHD_DROPIN}"
+            reload_sshd
+        fi
+        die "public-key login stopped working under the new sshd configuration.
+  The drop-in has been REMOVED and sshd reloaded, so password authentication is
+  back on and your access is intact. Nothing else was changed."
+    fi
+
     # Trust the effective config, not the file we just wrote.
     local effective
     effective="$(/usr/sbin/sshd -T 2>/dev/null || true)"
@@ -360,7 +475,7 @@ install_base_packages() {
     # python3-systemd is not a hard dependency of fail2ban, but the sshd jail
     # below reads the journal (Ubuntu 24.04 has no /var/log/auth.log unless
     # rsyslog is installed) and the systemd backend needs it.
-    apt_install ca-certificates curl gnupg ufw fail2ban rsync acl python3-systemd
+    apt_install ca-certificates curl gnupg ufw fail2ban rsync acl python3-systemd openssh-client
     ok "base packages present"
 }
 
