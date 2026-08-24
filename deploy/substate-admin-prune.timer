@@ -1,0 +1,19 @@
+# Runs deploy/substate-admin-prune.service once a day.
+#
+# Persistent=true is the point of using a timer rather than cron: a host that was powered off when
+# the timer was due runs the job on the next boot instead of skipping a day silently. The
+# randomised delay keeps the reaper off the same second as anything else scheduled daily on a
+# single-CPU box.
+
+[Unit]
+Description=substate-admin: prune spent refresh tokens daily
+Documentation=https://github.com/umbrella-at/substate-admin
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=substate-admin-prune.service
+
+[Install]
+WantedBy=timers.target
