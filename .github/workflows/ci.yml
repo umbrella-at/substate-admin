@@ -1,0 +1,377 @@
+# CI/CD for substate-admin.
+#
+# Iteration 1 proves the whole road to production BEFORE any application code exists: lint the
+# provisioning script, validate the Caddy config, then build and ship a static placeholder page
+# and assert — over the public https URL — that the commit just pushed is the commit being
+# served. A deploy pipeline that is written after the app is a deploy pipeline that has never
+# been wrong yet.
+#
+# There is no backend/ or frontend/ directory at this point, so nothing below may reference one.
+# This comment is the seam; there is deliberately no commented-out YAML further down.
+#
+#   PR 2 (backend) adds a `backend` job — uv sync --frozen, ruff check, ruff format --check,
+#     mypy --strict, pytest against a postgres service container — and puts it in `needs:` of
+#     `deploy`. The deploy job grows: rsync backend/ into releases/<sha>/api, uv sync --frozen,
+#     alembic upgrade head, sync-permissions, restart substate-admin-api. The smoke check moves
+#     off the placeholder page onto GET /api/health and asserts the JSON `commit` field.
+#
+#   PR 3 (frontend) adds a `frontend` job (npm ci, vue-tsc, eslint, vitest, npm run build) and an
+#     `e2e` job. The "Build the static payload" step below is replaced by a build in CI plus an
+#     rsync of frontend/dist, and deploy/placeholder/ is deleted. The front end is never built on
+#     the server: it is a 2 GB box that also runs Postgres, and a Vite build there is a real OOM.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Pull-request runs are cancelled when a newer commit supersedes them: nothing is at stake but CI
+# minutes. Pushes to main are NEVER cancelled, because this workflow deploys. A cancellation that
+# lands between the symlink swap and the smoke check leaves the site on an unverified release with
+# no rollback — the one window that must not be interrupted.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # shellcheck is preinstalled on the GitHub ubuntu image, so there is nothing to install and
+      # nothing to pin. --severity=warning fails the job on errors and warnings but tolerates
+      # info/style notes (SC1091 "not following sourced file" fires on every provisioning script
+      # that reads /etc/os-release, and is noise, not a finding).
+      - name: shellcheck deploy/provision.sh
+        run: shellcheck --severity=warning --shell=bash deploy/provision.sh
+
+  config:
+    name: config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The Caddyfile is parsed and adapted by the same Caddy version that runs in production.
+      # `validate` does not touch ACME, so this makes no network calls to Let's Encrypt and does
+      # not need the domain to resolve.
+      - name: Validate the Caddyfile
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine \
+            caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+
+      # `systemd-analyze verify` is deliberately NOT run here. It resolves ExecStart= and fails
+      # when the binary is absent, and our ExecStart points at a Python interpreter under
+      # /srv/substate-admin/current/api/.venv that only exists on the server. A step that cannot
+      # pass on a runner is worse than no step: it gets `|| true`-d within a week and then it is
+      # a lie. What is checked instead is the part that is checkable statically — that the unit is
+      # present and well-formed, and that the single-process rule has not quietly been undone.
+      - name: Sanity-check the systemd unit
+        run: |
+          set -euo pipefail
+          # find, not a fixed glob: the unit is checked wherever under deploy/ it lives.
+          mapfile -t units < <(find deploy -type f -name '*.service' | sort)
+          if [ ${#units[@]} -eq 0 ]; then
+            echo "::error::no systemd unit found under deploy/"
+            exit 1
+          fi
+          for unit in "${units[@]}"; do
+            echo "checking $unit"
+            for section in '[Unit]' '[Service]' '[Install]'; do
+              grep -qxF "$section" "$unit" || {
+                echo "::error file=$unit::missing $section section"
+                exit 1
+              }
+            done
+            # Join backslash continuations first: ExecStart is written across several physical
+            # lines for readability, and `--workers` lives on one of them. Grepping the raw file
+            # would match only the first line and the guard below would be permanently inert.
+            # awk rather than a multiline sed: the same script behaves identically under BSD and
+            # GNU, so what is tested on a laptop is what runs on the runner.
+            exec_start="$(awk '
+              /^ExecStart=/ {
+                line = $0
+                while (line ~ /\\$/) {
+                  sub(/\\$/, "", line)
+                  if ((getline nxt) <= 0) break
+                  sub(/^[[:space:]]+/, "", nxt)
+                  line = line nxt
+                }
+                print line
+              }' "$unit")"
+            if [ -z "$exec_start" ]; then
+              echo "::error file=$unit::no ExecStart="
+              exit 1
+            fi
+            # One uvicorn worker, forever. The in-memory WorldRegistry and the in-memory login
+            # rate limiter are per-process; a second worker silently doubles the effective rate
+            # limit and splits the registry. Matched against the logical ExecStart line with its
+            # continuations joined — the unit file is supposed to explain this rule in a comment,
+            # and a comment saying "no gunicorn" must not be what fails the build.
+            if printf '%s\n' "$exec_start" | grep -qiE 'gunicorn|--workers[= ]*[2-9]'; then
+              echo "::error file=$unit::multi-process server in ExecStart; substate-admin runs exactly one uvicorn worker"
+              exit 1
+            fi
+          done
+
+  deploy:
+    name: deploy
+    needs: [shell, config]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://substate-admin.umbrella-at.uk
+    # Deploys serialise and are never cancelled: killing a job between the upload and the symlink
+    # swap is survivable, killing one between the swap and the smoke check is not.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      SITE_URL: https://substate-admin.umbrella-at.uk
+      DEPLOY_ROOT: /srv/substate-admin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # One short sha, computed once, exported once. The release directory, the string baked into
+      # the page and the string the smoke check greps for all come from this variable, so they
+      # cannot drift apart and report success for a release nobody deployed.
+      - name: Compute the release id
+        run: echo "RELEASE=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      # StrictHostKeyChecking stays at `yes`. With `=no` ssh accepts whatever key answers on the
+      # far end, which turns a hijacked DNS record or a recycled IP into a machine that receives
+      # our deploy and can answer "fine, done" to every command — a green pipeline pointed at a
+      # stranger. DEPLOY_KNOWN_HOSTS is the ssh-keyscan output that pins the real host.
+      # ControlMaster gives every later step one shared connection: one TCP handshake, one auth.
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          # The host and the user appear only in this file: every step below talks to `target`,
+          # so neither ever lands on a command line where it could be echoed into a log.
+          cat > ~/.ssh/config <<EOF
+          Host target
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%r@%h:%p
+            ControlPersist 120s
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+          chmod 600 ~/.ssh/config
+          eval "$(ssh-agent -s)" > /dev/null
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          # printf, not echo: a secret pasted without a trailing newline is still a valid key.
+          if ! printf '%s\n' "$DEPLOY_SSH_KEY" | ssh-add - > /dev/null 2>&1; then
+            echo "::error::ssh-add rejected DEPLOY_SSH_KEY (malformed, or protected by a passphrase)"
+            exit 1
+          fi
+          ssh target true
+          echo "ssh: authenticated against the pinned host key"
+
+      # PR 3 replaces this step with `npm ci && npm run build` in a frontend job and rsyncs
+      # frontend/dist instead. The token substitution is what makes the smoke check meaningful:
+      # the page carries the sha of the release that produced it.
+      - name: Build the static payload
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          sed "s/__COMMIT__/${RELEASE}/g" deploy/placeholder/index.html > payload/index.html
+          if grep -q '__COMMIT__' payload/index.html; then
+            echo "::error::__COMMIT__ survived substitution"
+            exit 1
+          fi
+          grep -q "$RELEASE" payload/index.html || {
+            echo "::error::the built page does not contain the release sha"
+            exit 1
+          }
+          echo "payload built for release $RELEASE"
+
+      # --rsync-path creates the release directory on the far side, so this needs no extra ssh
+      # round trip. Explicit --chmod so the result does not depend on the runner's umask; Caddy
+      # runs as its own user and only ever needs to read.
+      - name: Upload the release
+        run: |
+          set -euo pipefail
+          dest="$DEPLOY_ROOT/releases/$RELEASE/web"
+          rsync -az --delete --chmod=D755,F644 \
+            --rsync-path="mkdir -p '$dest' && rsync" \
+            -e ssh \
+            payload/ "target:$dest/"
+
+      # One connection, one script, and `set -euo pipefail` INSIDE it. `ssh host <<EOF` without
+      # that returns the exit status of the last line of the heredoc, so a failed migration
+      # followed by a successful `echo done` is a green deploy over a broken release. Passing the
+      # release as $1 to `bash -s` keeps the quoting honest: no interpolation into remote code.
+      - name: Activate the release
+        run: |
+          set -euo pipefail
+          ssh target bash -s -- "$RELEASE" "$DEPLOY_ROOT" <<'REMOTE'
+          set -euo pipefail
+          release="$1"
+          root="$2"
+          dir="$root/releases/$release"
+
+          test -f "$dir/web/index.html"
+
+          # Remember what is live right now, so the smoke check has something to roll back to.
+          prev=""
+          if [ -L "$root/current" ]; then
+            prev="$(readlink "$root/current")"
+          fi
+
+          # Atomic swap. `rm current && ln -s new current` has a window — short, but real — in
+          # which the path does not exist and every request 404s. Create the new link under a
+          # temporary name in the same directory and rename it over the old one instead; rename(2)
+          # is atomic. `mv -T` is required: without it, mv would move the new link INTO the
+          # directory the old link points at.
+          ln -sfn "$dir" "$root/.current.$$"
+          mv -T "$root/.current.$$" "$root/current"
+
+          # Only record a rollback target that is genuinely a different release. Re-running the
+          # workflow on the same commit yields the same short sha, and recording it would point
+          # `previous` at the release being deployed — the rollback would then "succeed" into the
+          # broken release and its verification could never pass.
+          if [ -n "$prev" ] && [ "$prev" != "$dir" ]; then
+            ln -sfn "$prev" "$root/.previous.$$"
+            mv -T "$root/.previous.$$" "$root/previous"
+          elif [ "$prev" = "$dir" ]; then
+            echo "redeploy of the same release — keeping the existing rollback target"
+          fi
+          echo "current -> $(readlink "$root/current")"
+
+          # No `systemctl reload caddy` here, deliberately. Caddy opens the file under
+          # `root * /srv/substate-admin/current/web` per request, so the swap is live the instant
+          # rename(2) returns. Reloading would need a sudoers rule for a unit the deploy user has
+          # no other business touching, and the deploy user's privileges are kept to exactly one:
+          # restarting substate-admin-api.service, which PR 2 starts needing.
+
+          # Keep the last 3 releases, by mtime, and never touch the two that are reachable.
+          cd "$root/releases"
+          cur_name="$(basename "$(readlink -f "$root/current")")"
+          prev_name=""
+          if [ -L "$root/previous" ]; then
+            prev_name="$(basename "$(readlink -f "$root/previous")")"
+          fi
+          # mapfile + a plain for loop, not `ls | while read`: the body of a piped while runs in
+          # a subshell, and under `set -e` with pipefail a loop whose last iteration ends on a
+          # false test makes the whole pipeline non-zero — failing the deploy AFTER the symlink
+          # was already swapped, which is the confusing failure to end all confusing failures.
+          mapfile -t stale < <({ ls -1dt -- */ 2>/dev/null || true; } | tail -n +4 | sed 's#/$##')
+          for old in "${stale[@]}"; do
+            if [ -z "$old" ] || [ "$old" = "$cur_name" ] || [ "$old" = "$prev_name" ]; then
+              continue
+            fi
+            echo "pruning release $old"
+            rm -rf -- "${root:?}/releases/$old"
+          done
+          REMOTE
+
+      # The check runs against the public URL, not against 127.0.0.1 on the box, so it proves DNS,
+      # the certificate, Caddy and the symlink in one shot — the things a reviewer clicking the
+      # link actually depends on. Ten attempts, three seconds apart.
+      #
+      # From PR 2 this moves to $SITE_URL/api/health and asserts the JSON `commit` field, which
+      # additionally proves uvicorn is up and Postgres answered SELECT 1. It stays on the public
+      # URL and it keeps asserting the sha: an assertion of "200 OK" alone would pass against a
+      # stale release, and — if Caddy ever stripped the /api prefix — against the SPA's index.html.
+      - name: Smoke check
+        id: smoke
+        run: |
+          set -uo pipefail
+          for attempt in $(seq 1 10); do
+            code="$(curl -sS -o /tmp/smoke.html -w '%{http_code}' \
+              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/" || true)"
+            if [ "${code:-000}" = 200 ] && grep -q "$RELEASE" /tmp/smoke.html; then
+              echo "attempt $attempt: 200, serving $RELEASE"
+              exit 0
+            fi
+            echo "attempt $attempt: http $code, release $RELEASE not served yet"
+            sleep 3
+          done
+          echo "::error::$SITE_URL did not serve release $RELEASE within ~30s"
+          exit 1
+
+      # Only the code symlink moves back. Migrations are forward-only by policy — deploy never
+      # runs `alembic downgrade` — because a downgrade that drops a column destroys rows that the
+      # previous release cannot restore, and an automated rollback is the worst possible moment to
+      # find that out. Backward-compatible migrations are what make rolling back the code safe.
+      - name: Roll back
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          set -uo pipefail
+          ssh target bash -s -- "$DEPLOY_ROOT" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          if [ ! -L "$root/previous" ]; then
+            echo "no previous release recorded — nothing to roll back to (first deploy?)"
+            exit 1
+          fi
+          target_dir="$(readlink "$root/previous")"
+          test -d "$target_dir"
+          ln -sfn "$target_dir" "$root/.current.$$"
+          mv -T "$root/.current.$$" "$root/current"
+          echo "rolled back: current -> $(readlink "$root/current")"
+          REMOTE
+
+          echo "--- verifying the rollback over $SITE_URL ---"
+          rolled_back=0
+          for attempt in $(seq 1 5); do
+            code="$(curl -sS -o /tmp/rollback.html -w '%{http_code}' \
+              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/" || true)"
+            if [ "${code:-000}" = 200 ] && ! grep -q "$RELEASE" /tmp/rollback.html; then
+              echo "attempt $attempt: 200, previous release is serving again"
+              rolled_back=1
+              break
+            fi
+            echo "attempt $attempt: http $code"
+            sleep 3
+          done
+          [ "$rolled_back" = 1 ] || echo "::error::rollback did not restore a healthy response — the site needs a human"
+
+          echo "--- journalctl -u caddy (last 50 lines) ---"
+          # Fall back through the ways this can be readable; never let log collection be the thing
+          # that decides the exit code.
+          ssh target 'sudo -n journalctl -u caddy -n 50 --no-pager 2>/dev/null \
+            || journalctl -u caddy -n 50 --no-pager 2>/dev/null \
+            || echo "(journal not readable by the deploy user)"' || true
+
+          echo "::error::deploy of $RELEASE failed its smoke check and was rolled back"
+          exit 1
+
+      - name: Stop the ssh agent
+        if: always()
+        run: ssh-agent -k > /dev/null 2>&1 || true
