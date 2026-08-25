@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <!-- Declared in the document rather than only in CSS, so the browser paints its own furniture
+         dark — form controls, scrollbars and the flash of background before the stylesheet has
+         been parsed. There is one theme and it is dark; `dark light` would invite the browser to
+         choose, and it would choose wrong on the way in. -->
+    <meta name="color-scheme" content="dark" />
+    <title>substate admin</title>
   </head>
   <body>
     <div id="app"></div>
