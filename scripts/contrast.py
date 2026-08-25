@@ -31,14 +31,14 @@ T = {
     "surface-2": "#1F2A36",
     "border": "#263241",
     "border-strong": "#32414F",
-    "control-border": "#5D6E80",
+    "control-border": "#657787",
     "text-primary": "#E3EAF2",
     "text-secondary": "#A9B8C7",
-    "text-muted": "#7C8B9C",
+    "text-muted": "#8695A6",
     "accent-fill": "#2C5F87",
     "accent-fill-hover": "#34719F",
     "on-accent": "#E8F1F8",
-    "accent-text": "#5F94BF",
+    "accent-text": "#6B9EC7",
     "accent-bg": "#1B3549",
     "fill-disabled": "#1E2831",
     "text-disabled": "#566472",
@@ -86,9 +86,11 @@ PAIRS += [
     # an outline in --control-border instead.
     ("skeleton-base", "surface-1", 3.0, False, "skeleton on a panel — carried by motion, or by its outline"),
     ("skeleton-highlight", "surface-1", 3.0, False, "skeleton at the top of its pulse"),
-    # The outline exists to separate the placeholder from the PANEL, so that is the pair that
-    # decides. Against the skeleton's own fill it is a slightly lighter edge, which is what an
-    # outline looks like; measured so the number is on the record.
+    # Deliberately not required, and this is the note that stops it being "restored" as an
+    # oversight: the outline exists to separate the placeholder from the PANEL, and that pair —
+    # control-border on surface-1 — is required above and passes. Against the skeleton's own fill
+    # it is a slightly lighter edge, which is what an outline looks like. Requiring 3:1 here would
+    # be measuring the wrong side of the line.
     ("control-border", "skeleton-base", 3.0, False, "reduced-motion outline, inner edge"),
 
     # 1.4.11 exempts inactive components in as many words.
@@ -123,9 +125,17 @@ PAIRS += [
 # screen right now. Dialogs, popovers and dropdowns are what --surface-2 is for, and muted text,
 # links and control outlines will all land there. Lifting the three tokens is a palette decision.
 KNOWN_SHORT: dict[tuple[str, str], float] = {
-    ("text-muted", "surface-2"): 4.18,
-    ("accent-text", "surface-2"): 4.49,
-    ("control-border", "surface-2"): 2.78,
+    # Empty, and the mechanism stays. A waiver here names one pair, records the ratio it had when
+    # it was written down, and is printed on every run: a pair that is not on this list fails the
+    # build, and a pair that IS on it fails as soon as it gets worse. That is the difference
+    # between a known gap and a silence, and it is worth keeping wired up for the next time the
+    # palette moves ahead of the screens.
+    #
+    # It last held the three pairs on --surface-2, which were short because the palette had been
+    # checked against --surface-0 and --surface-1 and never against the surface above them. They
+    # were fixed by lifting the three tokens rather than by darkening --surface-2: at the value
+    # that cleared 4.5:1 the raised surface sat 1.02:1 from --surface-1, so a dialog stopped
+    # reading as raised and the three-surface system stopped meaning anything.
 }
 
 failures: list[str] = []

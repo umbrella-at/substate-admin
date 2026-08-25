@@ -26,7 +26,7 @@ not that the palette is short.
 |---|---|---|
 | `--text-primary` | `#E3EAF2` | body, table cells, headings |
 | `--text-secondary` | `#A9B8C7` | labels, secondary controls |
-| `--text-muted` | `#7C8B9C` | column headers, timestamps, hints |
+| `--text-muted` | `#8695A6` | column headers, timestamps, hints |
 
 Never dim text with `opacity`. Opacity multiplies against whatever is behind it
 and drifts between surfaces; these three tokens hold their contrast everywhere.
@@ -40,7 +40,7 @@ One accent, blue, and it is quiet on purpose.
 | `--accent-fill` | `#2C5F87` | the filled button |
 | `--accent-fill-hover` | `#34719F` | its hover |
 | `--on-accent` | `#E8F1F8` | text on the fill |
-| `--accent-text` | `#5F94BF` | links, active icons, focus ring |
+| `--accent-text` | `#6B9EC7` | links, active icons, focus ring |
 | `--accent-bg` | `#1B3549` | tinted accent surface, selected row |
 
 **At most one filled accent element per screen.** On the subscriber card that is
@@ -56,15 +56,16 @@ have something to be recessed *into*.
 
 | Token | Value | Where |
 |---|---|---|
-| `--control-border` | `#5D6E80` | the boundary of anything a person operates |
+| `--control-border` | `#657787` | the boundary of anything a person operates |
 | `--fill-disabled` | `#1E2831` | any control that cannot be used |
 | `--text-disabled` | `#566472` | its label |
 
 `--control-border` is separate from `--border-strong` and replaces it on every control. A field's
 border is not decoration here: its fill is `--surface-0` and the panel around it is `--surface-1`,
 which differ by 1.09:1, so the border is the entire visual evidence that a field exists. It is
-measured against both — 3.39:1 on the fill, 3.10:1 on the panel — because a boundary that is only
-visible from one side is only half a boundary.
+measured on every surface it can appear on — 3.86:1 on `--surface-0`, 3.52:1 on `--surface-1`,
+3.15:1 on `--surface-2` — because a boundary visible from one side is half a boundary, and a
+control inside a dialog is still a control.
 
 `--border-strong` keeps the work that does not carry that weight: a panel's hover, a divider
 inside a control. Nothing depends on seeing it.
@@ -320,17 +321,19 @@ Not features, not announced anywhere, simply true:
   |---|---|---|
   | `--text-primary` on `--surface-1` | 13.41 | 4.5 |
   | `--text-secondary` on `--surface-1` | 8.03 | 4.5 |
-  | `--text-muted` on `--surface-1` | 4.67 | 4.5 |
-  | `--text-muted` on `--surface-2` | **4.18** | 4.5 — short, see below |
-  | `--accent-text` on `--surface-1` | 5.01 | 4.5 |
-  | `--accent-text` on `--surface-2` | **4.49** | 4.5 — short, see below |
+  | `--text-muted` on `--surface-0` | 5.84 | 4.5 |
+  | `--text-muted` on `--surface-1` | 5.32 | 4.5 |
+  | `--text-muted` on `--surface-2` | 4.76 | 4.5 |
+  | `--accent-text` on `--surface-0` | 6.25 | 4.5 |
+  | `--accent-text` on `--surface-1` | 5.68 | 4.5 |
+  | `--accent-text` on `--surface-2` | 5.09 | 4.5 |
   | `--on-accent` on `--accent-fill` | 5.94 | 4.5 |
   | `--on-accent` on `--accent-fill-hover` | 4.58 | 4.5 |
-  | `--control-border` on `--surface-0` | 3.39 | 3.0 |
-  | `--control-border` on `--surface-1` | 3.10 | 3.0 |
-  | `--control-border` on `--surface-2` | **2.78** | 3.0 — short, see below |
+  | `--control-border` on `--surface-0` | 3.86 | 3.0 |
+  | `--control-border` on `--surface-1` | 3.52 | 3.0 |
+  | `--control-border` on `--surface-2` | 3.15 | 3.0 |
   | `--skeleton-base` on `--surface-1` | 1.72 | carried by motion, or by the outline |
-  | the reduced-motion outline on `--surface-1` | 3.10 | 3.0 |
+  | the reduced-motion outline on `--surface-1` | 3.52 | 3.0 |
   | state chip text on its own fill | 4.78 – 7.49 | 4.5 |
   | notice text on its own fill | 5.48 – 7.40 | 4.5 |
   | `--text-disabled` on `--fill-disabled` | 2.47 | exempt: 1.4.11 excludes inactive components |
@@ -340,11 +343,10 @@ Not features, not announced anywhere, simply true:
   identifies its component — the text is, and the text is measured above. Holding a state chip's
   fill to 3:1 against the panel would produce five chips the colour of the page.
 
-  **Three pairs on `--surface-2` are short and are not yet fixed.** Nothing sits on that surface
-  today except the permission chip, whose text is 7.19:1, so nothing is wrong on screen right now
-  — but `--surface-2` is where dialogs, popovers and dropdowns go, and muted text, links and
-  control outlines will all land there. The palette was checked against `--surface-0` and
-  `--surface-1` and never against the surface above them. Darkening `--surface-2` is not the
-  answer: at the value that clears 4.5:1 it sits 1.02:1 from `--surface-1`, so a dialog stops
-  reading as raised and the three-surface system stops meaning anything. Lifting the three tokens
-  is the fix, and that is a palette decision rather than a transcription.
+  Three of these were short once, all on `--surface-2`, all for one reason: the palette had been
+  checked against `--surface-0` and `--surface-1` and never against the surface above them — which
+  is where dialogs, popovers and dropdown menus go. The fix was to lift `--text-muted`,
+  `--accent-text` and `--control-border`, not to darken `--surface-2`: at the value that cleared
+  4.5:1 the raised surface sat 1.02:1 from `--surface-1`, so a dialog stopped reading as raised
+  and the three-surface system stopped meaning anything. Every number above is now measured on all
+  three surfaces, which is the habit that catches this class of thing rather than the one fix.
