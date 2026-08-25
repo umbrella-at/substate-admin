@@ -1,19 +1,13 @@
 # CI/CD for substate-admin.
 #
-# This pipeline proves the whole road to production BEFORE any application code exists: lint the
-# provisioning script, validate the Caddy config, then build and ship a static placeholder page
-# and assert — over the public https URL — that the commit just pushed is the commit being
-# served. A deploy pipeline that is written after the app is a deploy pipeline that has never
-# been wrong yet.
+# This pipeline proves the whole road to production: lint the provisioning script, validate the
+# Caddy config, lint, type-check and test the backend against a real Postgres, then ship it and
+# assert — over the public https URL — that the commit just pushed is the commit being served.
+# A deploy pipeline that is written after the app is a deploy pipeline that has never been wrong
+# yet. This one was wrong before there was an app to blame for it.
 #
-# There is no backend/ or frontend/ directory yet, so nothing below may reference one. This
-# comment is the seam; there is deliberately no commented-out YAML further down.
-#
-#   When the backend lands it brings a `backend` job — uv sync --frozen, ruff check, ruff format
-#     --check, mypy --strict, pytest against a postgres service container — which joins `needs:`
-#     of `deploy`. The deploy job grows: rsync backend/ into releases/<sha>/api, uv sync
-#     --frozen, alembic upgrade head, sync-permissions, restart substate-admin-api. The smoke
-#     check moves off the placeholder page onto GET /api/health and asserts the JSON `commit`.
+# There is no frontend/ directory yet, so nothing below may reference one. This comment is the
+# seam; there is deliberately no commented-out YAML further down.
 #
 #   When the frontend lands it brings a `frontend` job (npm ci, vue-tsc, eslint, vitest, npm run
 #     build) and an `e2e` job. The "Build the static payload" step below is replaced by a build
@@ -31,6 +25,14 @@ on:
 
 permissions:
   contents: read
+
+# uv is installed from its own installer rather than through a marketplace action. This workflow
+# holds the key to production, and every third-party action it runs is another repository whose
+# compromise becomes ours. Pinned to an exact version — not a floating major — because the whole
+# point of a lockfile is that CI resolves the same dependency set on a morning when nobody
+# touched this repository, and the resolver is part of that.
+env:
+  UV_VERSION: "0.12.5"
 
 # Pull-request runs are cancelled when a newer commit supersedes them: nothing is at stake but CI
 # minutes. Pushes to main are NEVER cancelled, because this workflow deploys. A cancellation that
@@ -54,8 +56,11 @@ jobs:
       # nothing to pin. --severity=warning fails the job on errors and warnings but tolerates
       # info/style notes (SC1091 "not following sourced file" fires on every provisioning script
       # that reads /etc/os-release, and is noise, not a finding).
-      - name: shellcheck deploy/provision.sh
-        run: shellcheck --severity=warning --shell=bash deploy/provision.sh
+      # Every script under deploy/, not one named file: the check that guards the units was itself
+      # unguarded until it was moved into a script, and a lint that only knows about the files that
+      # existed when it was written is the same mistake one layer down.
+      - name: shellcheck the deploy scripts
+        run: shellcheck --severity=warning --shell=bash deploy/*.sh
 
   config:
     name: config
@@ -77,66 +82,146 @@ jobs:
             caddy:2-alpine \
             caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
 
-      # `systemd-analyze verify` is deliberately NOT run here. It resolves ExecStart= and fails
-      # when the binary is absent, and our ExecStart points at a Python interpreter under
-      # /srv/substate-admin/current/api/.venv that only exists on the server. A step that cannot
-      # pass on a runner is worse than no step: it gets `|| true`-d within a week and then it is
-      # a lie. What is checked instead is the part that is checkable statically — that the unit is
-      # present and well-formed, and that the single-process rule has not quietly been undone.
-      - name: Sanity-check the systemd unit
+      # The units are checked by a script rather than inline YAML so that the command a laptop
+      # runs before pushing is byte-identical to the one the runner runs. This step failing while
+      # `./deploy/check-units.sh` passes locally would mean the two had drifted, which is exactly
+      # what a copied-out shell block eventually does.
+      - name: Check the systemd units
+        run: ./deploy/check-units.sh
+
+  backend-quality:
+    name: backend lint and types
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # UV_INSTALL_DIR and GITHUB_PATH rather than the profile line the installer would write:
+      # a `run:` step is not a login shell, so whatever it appends to ~/.bashrc is never read.
+      - name: Install uv
         run: |
           set -euo pipefail
-          # find, not a fixed glob: the unit is checked wherever under deploy/ it lives.
-          mapfile -t units < <(find deploy -type f -name '*.service' | sort)
-          if [ ${#units[@]} -eq 0 ]; then
-            echo "::error::no systemd unit found under deploy/"
-            exit 1
-          fi
-          for unit in "${units[@]}"; do
-            echo "checking $unit"
-            for section in '[Unit]' '[Service]' '[Install]'; do
-              grep -qxF "$section" "$unit" || {
-                echo "::error file=$unit::missing $section section"
-                exit 1
-              }
-            done
-            # Join backslash continuations first: ExecStart is written across several physical
-            # lines for readability, and `--workers` lives on one of them. Grepping the raw file
-            # would match only the first line and the guard below would be permanently inert.
-            # awk rather than a multiline sed: the same script behaves identically under BSD and
-            # GNU, so what is tested on a laptop is what runs on the runner.
-            exec_start="$(awk '
-              /^ExecStart=/ {
-                line = $0
-                while (line ~ /\\$/) {
-                  sub(/\\$/, "", line)
-                  if ((getline nxt) <= 0) break
-                  sub(/^[[:space:]]+/, "", nxt)
-                  line = line nxt
-                }
-                print line
-              }' "$unit")"
-            if [ -z "$exec_start" ]; then
-              echo "::error file=$unit::no ExecStart="
-              exit 1
-            fi
-            # One uvicorn worker, forever. The in-memory WorldRegistry and the in-memory login
-            # rate limiter are per-process; a second worker silently doubles the effective rate
-            # limit and splits the registry. Matched against the logical ExecStart line with its
-            # continuations joined — the unit file is supposed to explain this rule in a comment,
-            # and a comment saying "no gunicorn" must not be what fails the build.
-            if printf '%s\n' "$exec_start" | grep -qiE 'gunicorn|--workers[= ]*[2-9]'; then
-              echo "::error file=$unit::multi-process server in ExecStart; substate-admin runs exactly one uvicorn worker"
-              exit 1
-            fi
-          done
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+            | env UV_INSTALL_DIR="$HOME/.local/bin" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # `uv python install` reads backend/.python-version: the runner image ships a different
+      # interpreter, and a type check that ran under 3.12 would be checking a Python this service
+      # never executes.
+      #
+      # The check and the sync ask two different questions. `--frozen` installs uv.lock without so
+      # much as reading pyproject.toml — it is the command the deploy runs, and the deploy is not
+      # where anyone should discover that a dependency was added and the lock never refreshed.
+      # `uv lock --check` is what asks that, and it fails here instead.
+      - name: Install the project
+        run: |
+          set -euo pipefail
+          uv python install
+          uv lock --check
+          uv sync --frozen
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      # Its own step, so the red X says which of the two it was: `ruff check` is a finding to
+      # read and `ruff format --check` is a command to run.
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      # strict = true and files = ["app"] live in pyproject.toml, so this is character for
+      # character the check a laptop runs.
+      - name: mypy
+        run: uv run mypy
+
+  backend-tests:
+    name: backend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Every timestamp in this system is timestamptz and every clock in it is UTC — the Postgres
+      # cluster, the unit, the logs. A runner in another zone would only ever show up as a test
+      # that fails at certain hours of the day.
+      TZ: UTC
+      # The suite reads this and writes it into DATABASE_URL for the application it builds. The
+      # migration step below is handed the same string, so there is one database in this job and
+      # no way for the two to drift onto different ones.
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/substate_admin_test
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substate_admin_test
+          # The same locale the production database is created with (see deploy/provision.sh).
+          # The locale provider decides collation, and collation decides what `ORDER BY email`
+          # means: on the runner's default glibc locale the user list would sort one way here and
+          # another way on the server, and the pagination test would pass against an ordering
+          # production does not have. initdb settings are inherited through template1, which is
+          # what POSTGRES_DB is created from.
+          POSTGRES_INITDB_ARGS: "--locale-provider=builtin --builtin-locale=C.UTF-8 --encoding=UTF8"
+          TZ: UTC
+        # The steps run on the runner, not inside the service network, so the mapped port is how
+        # they reach the container — and the health check is what keeps `alembic upgrade` from
+        # racing initdb, which on a cold image takes longer than the first step does.
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substate_admin_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+            | env UV_INSTALL_DIR="$HOME/.local/bin" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install the project
+        run: |
+          set -euo pipefail
+          uv python install
+          uv lock --check
+          uv sync --frozen
+
+      # The deploy runs this same command against production, so it runs here first — standalone,
+      # against an empty database, before pytest has imported anything. The suite migrates the
+      # database itself, which means a migration that only worked because the suite had already
+      # built the schema would sail through the tests and fail on the server.
+      #
+      # `-x database_url=` rather than exporting the three required settings into this job: env.py
+      # takes the override before it ever reads them, so a migration cannot depend on a secret
+      # that CI is not supposed to hold.
+      - name: alembic upgrade head
+        run: uv run alembic -x database_url="$TEST_DATABASE_URL" upgrade head
+
+      # The suite writes the environment it needs (conftest sets DATABASE_URL from
+      # TEST_DATABASE_URL and mints throwaway secrets), refuses to run rather than skip when no
+      # database answers, and rolls every test back. Nothing to clean up afterwards.
+      - name: pytest
+        run: uv run pytest
 
   deploy:
     name: deploy
-    needs: [shell, config]
+    needs: [shell, config, backend-quality, backend-tests]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Longer than the static deploy needed: `uv sync` on the far side downloads and installs a
+    # dependency closure on one shared vCPU the first time a release changes it.
+    timeout-minutes: 15
     environment:
       name: production
       url: https://substate-admin.umbrella-at.uk
@@ -154,8 +239,9 @@ jobs:
           persist-credentials: false
 
       # One short sha, computed once, exported once. The release directory, the string baked into
-      # the page and the string the smoke check greps for all come from this variable, so they
-      # cannot drift apart and report success for a release nobody deployed.
+      # the page, the RELEASE file /api/health reads back and the string the smoke check asserts
+      # all come from this variable, so they cannot drift apart and report success for a release
+      # nobody deployed.
       - name: Compute the release id
         run: echo "RELEASE=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
@@ -203,9 +289,9 @@ jobs:
           ssh target true
           echo "ssh: authenticated against the pinned host key"
 
-      # Once the frontend exists this step becomes `npm ci && npm run build` in a frontend job,
-      # rsyncing frontend/dist instead. The token substitution is what makes the smoke check meaningful:
-      # the page carries the sha of the release that produced it.
+      # A placeholder until the frontend exists: this step is then replaced by a build in the
+      # frontend job and an rsync of frontend/dist, and the substitution below goes with it —
+      # the API's own /api/health is what the smoke check reads.
       - name: Build the static payload
         run: |
           set -euo pipefail
@@ -227,17 +313,80 @@ jobs:
       - name: Upload the release
         run: |
           set -euo pipefail
-          dest="$DEPLOY_ROOT/releases/$RELEASE/web"
+          web="$DEPLOY_ROOT/releases/$RELEASE/web"
+          api="$DEPLOY_ROOT/releases/$RELEASE/api"
+
           rsync -az --delete --chmod=D755,F644 \
-            --rsync-path="mkdir -p '$dest' && rsync" \
+            --rsync-path="mkdir -p '$web' && rsync" \
             -e ssh \
-            payload/ "target:$dest/"
+            payload/ "target:$web/"
+
+          # The backend goes up as source and is installed on the far side: a .venv built on this
+          # runner would be the right packages compiled for the wrong machine. The excluded paths
+          # are what a checkout or a local run leaves lying about; --delete does not remove them
+          # on the receiver, so re-running the workflow on the same sha finds the venv it built
+          # last time and `uv sync` is a no-op.
+          rsync -az --delete --chmod=D755,F644 \
+            --exclude '.venv/' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.mypy_cache/' \
+            --exclude '.ruff_cache/' \
+            --exclude '.coverage' \
+            --rsync-path="mkdir -p '$api' && rsync" \
+            -e ssh \
+            backend/ "target:$api/"
+
+      # Everything here happens inside the new release directory while `current` still points at
+      # the old one. A lockfile that does not match, a migration that will not apply, a host
+      # missing JWT_SECRET: each of them ends the deploy with the previous release still serving
+      # and nothing to undo. Past the swap every failure costs a rollback, which is why all of
+      # this happens before it.
+      - name: Install and migrate
+        run: |
+          set -euo pipefail
+          ssh target bash -s -- "$RELEASE" "$DEPLOY_ROOT" <<'REMOTE'
+          set -euo pipefail
+          release="$1"
+          root="$2"
+          cd "$root/releases/$release/api"
+
+          # This file is how GET /api/health knows what it is running: app.config reads RELEASE
+          # from the working directory when APP_COMMIT is unset, and the unit's WorkingDirectory
+          # is this directory. That is what lets the smoke check assert a commit without CI ever
+          # writing the server's EnvironmentFile. Written after the rsync, whose --delete would
+          # have taken it away again.
+          printf '%s\n' "$release" > RELEASE
+
+          # DATABASE_URL, JWT_SECRET and IP_HASH_PEPPER live in the file the unit reads;
+          # provisioning wrote it root:deploy 0640 for exactly this. `set -a` exports every
+          # assignment in it — the remote shell ends with this heredoc, so nothing outlives it.
+          set -a
+          . /etc/substate-admin/api.env
+          set +a
+
+          # --no-dev: the box shares 2 GB of RAM with Postgres, and pytest, mypy and ruff have no
+          # business in a runtime closure. --frozen installs exactly what uv.lock says and never
+          # rewrites it, so the server cannot resolve its own dependency set — whether that lock
+          # still matches pyproject.toml was answered in CI, before anything reached this box.
+          /usr/local/bin/uv sync --frozen --no-dev
+
+          # --no-sync from here on: the environment was built one line ago, and the unit runs the
+          # application the same way. A second sync would only be another chance to change it.
+          /usr/local/bin/uv run --frozen --no-sync alembic upgrade head
+
+          # Idempotent, and run here rather than at application startup: startup would race
+          # itself on a restart and turn a failed sync into a log line nobody reads, where this
+          # is a red deploy that never reaches the symlink.
+          /usr/local/bin/uv run --frozen --no-sync substate-admin sync-permissions
+          REMOTE
 
       # One connection, one script, and `set -euo pipefail` INSIDE it. `ssh host <<EOF` without
       # that returns the exit status of the last line of the heredoc, so a failed migration
       # followed by a successful `echo done` is a green deploy over a broken release. Passing the
       # release as $1 to `bash -s` keeps the quoting honest: no interpolation into remote code.
       - name: Activate the release
+        id: activate
         run: |
           set -euo pipefail
           ssh target bash -s -- "$RELEASE" "$DEPLOY_ROOT" <<'REMOTE'
@@ -246,7 +395,13 @@ jobs:
           root="$2"
           dir="$root/releases/$release"
 
+          # Both halves of the release, and the marker the health endpoint reads. The unit's
+          # ConditionPathExists names pyproject.toml, so a release missing it does not fail to
+          # start — it is skipped silently, and the old process keeps answering as if the deploy
+          # had worked.
           test -f "$dir/web/index.html"
+          test -f "$dir/api/pyproject.toml"
+          test -s "$dir/api/RELEASE"
 
           # Remember what is live right now, so the smoke check has something to roll back to.
           prev=""
@@ -277,8 +432,8 @@ jobs:
           # No `systemctl reload caddy` here, deliberately. Caddy opens the file under
           # `root * /srv/substate-admin/current/web` per request, so the swap is live the instant
           # rename(2) returns. Reloading would need a sudoers rule for a unit the deploy user has
-          # no other business touching, and the deploy user's privileges are kept to exactly one:
-          # restarting substate-admin-api.service, which the backend will need.
+          # no other business touching, and the deploy user's privileges are kept to exactly one
+          # unit: substate-admin-api.service, restarted by the step after this one.
 
           # Keep the last 3 releases, by mtime, and never touch the two that are reachable.
           cd "$root/releases"
@@ -301,37 +456,61 @@ jobs:
           done
           REMOTE
 
-      # The check runs against the public URL, not against 127.0.0.1 on the box, so it proves DNS,
-      # the certificate, Caddy and the symlink in one shot — the things a reviewer clicking the
-      # link actually depends on. Ten attempts, three seconds apart.
+      # The symlink swap is only half of promoting an API. systemd resolves WorkingDirectory at
+      # every start, so until this runs the old code is still executing — out of a directory the
+      # pruning above may have just deleted.
       #
-      # Once the API exists this moves to $SITE_URL/api/health and asserts the JSON `commit`, which
-      # additionally proves uvicorn is up and Postgres answered SELECT 1. It stays on the public
-      # URL and it keeps asserting the sha: an assertion of "200 OK" alone would pass against a
-      # stale release, and — if Caddy ever stripped the /api prefix — against the SPA's index.html.
+      # `sudo -n`, never an interactive prompt: the deploy user's sudoers grants start, stop and
+      # restart of this one unit and nothing else, and -n turns a missing rule into an immediate
+      # failure instead of a job that hangs on a password prompt nobody can answer. `restart`
+      # returns as soon as the unit is active, which for Type=exec means "execve succeeded" —
+      # whether that process can serve a request is the next step's question.
+      - name: Restart the API
+        run: ssh target 'sudo -n systemctl restart substate-admin-api.service'
+
+      # The check runs against the public URL, not against 127.0.0.1 on the box, so it proves DNS,
+      # the certificate, Caddy, the symlink, uvicorn and Postgres in one shot — the things a
+      # reviewer clicking the link actually depends on. Ten attempts, three seconds apart, which
+      # covers a cold start of the interpreter.
+      #
+      # Three assertions, all three load-bearing. A bare "200 OK" would pass against a stale
+      # release, and — if Caddy ever stripped the /api prefix — against the SPA's index.html,
+      # which is served with a cheerful 200 for every unmatched path. `commit` is what proves the
+      # process answering is the one just deployed. `db` is the endpoint's real SELECT 1: a
+      # release that cannot reach Postgres is not a release that works.
       - name: Smoke check
         id: smoke
         run: |
           set -uo pipefail
           for attempt in $(seq 1 10); do
-            code="$(curl -sS -o /tmp/smoke.html -w '%{http_code}' \
-              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/" || true)"
-            if [ "${code:-000}" = 200 ] && grep -q "$RELEASE" /tmp/smoke.html; then
-              echo "attempt $attempt: 200, serving $RELEASE"
+            code="$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/api/health" || true)"
+            # Silenced: an error page is not JSON, and jq's complaint about it says nothing the
+            # http code has not already said. The defaults keep an absent field from reading like
+            # a present one — `.db // false` is a fact, an empty string is a parse that failed.
+            commit="$(jq -r '.commit // empty' /tmp/health.json 2>/dev/null || true)"
+            db="$(jq -r '.db // false' /tmp/health.json 2>/dev/null || true)"
+            if [ "${code:-000}" = 200 ] && [ "$commit" = "$RELEASE" ] && [ "$db" = true ]; then
+              echo "attempt $attempt: 200, serving $RELEASE, database answered"
               exit 0
             fi
-            echo "attempt $attempt: http $code, release $RELEASE not served yet"
+            echo "attempt $attempt: http ${code:-000}, commit '${commit:-none}', db '${db:-none}'"
             sleep 3
           done
-          echo "::error::$SITE_URL did not serve release $RELEASE within ~30s"
+          echo "::error::$SITE_URL/api/health did not report $RELEASE with a live database within ~30s"
           exit 1
 
       # Only the code symlink moves back. Migrations are forward-only by policy — deploy never
       # runs `alembic downgrade` — because a downgrade that drops a column destroys rows that the
       # previous release cannot restore, and an automated rollback is the worst possible moment to
       # find that out. Backward-compatible migrations are what make rolling back the code safe.
+      #
+      # The condition is the activation, not the smoke check. Every failure after the swap — the
+      # restart included — leaves `current` pointing at a release nothing has verified, and every
+      # failure before it left the previous release serving with nothing to undo. That line, not
+      # the name of the last step, is what decides whether there is anything to roll back.
       - name: Roll back
-        if: failure() && steps.smoke.outcome == 'failure'
+        if: failure() && steps.activate.outcome == 'success'
         run: |
           set -uo pipefail
           ssh target bash -s -- "$DEPLOY_ROOT" <<'REMOTE'
@@ -346,31 +525,45 @@ jobs:
           ln -sfn "$target_dir" "$root/.current.$$"
           mv -T "$root/.current.$$" "$root/current"
           echo "rolled back: current -> $(readlink "$root/current")"
+
+          # The API is code, not a file Caddy opens per request: moving the symlink under a
+          # running uvicorn changes nothing at all until it is restarted out of the directory the
+          # link now points at.
+          sudo -n systemctl restart substate-admin-api.service
           REMOTE
 
           echo "--- verifying the rollback over $SITE_URL ---"
           rolled_back=0
           for attempt in $(seq 1 5); do
-            code="$(curl -sS -o /tmp/rollback.html -w '%{http_code}' \
-              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/" || true)"
-            if [ "${code:-000}" = 200 ] && ! grep -q "$RELEASE" /tmp/rollback.html; then
-              echo "attempt $attempt: 200, previous release is serving again"
+            code="$(curl -sS -o /tmp/rollback.json -w '%{http_code}' \
+              --max-time 5 -H 'Cache-Control: no-cache' "$SITE_URL/api/health" || true)"
+            commit="$(jq -r '.commit // empty' /tmp/rollback.json 2>/dev/null || true)"
+            # Any commit but this one, answering 200 — which /api/health only does when Postgres
+            # answered as well. "Some other release is serving" is the whole claim a rollback
+            # gets to make.
+            if [ "${code:-000}" = 200 ] && [ -n "$commit" ] && [ "$commit" != "$RELEASE" ]; then
+              echo "attempt $attempt: 200, $commit is serving again"
               rolled_back=1
               break
             fi
-            echo "attempt $attempt: http $code"
+            echo "attempt $attempt: http ${code:-000}, commit '${commit:-none}'"
             sleep 3
           done
           [ "$rolled_back" = 1 ] || echo "::error::rollback did not restore a healthy response — the site needs a human"
 
-          echo "--- journalctl -u caddy (last 50 lines) ---"
-          # Fall back through the ways this can be readable; never let log collection be the thing
+          echo "--- journalctl (last 50 lines per unit) ---"
+          # The API unit first: after a swap it is much the likelier of the two to have something
+          # to say. The deploy user is in systemd-journal, so the plain call is the one that
+          # normally works; fall back through the rest and never let log collection be the thing
           # that decides the exit code.
-          ssh target 'sudo -n journalctl -u caddy -n 50 --no-pager 2>/dev/null \
-            || journalctl -u caddy -n 50 --no-pager 2>/dev/null \
-            || echo "(journal not readable by the deploy user)"' || true
+          ssh target 'for unit in substate-admin-api caddy; do
+            echo "--- $unit ---"
+            journalctl -u "$unit" -n 50 --no-pager 2>/dev/null \
+              || sudo -n journalctl -u "$unit" -n 50 --no-pager 2>/dev/null \
+              || echo "(journal not readable by the deploy user)"
+          done' || true
 
-          echo "::error::deploy of $RELEASE failed its smoke check and was rolled back"
+          echo "::error::deploy of $RELEASE failed after activation and was rolled back"
           exit 1
 
       - name: Stop the ssh agent

@@ -46,6 +46,8 @@ readonly DEPLOY_ROOT="/srv/${APP_NAME}"
 readonly ENV_DIR="/etc/${APP_NAME}"
 readonly ENV_FILE="${ENV_DIR}/api.env"
 readonly API_UNIT="${APP_NAME}-api.service"
+readonly PRUNE_UNIT="${APP_NAME}-prune.service"
+readonly PRUNE_TIMER="${APP_NAME}-prune.timer"
 readonly PG_MAJOR="18"
 readonly DB_NAME="substate_admin"
 readonly DB_ROLE="substate_admin"
@@ -217,11 +219,11 @@ preflight() {
 
     # Fail here rather than half-way through, when the box is already changed.
     local f
-    for f in Caddyfile "${API_UNIT}"; do
+    for f in Caddyfile "${API_UNIT}" "${PRUNE_UNIT}" "${PRUNE_TIMER}"; do
         [[ -f "${SCRIPT_DIR}/${f}" ]] \
             || die "missing ${SCRIPT_DIR}/${f} — copy the whole deploy/ directory onto the host"
     done
-    ok "found deploy/Caddyfile and deploy/${API_UNIT}"
+    ok "found deploy/Caddyfile, deploy/${API_UNIT}, deploy/${PRUNE_UNIT} and deploy/${PRUNE_TIMER}"
 }
 
 # ---------------------------------------------------------------------------
@@ -1021,6 +1023,33 @@ setup_api_unit() {
     fi
 }
 
+setup_prune_timer() {
+    step "systemd timer: ${PRUNE_TIMER}"
+
+    local changed=0
+    if install_repo_file "${SCRIPT_DIR}/${PRUNE_UNIT}" "/etc/systemd/system/${PRUNE_UNIT}" 0644 root:root; then
+        changed=1
+        ok "installed /etc/systemd/system/${PRUNE_UNIT}"
+    else
+        skip "/etc/systemd/system/${PRUNE_UNIT} already current"
+    fi
+    if install_repo_file "${SCRIPT_DIR}/${PRUNE_TIMER}" "/etc/systemd/system/${PRUNE_TIMER}" 0644 root:root; then
+        changed=1
+        ok "installed /etc/systemd/system/${PRUNE_TIMER}"
+    else
+        skip "/etc/systemd/system/${PRUNE_TIMER} already current"
+    fi
+    if (( changed )); then
+        systemctl daemon-reload
+    fi
+
+    # The TIMER is started now, unlike the API unit. Its service carries the same
+    # ConditionPathExists, so before the first deploy the timer simply fires into a quiet skip
+    # rather than a failure — and nothing has to remember to switch it on afterwards.
+    systemctl enable --now "${PRUNE_TIMER}" >/dev/null
+    ok "${PRUNE_TIMER} enabled and running (next: $(systemctl show "${PRUNE_TIMER}" -p NextElapseUSecRealtime --value 2>/dev/null || echo scheduled))"
+}
+
 # ---------------------------------------------------------------------------
 # 12. journald
 # ---------------------------------------------------------------------------
@@ -1068,6 +1097,7 @@ summary() {
     releases            ${DEPLOY_ROOT}/{releases,shared,current}
     caddy               /etc/caddy/Caddyfile ($(systemctl is-active caddy || true))
     api                 ${API_UNIT} enabled, deliberately not started
+    reaper              ${PRUNE_TIMER} enabled and running (daily)
     journald            SystemMaxUse=200M
 
 EOF
@@ -1147,6 +1177,7 @@ main() {
     create_skeleton
     setup_caddy
     setup_api_unit
+    setup_prune_timer
     setup_journald
     summary
 }

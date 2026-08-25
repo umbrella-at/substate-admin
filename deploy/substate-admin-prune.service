@@ -1,0 +1,53 @@
+# substate-admin — delete refresh tokens whose usefulness has passed.
+#
+# Installed by deploy/provision.sh alongside the timer of the same name. Rotation and logout only
+# MARK rows; nothing else in the system ever deletes one, so without this the table grows for the
+# lifetime of the deployment. The command is idempotent and reports what it removed.
+#
+# It is a separate unit rather than a step in the deploy because the table grows with use, not with
+# releases: a host that is serving happily and has not been deployed to for a month is exactly the
+# host that needs it.
+
+[Unit]
+Description=substate-admin: prune spent refresh tokens
+Documentation=https://github.com/umbrella-at/substate-admin
+After=network-online.target postgresql.service
+Wants=postgresql.service
+
+# Same guard as the API unit: before the first deploy there is no application to run, and a timer
+# firing into an empty release directory should be a quiet skip, not a failed unit.
+ConditionPathExists=/srv/substate-admin/current/api/pyproject.toml
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/srv/substate-admin/current/api
+EnvironmentFile=/etc/substate-admin/api.env
+Environment=TZ=UTC
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=UV_CACHE_DIR=/var/cache/substate-admin/uv
+
+ExecStart=/usr/local/bin/uv run --frozen --no-sync substate-admin prune-tokens
+
+# One statement against one table. It has no business holding memory the API might need.
+MemoryMax=200M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+
+# Mirrors the API unit: ProtectSystem=strict leaves the whole filesystem read-only, and
+# CacheDirectory= is the one writable place systemd creates and owns. uv writes nothing else.
+CacheDirectory=substate-admin

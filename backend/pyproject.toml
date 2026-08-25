@@ -1,0 +1,101 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "substate-admin"
+description = "Admin panel for substate — FastAPI backend."
+authors = [{ name = "Andrei Tarunin" }]
+license = "MIT"
+requires-python = ">=3.13,<3.14"
+
+# One version string, in app/__init__.py, read from there at build time. GET /api/health
+# reports it next to the deployed commit, and two places to edit would eventually disagree.
+dynamic = ["version"]
+
+# Every bound has an upper limit. uv.lock is what CI and the deploy actually install
+# (`uv sync --frozen`), so these ranges only bite when the lock is refreshed — which is exactly
+# when a major release should have to be adopted deliberately rather than arrive on a Tuesday.
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.34,<1.0",
+    "pydantic>=2.10,<3.0",
+    "pydantic-settings>=2.7,<3.0",
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "psycopg[binary]>=3.2,<4.0",
+    "alembic>=1.14,<2.0",
+    "pyjwt>=2.10,<3.0",
+    "argon2-cffi>=23.1,<26.0",
+    "structlog>=25.1,<27.0",
+]
+# python-multipart is deliberately absent: login takes a JSON body, not a form, and nothing
+# else in this service accepts multipart. FastAPI only needs it for Form()/File() parameters.
+
+[project.scripts]
+# The CLI is argparse, not typer or click. Two subcommands with four flags between them do not
+# justify pulling click into the runtime closure of a service that shares 2 GB of RAM with
+# Postgres, and `create-user` reads a password from stdin — a path that is plain `sys.stdin` in
+# argparse and a wrapped-terminal special case in a framework. The stdlib does this job.
+substate-admin = "app.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0,<10.0",
+    "pytest-asyncio>=0.25,<2.0",
+    "pytest-cov>=6.0,<8.0",
+    "httpx>=0.28,<1.0",
+    "ruff>=0.9,<0.15",
+    "mypy>=1.14,<2.0",
+]
+
+[tool.hatch.version]
+path = "app/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101 asserts are how a test states its expectation, and every "password" in a fixture is a
+# literal by definition. Relaxed here and nowhere else.
+"tests/**/*.py" = ["S101", "S105", "S106", "S311"]
+
+[tool.ruff.lint.isort]
+# `support` is the test suite's own helper module, imported by name because pytest puts tests/ on
+# sys.path. Naming it here is what keeps it out of the third-party block beside sqlalchemy.
+known-first-party = ["app", "support"]
+# `alembic/` is a directory in this project, which is enough for import sorting to decide that
+# `from alembic import op` is a local import. It is the library.
+known-third-party = ["alembic"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["app"]
+# Migrations are a historical record, not maintained code: they are checked by running them
+# (upgrade then downgrade against a real database), not by a type checker.
+exclude = ["^alembic/versions/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+# SQLAlchemy's asyncio layer runs the ORM inside a greenlet, and without this coverage loses the
+# trace at every `await session.execute(...)` — it reported the login route at 74% while every
+# line of it was being executed. A coverage number that is wrong in the safe direction is worse
+# than none: it invites somebody to write tests for code that is already covered.
+concurrency = ["thread", "greenlet"]
+
+[tool.coverage.report]
+show_missing = true
