@@ -1,0 +1,202 @@
+/* Design tokens, transcribed from docs/design.md.
+ *
+ * This file is the only place a hex value, a radius or a step of the spacing scale is written
+ * down. A component that needs one takes it from here; a component that needs one that is not
+ * here is a gap in docs/design.md, and it gets fixed there first.
+ *
+ * The spacing scale is deliberately CLOSED. Tailwind would otherwise synthesise every multiple of
+ * its base, so `p-5` would silently mean 20px — a value docs/design.md does not have. Clearing the
+ * namespace and naming the seven allowed steps turns "no value off this scale" from a rule someone
+ * has to remember into one the build enforces.
+ */
+
+/* The faces docs/design.md names, self-hosted so nothing depends on a font CDN being reachable —
+ * and the Content-Security-Policy this ships under would refuse one anyway. Only the two weights
+ * the design allows: 400 and 500. Anything heavier reads heavy on these surfaces, and shipping
+ * cuts nobody uses is bytes a visitor pays for. Latin only, for the same reason: the interface
+ * is English and the unsubsetted import ships cyrillic, greek and vietnamese as well.
+ *
+ * Declared as dependencies and imported nowhere is the failure mode this replaces: the fallback
+ * stack renders, nothing looks broken, and the whole Typography section is quietly unimplemented.
+ * frontend-quality greps the built CSS for @font-face because no other check can see it. */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+
+@import 'tailwindcss';
+
+@theme {
+  /* Every namespace this file speaks in is CLEARED first, not just spacing. Tailwind otherwise
+   * ships its own palette, radii, type scale and container widths alongside ours, so `bg-red-500`,
+   * `text-lg` and `max-w-5xl` all compile and nothing objects — and the claim that this file is
+   * the only place a value is written becomes false without anyone noticing. Cleared, they are
+   * compile errors instead of review comments.
+   *
+   * `rounded-full` survives this and needs a grep in CI: Tailwind ships it as a static utility
+   * rather than deriving it from --radius-*, so the round shape reserved for the five subscription
+   * states is reachable from any component with no build-time objection. */
+  --color-*: initial;
+  --radius-*: initial;
+  --text-*: initial;
+  --container-*: initial;
+  --font-*: initial;
+  --spacing-*: initial;
+
+  /* --- Surfaces. Three, and no fourth: a fourth level means the layout is nested too deep. --- */
+  --color-surface-0: #111820;
+  --color-surface-1: #18212b;
+  --color-surface-2: #1f2a36;
+  --color-border: #263241;
+  --color-border-strong: #32414f;
+
+  /* --- Text. Never dimmed with opacity: opacity multiplies against whatever is behind it and
+         drifts between surfaces, while these three hold their contrast everywhere. --- */
+  --color-text-primary: #e3eaf2;
+  --color-text-secondary: #a9b8c7;
+  --color-text-muted: #8695a6;
+
+  /* --- Accent. One, blue, quiet on purpose, and at most one filled element per screen. --- */
+  --color-accent-fill: #2c5f87;
+  --color-accent-fill-hover: #34719f;
+  --color-on-accent: #e8f1f8;
+  --color-accent-text: #6b9ec7;
+  --color-accent-bg: #1b3549;
+
+  /* --- Controls. A field's fill is surface-0 and the panel around it is surface-1, and those two
+         differ by 1.09:1 — so this border is the entire visual evidence that a field exists, and
+         it is measured on all three surfaces: 3.86:1 on surface-0, 3.52:1 on surface-1,
+         3.15:1 on surface-2. --border-strong
+         keeps only the work nothing depends on seeing.
+         The disabled pair is neutral, not accent-tinted: an outlined button and a text field get
+         disabled too, and neither has an accent fill to dim. --- */
+  --color-control-border: #657787;
+  --color-fill-disabled: #1e2831;
+  --color-text-disabled: #566472;
+
+  /* --- Loading. The pulse runs between these two fills, never through opacity, for the same
+         reason text is never dimmed with it. Flat, the base is 1.72:1 against a panel, which is
+         why the reduced-motion path adds an outline instead of relying on the fill. --- */
+  --color-skeleton-base: #3a4757;
+  --color-skeleton-highlight: #47566a;
+
+  /* --- Subscription states. Five that must be told apart out of the corner of the eye:
+         GRACE is someone to call today, EXPIRED is over and done. --- */
+  --color-state-trial-bg: #2c2550;
+  --color-state-trial-text: #c2b4f5;
+  --color-state-active-bg: #123b2c;
+  --color-state-active-text: #6ed9a8;
+  --color-state-grace-bg: #43300d;
+  --color-state-grace-text: #f3be5e;
+  --color-state-expired-bg: #242f3b;
+  --color-state-expired-text: #8c9bab;
+  --color-state-cancelled-bg: #43202d;
+  --color-state-cancelled-text: #f08fa8;
+
+  /* --- Semantic roles. success and warning share with ACTIVE and GRACE on purpose; danger does
+         NOT share with CANCELLED, so a destructive dialog never reads as a cancelled row. --- */
+  --color-success-bg: #123b2c;
+  --color-success-text: #6ed9a8;
+  --color-success-border: #1d5b44;
+  --color-warning-bg: #43300d;
+  --color-warning-text: #f3be5e;
+  --color-warning-border: #6b4e15;
+  --color-danger-bg: #47211f;
+  --color-danger-text: #f0837e;
+  --color-danger-border: #6e3330;
+
+  /* --- Typography. Two families, two weights: 600 and above reads heavy on these surfaces. --- */
+  --font-ui: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --text-caption: 12px;
+  --text-dense: 13px;
+  --text-ui: 14px;
+  --text-heading: 16px;
+  --text-title: 20px;
+
+  /* --- Radii. 999px is for state chips and nothing else. --- */
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-card: 12px;
+  --radius-chip: 999px;
+
+  /* --- Spacing: 4 · 8 · 12 · 16 · 24 · 32 · 48, and nothing between. --- */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+
+  /* The vertical padding of a fact label — a permission code, a tag, a count. docs/design.md
+   * specifies `3px 8px` for it, and 3px is deliberately not a step of the spacing scale: the chip
+   * is not laid out against the grid, it is sized to sit on one line of 12px text. 8px is
+   * `--spacing-2` and needs nothing new; 3px is named here rather than written as an arbitrary
+   * value inside the component, so the number still exists in exactly one place. */
+  --spacing-chip-y: 3px;
+
+  /* --- Layout. Two measures, because a form and a paragraph want different ones and everything
+         else was going to invent its own. Tables deliberately have no maximum. --- */
+  --spacing-sidebar: 240px;
+  --container-form: 400px;
+  /* Not `prose`: Tailwind ships a static `max-w-prose` of 65ch that shadows the theme value,
+     so the token would be silently ignored and the width would be whatever 65ch happens to be. */
+  --container-reading: 672px;
+
+  /* The one value off the spacing scale, and design.md names it as the exception: the padding
+     inside a chip is set optically from its 12px line rather than from the layout grid. */
+  --spacing-chip-x: 9px;
+  --spacing-chip-y: 3px;
+}
+
+/* The loading pulse. Between two fills rather than through opacity, and slower than the 200ms
+ * ceiling that governs state transitions — a skeleton held to that would strobe. */
+@keyframes skeleton-pulse {
+  from {
+    background-color: var(--color-skeleton-base);
+  }
+  to {
+    background-color: var(--color-skeleton-highlight);
+  }
+}
+
+@utility skeleton {
+  background-color: var(--color-skeleton-base);
+  animation: skeleton-pulse 1.6s ease-in-out infinite alternate;
+}
+
+/* Someone who has asked for less motion still needs to see that something is pending, so the
+ * placeholder stays — it simply stops moving. Written as a plain rule rather than a second
+ * `@utility`: Tailwind registers utilities at the top level only, and nesting one inside a media
+ * query is silently not a utility at all. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    /* With the motion gone the fill alone is 1.72:1 against the panel, which is not visible. The
+     * outline is 3.10:1 against that same panel and is what makes the placeholder a placeholder
+     * for a reader who asked for less movement. */
+    animation: none;
+    outline: 1px solid var(--color-control-border);
+    outline-offset: -1px;
+  }
+}
+
+/* Focus, from the Floor section: visible everywhere, one description, no per-component variants. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent-text);
+    outline-offset: 2px;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-surface-0);
+    color: var(--color-text-primary);
+    font-family: var(--font-ui);
+    font-size: var(--text-ui);
+  }
+}

@@ -19,18 +19,25 @@ access tokens, rotating refresh tokens with reuse detection, and permissions rea
 on every request rather than carried in the token. It serves `/api/health`, `/api/auth/*` and
 `/api/users`, and a CLI is how the first administrator comes to exist.
 
-What the site serves at `/` is still a placeholder page. The Vue frontend — a login screen and one
-protected route to begin with — is next, and the screenshot in this README arrives with it.
+The frontend is written, and it is what the site serves at `/`. A login screen, and one protected
+route behind it: a dashboard that says which address is signed in, which role it holds and which
+permission codes that role grants — the smallest page that can prove `/api/auth/me`, the role table
+and the permission join all work at once. Vue 3.5 on the tokens in [`docs/design.md`](docs/design.md),
+a Pinia store that holds the session, a router that is closed by default and asks about permissions
+rather than roles, and an end-to-end test that signs in, reloads the page and finds the session
+still there.
 
 ## Stack
 
 | Area       | Choice                                                                    |
 | ---------- | ------------------------------------------------------------------------- |
-| Frontend   | Vue 3.5, TypeScript (strict), Vite, Pinia (auth state only), TanStack Query and TanStack Table, Tailwind v4 |
+| Frontend   | Vue 3.5, TypeScript (strict), Vite, Pinia (auth state only), TanStack Query, Tailwind v4 on the tokens in `docs/design.md` |
+| Types      | `openapi.json` written by the backend, `schema.d.ts` generated from it by openapi-typescript; both committed, and CI fails when either stops matching |
 | Backend    | FastAPI, SQLAlchemy 2 (async, on psycopg 3), Alembic, argon2id, structlog  |
 | Database   | PostgreSQL 18                                                             |
 | Serving    | Caddy, one origin: the SPA at `/`, the API at `/api` with the prefix intact |
-| CI/deploy  | GitHub Actions — every push: shellcheck, `caddy validate`, ruff, mypy and pytest against a Postgres 18 service container. On `main`: rsync, `uv sync --frozen`, `alembic upgrade head`, atomic symlink swap, service restart, and an https smoke test on `/api/health` that asserts the deployed commit, with rollback |
+| Tests      | pytest against a real Postgres, Vitest, and a Playwright scenario that signs in and reloads |
+| CI/deploy  | GitHub Actions — every push: shellcheck, `caddy validate`, ruff, mypy and pytest against a Postgres 18 service container, eslint, `vue-tsc`, Vitest, the generated-schema check, and the end-to-end run. On `main`: build the SPA in CI, rsync it and the backend source, `uv sync --frozen`, `alembic upgrade head`, `sync-permissions`, atomic symlink swap, service restart, and an https smoke test on `/api/health` that asserts the deployed commit, with rollback |
 
 ## Design note: authentication
 
@@ -102,8 +109,17 @@ backend/            the API
   app/cli.py        substate-admin create-user | sync-permissions | prune-tokens
   alembic/          migrations; every table lives in the `admin` schema
   tests/            pytest against a real Postgres, each test inside a transaction that rolls back
-frontend/           Vue 3.5 SPA, built in CI and never on the server        (not yet written)
-deploy/             provisioning script, systemd unit, Caddyfile, and the placeholder page
+  openapi.json      written by `python -m app.openapi`, committed, and the source of the types
+frontend/           Vue 3.5 SPA, built in CI and never on the server
+  src/api/          the fetch wrapper, and schema.d.ts generated from backend/openapi.json
+  src/stores/       auth — the only store; the session, and the questions the guard asks it
+  src/router/       the routes and the guard: closed by default, keyed on permissions
+  src/components/   the pieces the views share, each spending only tokens from docs/design.md
+  src/views/        login, dashboard, not-found
+  src/styles/       tokens.css — docs/design.md as a Tailwind `@theme`, and the only hex values
+  e2e/              the Playwright scenario: sign in, reload, still signed in
+docs/design.md      the design tokens; binding on every colour, size, radius and step
+deploy/             provisioning script, systemd units, and the Caddyfile
 docker-compose.yml  PostgreSQL 18 for local development, and nothing else
 ```
 
@@ -140,8 +156,44 @@ keeping while somebody might still be reading one — reports how many went, and
 client is holding, so running it twice is a no-op. Schedule it once a day from cron or a systemd
 timer rather than from the service, which would sweep once per worker.
 
-The suite wants a database of its own — it deletes users, and it should not be the last thing to
-run against yours:
+Then the SPA, in a second terminal. Node 24, which `.nvmrc` names and `nvm use` reads:
+
+```sh
+cd frontend
+npm ci                                     # package-lock.json exactly; never `npm install`
+npm run dev                                # http://127.0.0.1:5173
+```
+
+Sign in with the account `create-user` just made. The dev server proxies `/api` to the backend on
+port 8000, so the browser sees **one origin** exactly as it does behind Caddy in production. That
+is not tidiness: the refresh cookie is `SameSite=Lax` and scoped to `/api/auth`, and a two-origin
+development setup would exercise cookie rules that never ship and break in production only. It is
+also why there is no `VITE_API_BASE_URL` anywhere in this repository and no CORS middleware
+anywhere in the backend.
+
+The checks, each of which CI runs by the same name:
+
+```sh
+npm run lint                               # eslint
+npm run typecheck                          # vue-tsc --build
+npm run test                               # vitest
+npm run test:e2e                           # playwright: sign in, reload, still signed in
+npm run types                              # regenerate src/api/schema.d.ts
+```
+
+`npm run types` reads `backend/openapi.json`, which the backend writes with `uv run python -m
+app.openapi`. Both files are committed, and CI regenerates both and fails on `git diff
+--exit-code` — a generated file that no longer describes its source is worse than no file at all,
+so run the pair together and commit them together.
+
+`npm run test:e2e` builds the SPA and serves it with `vite preview` behind that same `/api` proxy,
+so the browser sees one origin there too. It needs the API running and an account to sign in as:
+`npx playwright install chromium` once, then either create the account the config expects
+(`e2e@substate-admin.test`, and the password in `frontend/playwright.config.ts`) or point it at
+one of your own with `E2E_EMAIL` and `E2E_PASSWORD`.
+
+The backend suite wants a database of its own — it deletes users, and it should not be the last
+thing to run against yours:
 
 ```sh
 docker compose exec postgres createdb -U postgres substate_admin_test
