@@ -1,19 +1,15 @@
 # CI/CD for substate-admin.
 #
 # This pipeline proves the whole road to production: lint the provisioning script, validate the
-# Caddy config, lint, type-check and test the backend against a real Postgres, then ship it and
-# assert — over the public https URL — that the commit just pushed is the commit being served.
-# A deploy pipeline that is written after the app is a deploy pipeline that has never been wrong
-# yet. This one was wrong before there was an app to blame for it.
+# Caddy config, lint, type-check and test both halves of the application — the backend against a
+# real Postgres, the session through a real browser — then ship it and assert, over the public
+# https URL, that the commit just pushed is the commit being served. A deploy pipeline that is
+# written after the app is a deploy pipeline that has never been wrong yet. This one was wrong
+# before there was an app to blame for it.
 #
-# There is no frontend/ directory yet, so nothing below may reference one. This comment is the
-# seam; there is deliberately no commented-out YAML further down.
-#
-#   When the frontend lands it brings a `frontend` job (npm ci, vue-tsc, eslint, vitest, npm run
-#     build) and an `e2e` job. The "Build the static payload" step below is replaced by a build
-#     in CI plus an rsync of frontend/dist, and deploy/placeholder/ is deleted. The front end is
-#     never built on the server: it is a 2 GB box that also runs Postgres, and a Vite build there
-#     is a real OOM.
+# The SPA is built here and never on the server. That box has 2 GB of RAM and also runs Postgres:
+# a Vite build on it is a genuine OOM, and the kernel picks its victim by size, so the process it
+# kills is the database rather than the build.
 
 name: ci
 
@@ -214,9 +210,281 @@ jobs:
       - name: pytest
         run: uv run pytest
 
+  frontend-quality:
+    name: frontend lint, types and generated schema
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # node-version-file rather than a literal version here: .nvmrc is what `nvm use` reads on a
+      # laptop, and a major version written in two places is a major version that gets bumped in
+      # one. The npm cache is keyed on the lockfile, which lives in frontend/ rather than at the
+      # root, so the path has to be spelled out.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci`, never `npm install`. It installs package-lock.json exactly and fails when the
+      # lock and package.json disagree, where `install` would resolve something new, rewrite the
+      # lock inside the runner and check a dependency set that exists nowhere else.
+      - name: Install the frontend
+        working-directory: frontend
+        run: npm ci
+
+      # Its own step, so the red X says which of the two it was — the same reason `ruff check` and
+      # `ruff format --check` are two steps in the backend job. eslint is a rule to argue with;
+      # vue-tsc is a type that is wrong.
+      - name: eslint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: vue-tsc
+        working-directory: frontend
+        run: npm run typecheck
+
+      # The type-drift check needs the backend, because the question it asks is about the backend.
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+            | env UV_INSTALL_DIR="$HOME/.local/bin" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install the backend
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv python install
+          uv sync --frozen
+
+      # backend/openapi.json and frontend/src/api/schema.d.ts are committed so that the type check
+      # needs no running server — a generator that required the API to be up could not run in the
+      # job that decides whether the API is correct. The whole worth of a committed generated file
+      # is that it still describes its source, and this is the step that keeps that true: both are
+      # regenerated from scratch and any difference is a failure.
+      #
+      # `git ls-files --error-unmatch` first, because `git diff` says nothing at all about a file
+      # git is not tracking. Without it, a schema that was generated but never committed would
+      # sail through this check as silently as a schema that matched.
+      - name: Regenerate the schema and its types
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch backend/openapi.json frontend/src/api/schema.d.ts > /dev/null
+          (cd backend && uv run python -m app.openapi)
+          (cd frontend && npm run types)
+          if ! git diff --exit-code -- backend/openapi.json frontend/src/api/schema.d.ts; then
+            echo "::error::the committed schema is not the one this backend serves; regenerate it with 'uv run python -m app.openapi' in backend/ and 'npm run types' in frontend/, then commit both"
+            exit 1
+          fi
+          echo "the committed schema and types match the backend"
+
+  frontend-tests:
+    name: frontend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # The same clock as everything else in this system. A component that formats a timestamp
+      # would otherwise pass or fail depending on where the runner happened to be.
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install the frontend
+        working-directory: frontend
+        run: npm ci
+
+      # `vitest run`, and deliberately without --passWithNoTests: a suite that stops being found —
+      # a moved directory, an `include` pattern that no longer matches — must be a red job and not
+      # a green one reporting nothing.
+      - name: vitest
+        working-directory: frontend
+        run: npm run test
+
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+      # Its own database. The pytest suite deletes users, this one creates one and signs in as it,
+      # and two jobs sharing a database would take turns explaining each other's failures.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/substate_admin_e2e
+      # Not production: this run wants /api/docs available and wants nothing hidden. It changes no
+      # route the scenario touches.
+      APP_ENV: development
+      # The browser reaches the site over http://127.0.0.1, and a Secure cookie is simply not
+      # stored on a plain-http origin. Left at its default the login would succeed and the reload —
+      # the entire point of this scenario — would fail, and it would look like a bug in refresh.
+      COOKIE_SECURE: "false"
+      # The account the scenario signs in as. Its password is minted below, per run.
+      E2E_EMAIL: e2e@substate-admin.test
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substate_admin_e2e
+          # The production locale, for the same reason as the backend job: the locale provider
+          # decides collation, and collation decides what `ORDER BY email` means.
+          POSTGRES_INITDB_ARGS: "--locale-provider=builtin --builtin-locale=C.UTF-8 --encoding=UTF8"
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substate_admin_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+            | env UV_INSTALL_DIR="$HOME/.local/bin" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install the backend
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv python install
+          uv sync --frozen
+
+      # Minted here, never written down. A signing key committed to a public repository is a
+      # signing key, whatever the file it sits in claims to be for.
+      #
+      # The password matters for a second reason: Playwright records what it types into a field,
+      # and the trace uploaded when this job fails is a public artifact. A value that exists for
+      # one run of one throwaway database is a value that leak cannot spend. `add-mask` keeps all
+      # three out of the log even if some step decides to echo its environment.
+      - name: Mint the secrets this run needs
+        run: |
+          set -euo pipefail
+          jwt_secret="$(openssl rand -hex 32)"
+          pepper="$(openssl rand -hex 32)"
+          # tr strips the base64 characters that would need quoting in a shell or a URL; what is
+          # left is still 20-odd random characters, comfortably past the 12 the policy demands.
+          password="$(openssl rand -base64 24 | tr -d '/+=')"
+          echo "::add-mask::$jwt_secret"
+          echo "::add-mask::$pepper"
+          echo "::add-mask::$password"
+          {
+            echo "JWT_SECRET=$jwt_secret"
+            echo "IP_HASH_PEPPER=$pepper"
+            echo "E2E_PASSWORD=$password"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the database
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv run --frozen alembic upgrade head
+          uv run --frozen substate-admin sync-permissions
+
+      # The password arrives on stdin, exactly as it does on the server: `create-user` prompts on
+      # a terminal and reads one line when piped, so no secret is ever an argument in /proc or a
+      # line in the log. `admin` because the dashboard the scenario lands on lists the permissions
+      # the account holds, and an account holding none would prove the page renders and nothing
+      # else.
+      - name: Create the account the scenario signs in as
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$E2E_PASSWORD" \
+            | uv run --frozen substate-admin create-user --email "$E2E_EMAIL" --role admin
+
+      # nohup and a redirect to a file, not to the step's stdout: a background process still
+      # holding that pipe keeps the runner waiting on a step that has already finished, and the
+      # job hangs until it times out.
+      #
+      # The wait is on /api/health, which answers 200 only after a real SELECT 1 — so this step
+      # ending means the API is up AND has a database, and a failure in the scenario below cannot
+      # be either of those.
+      - name: Start the API
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          nohup uv run --frozen uvicorn app.main:app \
+            --host 127.0.0.1 --port 8000 --no-access-log \
+            > "$RUNNER_TEMP/uvicorn.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8000/api/health > /dev/null; then
+              echo "the API answered on attempt $attempt"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the API never answered on 127.0.0.1:8000"
+          cat "$RUNNER_TEMP/uvicorn.log"
+          exit 1
+
+      - name: Install the frontend
+        working-directory: frontend
+        run: npm ci
+
+      # Chromium alone, with its system libraries. This scenario is about cookies and navigation,
+      # not rendering, and a browser matrix would triple the slowest job in the pipeline to
+      # re-prove the same thing.
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # `npm run test:e2e` builds the SPA and serves it with `vite preview` behind the same /api
+      # proxy the dev server uses, so the browser sees ONE origin exactly as it does behind Caddy
+      # in production — which is what makes the refresh cookie's SameSite=Lax and its
+      # Path=/api/auth scope mean here what they mean there. All of that lives in
+      # frontend/playwright.config.ts and frontend/vite.config.ts, so the command a laptop runs is
+      # the command this line runs.
+      - name: Playwright
+        working-directory: frontend
+        run: npm run test:e2e
+
+      # The API's own log, on failure only. A scenario that fails because the backend threw looks
+      # from the browser's side like a page that did not change, and this is the difference.
+      - name: The API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/uvicorn.log" || true
+
+      # The trace is the point of the retry: `trace: 'on-first-retry'` records nothing on the
+      # first attempt, so without an artifact a flake leaves no evidence at all. The report goes
+      # up with it because the trace viewer is useless without knowing which test it belongs to.
+      - name: Upload the trace
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-trace
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
   deploy:
     name: deploy
-    needs: [shell, config, backend-quality, backend-tests]
+    needs: [shell, config, backend-quality, backend-tests, frontend-quality, frontend-tests, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     # Longer than the static deploy needed: `uv sync` on the far side downloads and installs a
@@ -244,6 +512,32 @@ jobs:
       # nobody deployed.
       - name: Compute the release id
         run: echo "RELEASE=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The SPA is built here, in the job that ships it, and never on the server: 2 GB of RAM
+      # shared with Postgres is an OOM waiting for a `vite build`, and the process the kernel picks
+      # is the database rather than the build — a deploy that takes the site down instead of merely
+      # failing.
+      #
+      # Nothing is substituted into the page. The release id it would carry is a string in a file
+      # nobody reads; the thing that has to be the new release is the API process, and the smoke
+      # check reads its commit from /api/health.
+      - name: Build the SPA
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          # Caddy answers every unmatched path with this file. Without it the site is a 404 on
+          # every route, and the API smoke check further down would still pass — a green deploy
+          # over a site nobody can open.
+          test -f dist/index.html
+          echo "built $(find dist -type f | wc -l) files for release $RELEASE"
 
       # StrictHostKeyChecking stays at `yes`. With `=no` ssh accepts whatever key answers on the
       # far end, which turns a hijacked DNS record or a recycled IP into a machine that receives
@@ -289,24 +583,6 @@ jobs:
           ssh target true
           echo "ssh: authenticated against the pinned host key"
 
-      # A placeholder until the frontend exists: this step is then replaced by a build in the
-      # frontend job and an rsync of frontend/dist, and the substitution below goes with it —
-      # the API's own /api/health is what the smoke check reads.
-      - name: Build the static payload
-        run: |
-          set -euo pipefail
-          mkdir -p payload
-          sed "s/__COMMIT__/${RELEASE}/g" deploy/placeholder/index.html > payload/index.html
-          if grep -q '__COMMIT__' payload/index.html; then
-            echo "::error::__COMMIT__ survived substitution"
-            exit 1
-          fi
-          grep -q "$RELEASE" payload/index.html || {
-            echo "::error::the built page does not contain the release sha"
-            exit 1
-          }
-          echo "payload built for release $RELEASE"
-
       # --rsync-path creates the release directory on the far side, so this needs no extra ssh
       # round trip. Explicit --chmod so the result does not depend on the runner's umask; Caddy
       # runs as its own user and only ever needs to read.
@@ -316,10 +592,13 @@ jobs:
           web="$DEPLOY_ROOT/releases/$RELEASE/web"
           api="$DEPLOY_ROOT/releases/$RELEASE/api"
 
+          # The built SPA, as built. --delete matters more here than anywhere else in this file:
+          # Vite content-hashes every filename, so an upload that only added files would leave the
+          # chunks of every previous release lying in the directory forever.
           rsync -az --delete --chmod=D755,F644 \
             --rsync-path="mkdir -p '$web' && rsync" \
             -e ssh \
-            payload/ "target:$web/"
+            frontend/dist/ "target:$web/"
 
           # The backend goes up as source and is installed on the far side: a .venv built on this
           # runner would be the right packages compiled for the wrong machine. The excluded paths
