@@ -10,6 +10,20 @@
  * has to remember into one the build enforces.
  */
 
+/* The faces docs/design.md names, self-hosted so nothing depends on a font CDN being reachable —
+ * and the Content-Security-Policy this ships under would refuse one anyway. Only the two weights
+ * the design allows: 400 and 500. Anything heavier reads heavy on these surfaces, and shipping
+ * cuts nobody uses is bytes a visitor pays for. Latin only, for the same reason: the interface
+ * is English and the unsubsetted import ships cyrillic, greek and vietnamese as well.
+ *
+ * Declared as dependencies and imported nowhere is the failure mode this replaces: the fallback
+ * stack renders, nothing looks broken, and the whole Typography section is quietly unimplemented.
+ * frontend-quality greps the built CSS for @font-face because no other check can see it. */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+
 @import 'tailwindcss';
 
 @theme {
@@ -95,6 +109,13 @@
   --spacing-6: 24px;
   --spacing-8: 32px;
   --spacing-12: 48px;
+
+  /* The vertical padding of a fact label — a permission code, a tag, a count. docs/design.md
+   * specifies `3px 8px` for it, and 3px is deliberately not a step of the spacing scale: the chip
+   * is not laid out against the grid, it is sized to sit on one line of 12px text. 8px is
+   * `--spacing-2` and needs nothing new; 3px is named here rather than written as an arbitrary
+   * value inside the component, so the number still exists in exactly one place. */
+  --spacing-chip-y: 3px;
 
   /* --- Layout --- */
   --spacing-sidebar: 240px;
