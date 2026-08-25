@@ -1,0 +1,146 @@
+/* Design tokens, transcribed from docs/design.md.
+ *
+ * This file is the only place a hex value, a radius or a step of the spacing scale is written
+ * down. A component that needs one takes it from here; a component that needs one that is not
+ * here is a gap in docs/design.md, and it gets fixed there first.
+ *
+ * The spacing scale is deliberately CLOSED. Tailwind would otherwise synthesise every multiple of
+ * its base, so `p-5` would silently mean 20px — a value docs/design.md does not have. Clearing the
+ * namespace and naming the seven allowed steps turns "no value off this scale" from a rule someone
+ * has to remember into one the build enforces.
+ */
+
+@import 'tailwindcss';
+
+@theme {
+  /* --- Surfaces. Three, and no fourth: a fourth level means the layout is nested too deep. --- */
+  --color-surface-0: #111820;
+  --color-surface-1: #18212b;
+  --color-surface-2: #1f2a36;
+  --color-border: #263241;
+  --color-border-strong: #32414f;
+
+  /* --- Text. Never dimmed with opacity: opacity multiplies against whatever is behind it and
+         drifts between surfaces, while these three hold their contrast everywhere. --- */
+  --color-text-primary: #e3eaf2;
+  --color-text-secondary: #a9b8c7;
+  --color-text-muted: #7c8b9c;
+
+  /* --- Accent. One, blue, quiet on purpose, and at most one filled element per screen. --- */
+  --color-accent-fill: #2c5f87;
+  --color-accent-fill-hover: #34719f;
+  --color-on-accent: #e8f1f8;
+  --color-accent-text: #5f94bf;
+  --color-accent-bg: #1b3549;
+
+  /* --- Controls. Inputs are recessed into a panel, buttons are raised out of it; an input laid
+         straight on the page background would match it and survive as a rectangle of border.
+         The disabled pair is neutral, not accent-tinted: an outlined button and a text field get
+         disabled too, and neither has an accent fill to dim. --- */
+  --color-fill-disabled: #1e2831;
+  --color-text-disabled: #566472;
+
+  /* --- Loading. The pulse runs between these two fills, never through opacity, for the same
+         reason text is never dimmed with it. --- */
+  --color-skeleton-base: #1f2a36;
+  --color-skeleton-highlight: #26313d;
+
+  /* --- Subscription states. Five that must be told apart out of the corner of the eye:
+         GRACE is someone to call today, EXPIRED is over and done. --- */
+  --color-state-trial-bg: #2c2550;
+  --color-state-trial-text: #c2b4f5;
+  --color-state-active-bg: #123b2c;
+  --color-state-active-text: #6ed9a8;
+  --color-state-grace-bg: #43300d;
+  --color-state-grace-text: #f3be5e;
+  --color-state-expired-bg: #242f3b;
+  --color-state-expired-text: #8c9bab;
+  --color-state-cancelled-bg: #43202d;
+  --color-state-cancelled-text: #f08fa8;
+
+  /* --- Semantic roles. success and warning share with ACTIVE and GRACE on purpose; danger does
+         NOT share with CANCELLED, so a destructive dialog never reads as a cancelled row. --- */
+  --color-success-bg: #123b2c;
+  --color-success-text: #6ed9a8;
+  --color-success-border: #1d5b44;
+  --color-warning-bg: #43300d;
+  --color-warning-text: #f3be5e;
+  --color-warning-border: #6b4e15;
+  --color-danger-bg: #47211f;
+  --color-danger-text: #f0837e;
+  --color-danger-border: #6e3330;
+
+  /* --- Typography. Two families, two weights: 600 and above reads heavy on these surfaces. --- */
+  --font-ui: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --text-caption: 12px;
+  --text-dense: 13px;
+  --text-ui: 14px;
+  --text-heading: 16px;
+  --text-title: 20px;
+
+  /* --- Radii. 999px is for state chips and nothing else. --- */
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-card: 12px;
+  --radius-chip: 999px;
+
+  /* --- Spacing: 4 · 8 · 12 · 16 · 24 · 32 · 48, and nothing between. --- */
+  --spacing-*: initial;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+
+  /* --- Layout --- */
+  --spacing-sidebar: 240px;
+}
+
+/* The loading pulse. Between two fills rather than through opacity, and slower than the 200ms
+ * ceiling that governs state transitions — a skeleton held to that would strobe. */
+@keyframes skeleton-pulse {
+  from {
+    background-color: var(--color-skeleton-base);
+  }
+  to {
+    background-color: var(--color-skeleton-highlight);
+  }
+}
+
+@utility skeleton {
+  background-color: var(--color-skeleton-base);
+  animation: skeleton-pulse 1.6s ease-in-out infinite alternate;
+}
+
+/* Someone who has asked for less motion still needs to see that something is pending, so the
+ * placeholder stays — it simply stops moving. Written as a plain rule rather than a second
+ * `@utility`: Tailwind registers utilities at the top level only, and nesting one inside a media
+ * query is silently not a utility at all. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* Focus, from the Floor section: visible everywhere, one description, no per-component variants. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent-text);
+    outline-offset: 2px;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-surface-0);
+    color: var(--color-text-primary);
+    font-family: var(--font-ui);
+    font-size: var(--text-ui);
+  }
+}
