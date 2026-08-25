@@ -56,8 +56,22 @@ have something to be recessed *into*.
 
 | Token | Value | Where |
 |---|---|---|
+| `--control-border` | `#5D6E80` | the boundary of anything a person operates |
 | `--fill-disabled` | `#1E2831` | any control that cannot be used |
 | `--text-disabled` | `#566472` | its label |
+
+`--control-border` is separate from `--border-strong` and replaces it on every control. A field's
+border is not decoration here: its fill is `--surface-0` and the panel around it is `--surface-1`,
+which differ by 1.09:1, so the border is the entire visual evidence that a field exists. It is
+measured against both — 3.39:1 on the fill, 3.10:1 on the panel — because a boundary that is only
+visible from one side is only half a boundary.
+
+`--border-strong` keeps the work that does not carry that weight: a panel's hover, a divider
+inside a control. Nothing depends on seeing it.
+
+Yes, fields are more visible than a mockup would draw them. That is the correct direction: on a
+dark interface the temptation is to let controls dissolve into the surface, and a field nobody can
+find is not restrained, it is broken.
 
 **An input always sits inside a `--surface-1` container or higher.** Its own fill is
 `--surface-0`, so it reads as a well cut into the panel around it. Laid directly on the page
@@ -67,7 +81,7 @@ practically invisible. If a form has nowhere to live, the answer is a panel, not
 | Part | Token |
 |---|---|
 | fill | `--surface-0` |
-| border | `--border-strong` |
+| border | `--control-border` |
 | text | `--text-primary` |
 | placeholder | `--text-muted` |
 | border, in error | the `danger` role's border |
@@ -100,7 +114,7 @@ shades of one colour, the table has stopped working.
 | `EXPIRED` | `#242F3B` | `#8C9BAB` |
 | `CANCELLED` | `#43202D` | `#F08FA8` |
 
-Chips: `12px`, radius `999px`, padding `2px 9px`, no border, no uppercase
+Chips: `12px`, radius `999px`, padding `3px 9px`, no border, no uppercase
 transform — the state names are already uppercase in the domain.
 
 **The round shape belongs to these five and to nothing else.** It is how a subscription state is
@@ -115,7 +129,7 @@ different object and looks like one:
 | text | `--text-secondary` |
 | radius | `6px` |
 | size | `12px`, mono |
-| padding | `3px 8px` |
+| padding | `3px 9px` |
 
 Mono because these are compared down a column: `subscribers.read` against `subscribers.write` is
 a comparison of endings, and proportional letterforms make two codes of the same length look
@@ -128,6 +142,23 @@ different lengths.
 | success | `#123B2C` | `#6ED9A8` | `#1D5B44` |
 | warning | `#43300D` | `#F3BE5E` | `#6B4E15` |
 | danger | `#47211F` | `#F0837E` | `#6E3330` |
+
+### Inline notice
+
+One shape for all three roles. A login error, an expired-session banner and a failed panel are the
+same object wearing different colours, and three different shapes would say they are not.
+
+| Part | Value |
+|---|---|
+| radius | `6px` |
+| padding | `8px 12px` |
+| border | `1px`, the role's border colour |
+| background | the role's background |
+| text | the role's text colour, `13px` |
+| icon | optional, `14px`, the role's text colour |
+
+Width follows the container, never `--width-reading`: a notice belongs to the thing it is about, and
+one that is narrower than the panel it sits in reads as unrelated to it.
 
 Success and warning deliberately share their colours with `ACTIVE` and `GRACE`:
 green is good and amber wants attention in both registers.
@@ -169,6 +200,11 @@ Base 4. The whole scale: `4 · 8 · 12 · 16 · 24 · 32 · 48`. No value off th
 scale, and no `13px` because something looked slightly off — that means the wrong
 step was chosen next to it.
 
+The one exception, named here so it does not have to be argued again: **the padding inside a chip
+is set optically from the type, not from this grid.** A chip is a box drawn around a single line
+of 12px text, and its breathing room is a property of that line rather than of the layout it sits
+in — `3px 9px` for both the state chips and the fact labels. Nothing else may leave the scale.
+
 | Radius | Where |
 |---|---|
 | `6px` | buttons, inputs, small controls |
@@ -182,19 +218,31 @@ A block that is waiting for data shows its own shape, not a spinner in the middl
 
 | Token | Value |
 |---|---|
-| `--skeleton-base` | `#1F2A36` |
-| `--skeleton-highlight` | `#26313D` |
+| `--skeleton-base` | `#3A4757` |
+| `--skeleton-highlight` | `#47566A` |
 
 The pulse runs `1.6s ease-in-out alternate` **between the two fills**, never through `opacity` —
 for the reason the text section already gives: opacity multiplies against whatever is behind it
 and drifts between surfaces.
 
-Under `prefers-reduced-motion` the skeleton does not pulse. It stays flat on `--skeleton-base`,
-which is still visibly a placeholder.
+Under `prefers-reduced-motion` the skeleton does not pulse. It stays flat on `--skeleton-base`
+**and gains a `1px` outline in `--control-border`**, which is what makes it visible rather than
+what makes it pretty: with the motion gone, the fill alone is 1.72:1 against the panel, and the
+outline is 3.10:1 against that same panel. The earlier version of this paragraph asserted the flat
+fill "is still visibly a placeholder", which was not true and was never measured — a reader who
+had asked for less motion got an apparently empty panel instead of a loading one.
 
 ## Layout
 
 Sidebar `240px`, fixed. Content fills the rest with `24px` page padding.
+
+| Token | Value | Where |
+|---|---|---|
+| `--width-form` | `400px` | the login form, narrow forms, dialogs without a table |
+| `--width-reading` | `672px` | reading text, empty states, explanations of an error |
+
+Two widths, because a form and a paragraph want different measures and everything else was going
+to invent its own. Tables have no maximum width, which is said below.
 
 Tables are the widest thing in the application and are allowed to be: no content
 max-width, horizontal scroll on the table container rather than truncation of
@@ -220,6 +268,37 @@ default and they read as such:
 
 Judge new screens against this list before adding anything decorative.
 
+## What the build enforces
+
+A design document that does not say which of its rules a machine checks is followed halfway within
+a month, and nobody can tell which half. So:
+
+**The build refuses these.** They are not conventions, they are compile errors.
+
+| Rule | How |
+|---|---|
+| no colour outside this file | Tailwind's `--color-*` namespace is cleared; `bg-red-500` does not exist |
+| no radius outside this file | `--radius-*` cleared; only control, panel, card and chip resolve |
+| no type size outside this file | `--text-*` cleared; only the five named sizes resolve |
+| no width outside this file | `--container-*` cleared; only `--width-form` and `--width-reading` resolve |
+| no spacing step outside the scale | `--spacing-*` cleared; `p-5` does not exist |
+| the round shape is for subscription states only | a CI grep for `rounded-full` outside the state-chip component |
+| the fonts actually ship | CI counts `@font-face` rules in the built CSS |
+| every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
+
+**Nobody checks these but a person.** They are the rules worth reading the diff for.
+
+- at most one filled accent element per screen
+- an input sits inside a `--surface-1` container or higher
+- disabled is for an action that is unavailable, never for one in progress
+- buttons named for what happens, sentence case throughout
+- text dimmed with a token, never with `opacity`
+- a skeleton in the shape of what is coming, not a spinner
+
+`rounded-full` deserves a note: it survives even a cleared `--radius-*`, because Tailwind ships it
+as a static utility rather than deriving it from the theme. The grep is the only thing standing
+between this rule and the first avatar somebody adds.
+
 ## Floor
 
 Not features, not announced anywhere, simply true:
@@ -231,4 +310,41 @@ Not features, not announced anywhere, simply true:
   That ceiling is about transitions BETWEEN states — a hover, a panel opening, a chip changing
   colour. A loading animation is not a transition and keeps its own timing, described under
   Loading; holding it to 200ms would produce a strobe
-- every colour pair above meets WCAG AA for its text size
+- **contrast is a requirement with numbers behind it, not a claim.** Text at any size in this
+  interface needs 4.5:1 — the largest type here is 20px and WCAG's lower bar starts at 24px, so
+  nothing here qualifies for it. The boundary of a control needs 3:1, per 1.4.11.
+
+  Measured, so that the next change to the palette has something to fail against:
+
+  | Pair | Ratio | Needs |
+  |---|---|---|
+  | `--text-primary` on `--surface-1` | 13.41 | 4.5 |
+  | `--text-secondary` on `--surface-1` | 8.03 | 4.5 |
+  | `--text-muted` on `--surface-1` | 4.67 | 4.5 |
+  | `--text-muted` on `--surface-2` | **4.18** | 4.5 — short, see below |
+  | `--accent-text` on `--surface-1` | 5.01 | 4.5 |
+  | `--accent-text` on `--surface-2` | **4.49** | 4.5 — short, see below |
+  | `--on-accent` on `--accent-fill` | 5.94 | 4.5 |
+  | `--on-accent` on `--accent-fill-hover` | 4.58 | 4.5 |
+  | `--control-border` on `--surface-0` | 3.39 | 3.0 |
+  | `--control-border` on `--surface-1` | 3.10 | 3.0 |
+  | `--control-border` on `--surface-2` | **2.78** | 3.0 — short, see below |
+  | `--skeleton-base` on `--surface-1` | 1.72 | carried by motion, or by the outline |
+  | the reduced-motion outline on `--surface-1` | 3.10 | 3.0 |
+  | state chip text on its own fill | 4.78 – 7.49 | 4.5 |
+  | notice text on its own fill | 5.48 – 7.40 | 4.5 |
+  | `--text-disabled` on `--fill-disabled` | 2.47 | exempt: 1.4.11 excludes inactive components |
+
+  A chip's tinted fill, a notice's border and a table hairline are measured by
+  `scripts/contrast.py` and deliberately not required to reach 3:1. None of them is what
+  identifies its component — the text is, and the text is measured above. Holding a state chip's
+  fill to 3:1 against the panel would produce five chips the colour of the page.
+
+  **Three pairs on `--surface-2` are short and are not yet fixed.** Nothing sits on that surface
+  today except the permission chip, whose text is 7.19:1, so nothing is wrong on screen right now
+  — but `--surface-2` is where dialogs, popovers and dropdowns go, and muted text, links and
+  control outlines will all land there. The palette was checked against `--surface-0` and
+  `--surface-1` and never against the surface above them. Darkening `--surface-2` is not the
+  answer: at the value that clears 4.5:1 it sits 1.02:1 from `--surface-1`, so a dialog stops
+  reading as raised and the three-surface system stops meaning anything. Lifting the three tokens
+  is the fix, and that is a palette decision rather than a transcription.

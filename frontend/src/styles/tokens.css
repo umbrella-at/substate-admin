@@ -27,6 +27,22 @@
 @import 'tailwindcss';
 
 @theme {
+  /* Every namespace this file speaks in is CLEARED first, not just spacing. Tailwind otherwise
+   * ships its own palette, radii, type scale and container widths alongside ours, so `bg-red-500`,
+   * `text-lg` and `max-w-5xl` all compile and nothing objects — and the claim that this file is
+   * the only place a value is written becomes false without anyone noticing. Cleared, they are
+   * compile errors instead of review comments.
+   *
+   * `rounded-full` survives this and needs a grep in CI: Tailwind ships it as a static utility
+   * rather than deriving it from --radius-*, so the round shape reserved for the five subscription
+   * states is reachable from any component with no build-time objection. */
+  --color-*: initial;
+  --radius-*: initial;
+  --text-*: initial;
+  --container-*: initial;
+  --font-*: initial;
+  --spacing-*: initial;
+
   /* --- Surfaces. Three, and no fourth: a fourth level means the layout is nested too deep. --- */
   --color-surface-0: #111820;
   --color-surface-1: #18212b;
@@ -47,17 +63,21 @@
   --color-accent-text: #5f94bf;
   --color-accent-bg: #1b3549;
 
-  /* --- Controls. Inputs are recessed into a panel, buttons are raised out of it; an input laid
-         straight on the page background would match it and survive as a rectangle of border.
+  /* --- Controls. A field's fill is surface-0 and the panel around it is surface-1, and those two
+         differ by 1.09:1 — so this border is the entire visual evidence that a field exists, and
+         it is measured from both sides: 3.39:1 on the fill, 3.10:1 on the panel. --border-strong
+         keeps only the work nothing depends on seeing.
          The disabled pair is neutral, not accent-tinted: an outlined button and a text field get
          disabled too, and neither has an accent fill to dim. --- */
+  --color-control-border: #5d6e80;
   --color-fill-disabled: #1e2831;
   --color-text-disabled: #566472;
 
   /* --- Loading. The pulse runs between these two fills, never through opacity, for the same
-         reason text is never dimmed with it. --- */
-  --color-skeleton-base: #1f2a36;
-  --color-skeleton-highlight: #26313d;
+         reason text is never dimmed with it. Flat, the base is 1.72:1 against a panel, which is
+         why the reduced-motion path adds an outline instead of relying on the fill. --- */
+  --color-skeleton-base: #3a4757;
+  --color-skeleton-highlight: #47566a;
 
   /* --- Subscription states. Five that must be told apart out of the corner of the eye:
          GRACE is someone to call today, EXPIRED is over and done. --- */
@@ -101,7 +121,6 @@
   --radius-chip: 999px;
 
   /* --- Spacing: 4 · 8 · 12 · 16 · 24 · 32 · 48, and nothing between. --- */
-  --spacing-*: initial;
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -117,8 +136,18 @@
    * value inside the component, so the number still exists in exactly one place. */
   --spacing-chip-y: 3px;
 
-  /* --- Layout --- */
+  /* --- Layout. Two measures, because a form and a paragraph want different ones and everything
+         else was going to invent its own. Tables deliberately have no maximum. --- */
   --spacing-sidebar: 240px;
+  --container-form: 400px;
+  /* Not `prose`: Tailwind ships a static `max-w-prose` of 65ch that shadows the theme value,
+     so the token would be silently ignored and the width would be whatever 65ch happens to be. */
+  --container-reading: 672px;
+
+  /* The one value off the spacing scale, and design.md names it as the exception: the padding
+     inside a chip is set optically from its 12px line rather than from the layout grid. */
+  --spacing-chip-x: 9px;
+  --spacing-chip-y: 3px;
 }
 
 /* The loading pulse. Between two fills rather than through opacity, and slower than the 200ms
@@ -143,7 +172,12 @@
  * query is silently not a utility at all. */
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
+    /* With the motion gone the fill alone is 1.72:1 against the panel, which is not visible. The
+     * outline is 3.10:1 against that same panel and is what makes the placeholder a placeholder
+     * for a reader who asked for less movement. */
     animation: none;
+    outline: 1px solid var(--color-control-border);
+    outline-offset: -1px;
   }
 }
 

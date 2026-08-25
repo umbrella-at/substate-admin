@@ -17,7 +17,7 @@ defineProps<{ code: string }>()
 
 <template>
   <span
-    class="inline-block rounded-control bg-surface-2 px-2 py-chip-y text-caption font-numeric text-text-secondary"
+    class="inline-block rounded-control bg-surface-2 px-chip-x py-chip-y text-caption font-numeric text-text-secondary"
   >
     {{ code }}
   </span>

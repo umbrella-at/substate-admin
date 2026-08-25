@@ -21,6 +21,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
+import AppNotice from '@/components/AppNotice.vue'
 import AppInput from '@/components/AppInput.vue'
 import { safeNext } from '@/router'
 import { useAuthStore } from '@/stores/auth'
@@ -149,7 +150,7 @@ async function submit(): Promise<void> {
     <!-- The panel is what the inputs are recessed into. Without it their surface-0 fill would meet
          the surface-0 page and each field would survive as a rectangle of border. -->
     <form
-      class="w-full max-w-sm rounded-panel border border-border bg-surface-1 p-6"
+      class="w-full max-w-form rounded-panel border border-border bg-surface-1 p-6"
       novalidate
       @submit.prevent="submit"
     >
@@ -188,14 +189,9 @@ async function submit(): Promise<void> {
 
       <!-- role="alert" so the sentence is spoken when it appears, rather than sitting there for
            anyone who happens to move the caret back over the form. -->
-      <p
-        v-if="message !== ''"
-        :id="ERROR_ID"
-        class="mt-4 rounded-control border border-danger-border bg-danger-bg px-3 py-2 text-ui text-danger-text"
-        role="alert"
-      >
+      <AppNotice v-if="message !== ''" :id="ERROR_ID" class="mt-4" assertive>
         {{ message }}
-      </p>
+      </AppNotice>
 
       <!-- The one filled element on this screen. Its colours do not change while it waits; the
            label does, and aria-busy says the same thing to a screen reader. -->

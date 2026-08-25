@@ -21,6 +21,7 @@ import { useRouter } from 'vue-router'
 import { ApiError, type MeResponse } from '@/api/client'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
+import AppNotice from '@/components/AppNotice.vue'
 import PermissionChip from '@/components/PermissionChip.vue'
 import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import { signOut } from '@/session'
@@ -109,7 +110,7 @@ async function onSignOut(): Promise<void> {
     <main class="p-6">
       <h1 class="text-title text-text-primary">Dashboard</h1>
 
-      <section class="mt-6 max-w-2xl rounded-panel border border-border bg-surface-1 p-6">
+      <section class="mt-6 max-w-reading rounded-panel border border-border bg-surface-1 p-6">
         <h2 class="text-heading text-text-primary">Your session</h2>
 
         <!-- LOADING. The shape of what is coming, not a spinner in the middle of the page: two
@@ -145,12 +146,7 @@ async function onSignOut(): Promise<void> {
         <!-- ERROR. What happened and what to do about it. Not an apology, and not "something went
              wrong": the person cannot act on a sentence that does not say what failed. -->
         <template v-else-if="isError">
-          <div
-            class="mt-4 rounded-control border border-danger-border bg-danger-bg px-3 py-2 text-ui text-danger-text"
-            role="alert"
-          >
-            {{ failure }}
-          </div>
+          <AppNotice class="mt-4" assertive>{{ failure }}</AppNotice>
           <p class="mt-3 text-ui text-text-secondary">
             Your session is still valid — only this panel failed to load.
           </p>

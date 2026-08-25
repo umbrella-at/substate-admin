@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 
 <template>
   <main class="grid min-h-screen place-items-center p-6">
-    <div class="max-w-[420px] text-center">
+    <div class="max-w-reading text-center">
       <h1 class="text-title text-text-primary">That page is not here</h1>
       <p class="mt-2 text-ui text-text-secondary">
         The address may have changed, or it may never have existed.

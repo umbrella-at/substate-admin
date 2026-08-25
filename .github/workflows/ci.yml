@@ -283,6 +283,34 @@ jobs:
           fi
           echo "the committed schema and types match the backend"
 
+
+  design:
+    name: design rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      # The font check reads the built CSS, because "the fonts did not load" is the one rule in
+      # docs/design.md that cannot fail visibly: the fallback stack renders and nothing looks wrong.
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Check the design rules
+        run: ./scripts/check-design.sh
   frontend-tests:
     name: frontend tests
     runs-on: ubuntu-24.04
@@ -484,7 +512,7 @@ jobs:
 
   deploy:
     name: deploy
-    needs: [shell, config, backend-quality, backend-tests, frontend-quality, frontend-tests, e2e]
+    needs: [shell, config, design, backend-quality, backend-tests, frontend-quality, frontend-tests, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     # Longer than the static deploy needed: `uv sync` on the far side downloads and installs a
