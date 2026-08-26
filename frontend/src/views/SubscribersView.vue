@@ -30,8 +30,10 @@ import AppNotice from '@/components/AppNotice.vue'
 import SkeletonBlock from '@/components/SkeletonBlock.vue'
 import SubscribersFilters from '@/components/SubscribersFilters.vue'
 import SubscribersTable from '@/components/SubscribersTable.vue'
+import WorldNotBuilt from '@/components/WorldNotBuilt.vue'
 import TablePager from '@/components/TablePager.vue'
 import { useSubscribers } from '@/composables/useSubscribers'
+import { useWorld } from '@/composables/useWorld'
 import {
   EMPTY_QUERY,
   queryFromRoute,
@@ -48,6 +50,10 @@ const query = computed<SubscriberQuery>(() => queryFromRoute(route.query))
 
 const { rows, total, pageCount, isPending, isError, error, isRefreshing, refetch } =
   useSubscribers(query)
+
+/** Asked once for the whole screen. An empty page of subscribers means two entirely different
+ *  things depending on the answer, and only one of them is a table with nothing in it. */
+const { isUnbuilt: worldIsUnbuilt } = useWorld()
 
 /** The catalogue for the plan filter. Separate from the table's own request because it does not
  *  change when the filters do, and refetching five unchanging rows on every keystroke would be
@@ -104,15 +110,20 @@ const failure = computed(() => {
   <section class="flex flex-col gap-6 p-6">
     <header class="flex flex-col gap-2">
       <h1 class="text-title text-text-primary">Subscribers</h1>
-      <p class="max-w-reading text-ui text-text-secondary">
+      <!-- The sentence describes what is in the table. With no world there is no table, and a
+           description of absent contents is the screen claiming something it cannot show. -->
+      <p v-if="!worldIsUnbuilt" class="max-w-reading text-ui text-text-secondary">
         Everyone in the world this panel is looking at, with the state
         <code class="font-numeric">substate</code> holds for them right now.
       </p>
     </header>
 
-    <!-- The 24px to the table is this section's own `gap-6`. An `mb-6` here as well made it 48,
+    <!-- Hidden when there is no world. Filters over nothing are controls that answer every use
+         with the same emptiness, and a screen that offers them looks half-working rather than
+         broken — which is the confusion this whole change exists to remove.
+         The 24px to the table is this section's own `gap-6`. An `mb-6` here as well made it 48,
          which is the number that arrives when two people each add the gap they think is missing. -->
-    <SubscribersFilters :query="query" :plans="planIds" @change="go" />
+    <SubscribersFilters v-if="!worldIsUnbuilt" :query="query" :plans="planIds" @change="go" />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a
          spinner: five rows of the same height, so the page does not resize when they arrive. -->
@@ -129,6 +140,13 @@ const failure = computed(() => {
       <AppNotice role="danger" assertive>{{ failure }}</AppNotice>
       <AppButton variant="outlined" @click="() => void refetch()">Try again</AppButton>
     </div>
+
+    <!-- A failure, not an empty result, and the difference is the whole point of asking health at
+         all. The request succeeded and returned nothing because there is nothing: the run that
+         builds the world did not finish. Left as the ordinary empty state, this screen reads as a
+         finished panel with no data in it, and a visitor closes the tab having learnt the wrong
+         thing about the demonstration. -->
+    <WorldNotBuilt v-else-if="worldIsUnbuilt" />
 
     <template v-else>
       <div class="flex flex-col gap-4">

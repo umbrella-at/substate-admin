@@ -70,10 +70,24 @@ const PLANS: PlanSummary[] = [
   },
 ]
 
-function render(subscribers: (params: URLSearchParams, signal: AbortSignal) => Promise<unknown>) {
+function health(seeded: boolean) {
+  return {
+    status: 'ok',
+    version: '0.0.0',
+    commit: 'test',
+    db: true,
+    world: { seeded, subscribers: seeded ? 351 : 0, events: seeded ? 3749 : 0 },
+  }
+}
+
+function render(
+  subscribers: (params: URLSearchParams, signal: AbortSignal) => Promise<unknown>,
+  seeded = true,
+) {
   const client = {
     subscribers,
     plans: () => Promise.resolve(PLANS),
+    health: () => Promise.resolve(health(seeded)),
   }
   // Mounted inside the provider the application wraps itself in. The state chip's tooltip is a
   // Reka component whose root refuses to render without one, so a bare mount of this view renders
@@ -185,6 +199,73 @@ describe('the four states are a choice', () => {
     const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
     await flushPromises()
     expect(showing(view)).toEqual({ loading: false, failed: false, table: true })
+    expect(view.text()).toContain('This world has no subscribers yet')
+  })
+})
+
+/**
+ * AN EMPTY ANSWER MEANS TWO DIFFERENT THINGS, AND ONLY ONE OF THEM IS AN EMPTY TABLE.
+ *
+ * The demonstration world is built by running nine months of subscriptions at start-up, wrapped so
+ * that a failure cannot take the service down with it. What that leaves behind is a panel which
+ * signs people in, serves every operator screen, and answers "no subscribers" — a finished product
+ * with nothing in it, rather than a shop window whose display never went up. Somebody meeting it
+ * that way closes the tab having learnt the wrong thing.
+ *
+ * `/api/health` has carried `world.seeded` since the world existed. These are the tests that say
+ * the screen asks.
+ */
+describe('an empty table and an unbuilt world are not the same screen', () => {
+  it('blames the filters when there is a world and the filters emptied it', async () => {
+    routeQuery.value = { state: ['grace'] }
+    const view = render(() => Promise.resolve(page({ items: [], total: 0 })), true)
+    await flushPromises()
+    expect(view.text()).toContain('No subscribers match these filters')
+    expect(view.text()).not.toContain('was not built')
+    expect(view.text()).toContain('Clear filters')
+  })
+
+  it('says the world was not built when it was not', async () => {
+    const view = render(() => Promise.resolve(page({ items: [], total: 0 })), false)
+    await flushPromises()
+    expect(view.text()).toContain('The demonstration world was not built.')
+    expect(view.text()).not.toContain('No subscribers match these filters')
+    expect(view.text()).not.toContain('has no subscribers yet')
+  })
+
+  // The failure is not a filtered view of anything, so the controls that narrow it go with the
+  // table. Offering them would be offering an action whose every outcome is the same emptiness.
+  it('offers no filters over a world that does not exist', async () => {
+    const view = render(() => Promise.resolve(page({ items: [], total: 0 })), false)
+    await flushPromises()
+    expect(view.find('form').exists()).toBe(false)
+    expect(view.find('table').exists()).toBe(false)
+  })
+
+  // The claim needs evidence. A health request still in flight, or one that failed outright, is
+  // not an answer saying the world is missing — and putting the failure on screen without one
+  // would be the same lie in the other direction.
+  it('says nothing about the world until health has answered', async () => {
+    const client = {
+      subscribers: () => Promise.resolve(page({ items: [], total: 0 })),
+      plans: () => Promise.resolve(PLANS),
+      health: () => new Promise(() => {}),
+    }
+    const view = mount(TooltipProvider, {
+      slots: { default: () => h(SubscribersView) },
+      global: {
+        plugins: [
+          [
+            VueQueryPlugin,
+            { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+          ],
+        ],
+        provide: { [apiClientKey as symbol]: client },
+        stubs: { RouterLink: RouterLinkStub },
+      },
+    })
+    await flushPromises()
+    expect(view.text()).not.toContain('was not built')
     expect(view.text()).toContain('This world has no subscribers yet')
   })
 })

@@ -16,6 +16,7 @@ export type MeResponse = components['schemas']['MeResponse']
 export type SubscriberPage = components['schemas']['SubscriberPage']
 export type SubscriberDetail = components['schemas']['SubscriberDetail']
 export type PlanSummary = components['schemas']['PlanSummary']
+export type HealthResponse = components['schemas']['HealthResponse']
 /** The three things asking for a new access token can mean, and they must stay three. Collapsing
  *  the last two into one boolean is what turns a two-second deploy restart into every open tab
  *  being signed out of a session the server still considers perfectly valid. */
@@ -199,6 +200,10 @@ export function createClient(hooks: ClientHooks) {
       request<SubscriberPage>(`${BASE}/subscribers?${params.toString()}`, { signal }),
 
     plans: (signal?: AbortSignal) => request<PlanSummary[]>(`${BASE}/plans`, { signal }),
+
+    // Public, and deliberately not behind the session: it is the one endpoint that can be asked
+    // whether the demonstration has anything to show before anybody has signed in.
+    health: (signal?: AbortSignal) => request<HealthResponse>(`${BASE}/health`, { signal }),
 
     subscriber: (userId: string, signal: AbortSignal) =>
       request<SubscriberDetail>(`${BASE}/subscribers/${encodeURIComponent(userId)}`, { signal }),

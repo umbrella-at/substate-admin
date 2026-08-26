@@ -245,6 +245,16 @@ test.describe('the subscriber table', () => {
     await expect(page).toHaveURL(/\/subscribers$/)
   })
 
+  // The other half of "empty": the world is there and the filters emptied it. Asserted beside the
+  // unbuilt-world scenario so that the two screens cannot quietly become one — a route that showed
+  // the same words for both would pass whichever of them was written first.
+  test('an empty result blames the filters, not the world', async () => {
+    await page.getByLabel('Search').fill('zzzzz-nobody-has-this-name')
+    await expect(page.getByText('No subscribers match these filters.')).toBeVisible()
+    await expect(page.getByText('The demonstration world was not built.')).toHaveCount(0)
+    await expect(page.locator('form')).toBeVisible()
+  })
+
   test('an empty result says the filters caused it and offers to clear them', async () => {
     await page.getByLabel('Search').fill('zzzzz-nobody-has-this-name')
     await expect(page.getByText('No subscribers match these filters.')).toBeVisible()
