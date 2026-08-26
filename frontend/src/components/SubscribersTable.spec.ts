@@ -96,11 +96,15 @@ describe('the subscriber table', () => {
     ])
   })
 
-  // The header still does something, and what it does is the thing the column is for.
-  it('sends a category header to its filter instead', () => {
+  // Nothing to click, so nothing that looks clickable. These were briefly links to the filter
+  // panel, which scrolled the page a hundred pixels, put nothing new on screen, and read as a
+  // control that had broken.
+  it('leaves a category header inert', () => {
     const headers = render().findAll('th')
-    expect(headers.at(1)?.find('a').attributes('href')).toBe('#filter-state')
-    expect(headers.at(2)?.find('a').attributes('href')).toBe('#filter-plan')
+    expect(headers.at(1)?.find('a').exists()).toBe(false)
+    expect(headers.at(2)?.find('a').exists()).toBe(false)
+    expect(headers.at(1)?.text()).toBe('State')
+    expect(headers.at(2)?.text()).toBe('Plan')
   })
 
   // aria-sort says the table is ordered by this column. Plan can never be that column, and

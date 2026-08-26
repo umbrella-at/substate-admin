@@ -236,7 +236,7 @@ describe('the address bar', () => {
     const view = render(() => Promise.resolve(page()))
     await flushPromises()
 
-    await view.findAll('input[type="checkbox"]')[0]?.trigger('change')
+    await view.findAll('[data-slot="checkbox"]')[0]?.trigger('click')
     expect(push).toHaveBeenCalled()
     expect(push.mock.calls[0]?.[0]?.query).not.toHaveProperty('page')
   })
@@ -327,12 +327,10 @@ describe('the address bar', () => {
     const view = render(() => Promise.resolve(page()))
     await flushPromises()
 
-    const control = view
-      .findAll('label')
-      .find((label) => label.text().includes('Most urgent first'))
+    const control = view.findAll('button').find((button) => button.text() === 'Sort by urgency')
     expect(control).toBeDefined()
 
-    await control?.find('input[type="checkbox"]').trigger('change')
+    await control?.trigger('click')
     expect(push).toHaveBeenCalled()
     expect(push.mock.calls[0]?.[0]?.query).toMatchObject({ sort: 'state' })
   })
@@ -342,10 +340,10 @@ describe('the address bar', () => {
     const view = render(() => Promise.resolve(page()))
     await flushPromises()
 
-    const control = view
-      .findAll('label')
-      .find((label) => label.text().includes('Most urgent first'))
-    await control?.find('input[type="checkbox"]').trigger('change')
+    // The button says what it did, not what it will do, once it is on.
+    const control = view.findAll('button').find((button) => button.text() === 'Sorted by urgency')
+    expect(control).toBeDefined()
+    await control?.trigger('click')
     // The default order stays out of the address, so turning it off leaves nothing behind.
     expect(push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sort')
   })

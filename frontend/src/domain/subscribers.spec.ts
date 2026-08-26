@@ -86,7 +86,7 @@ describe('writing the question back', () => {
       pageSize: 50,
       sort: { field: 'lastActiveAt' as const, descending: false },
       states: ['active' as const, 'grace' as const],
-      cohort: 'in-grace' as const,
+      cohort: 'quiet' as const,
       planIds: ['annual'],
       q: 'ada',
     }

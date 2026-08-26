@@ -15,6 +15,14 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   COHORTS,
   DEFAULT_SORT,
@@ -94,9 +102,13 @@ const STATE_LABELS: Record<SubscriptionState, string> = {
   cancelled: 'Cancelled',
 }
 
-function onCohort(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value
-  apply({ cohort: value === '' ? null : (value as Cohort) })
+/** The select carries a sentinel for "no cohort" rather than an empty string: an empty value in a
+ *  Reka select is indistinguishable from nothing selected, and the placeholder would show where
+ *  "Everyone" belongs. */
+const EVERYONE = 'everyone'
+
+function onCohort(value: unknown): void {
+  apply({ cohort: value === EVERYONE || typeof value !== 'string' ? null : (value as Cohort) })
 }
 
 function togglePlan(planId: string): void {
@@ -129,85 +141,82 @@ function toggleUrgency(): void {
   )
 }
 
-const SELECT =
-  'h-9 rounded-control border border-control-border bg-surface-0 px-3 text-ui text-text-primary'
 </script>
 
 <template>
   <!-- A form so Enter behaves the way the keyboard expects. It never submits: the address is
        written by the view, and letting the browser navigate would reload the page and throw away
-       the cache along with it. -->
-  <form class="flex flex-wrap items-end gap-4" @submit.prevent>
-    <div class="w-full max-w-form">
-      <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
+       the cache along with it.
+       Four rows, and the grouping is the argument. Search and Cohort narrow the whole table, so
+       they share a row. State and Plan are one question each, so each gets its own with its label
+       beside it. Actions are not filters and sit apart at the bottom. -->
+  <form class="flex flex-col gap-3" @submit.prevent>
+    <div class="flex flex-wrap items-end gap-4">
+      <div class="w-full max-w-form">
+        <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
+      </div>
+
+      <label class="flex flex-col gap-2 text-caption text-text-secondary">
+        Cohort
+        <Select :model-value="props.query.cohort ?? EVERYONE" @update:model-value="onCohort">
+          <!-- Content width. docs/design.md has no width step for a control that should be wider
+               than its longest label, and inventing one here is how a design file stops being the
+               place values come from. It grows leftward from the end of the row, so nothing moves
+               with it. -->
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="EVERYONE">Everyone</SelectItem>
+            <SelectItem v-for="cohort in COHORTS" :key="cohort.value" :value="cohort.value">
+              {{ cohort.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
     </div>
 
-    <fieldset id="filter-state" class="flex flex-col gap-2 scroll-mt-6">
-      <legend class="text-caption text-text-secondary">State</legend>
-      <div class="flex flex-wrap gap-3">
-        <label
-          v-for="state in STATES"
-          :key="state"
-          class="flex items-center gap-2 text-ui text-text-secondary"
-        >
-          <input
-            type="checkbox"
-            class="size-4 rounded-control accent-accent-fill"
-            :checked="props.query.states.includes(state)"
-            @change="toggleState(state)"
-          />
-          {{ STATE_LABELS[state] }}
-        </label>
-      </div>
-    </fieldset>
-
-    <label class="flex flex-col gap-2 text-caption text-text-secondary">
-      Cohort
-      <select :class="SELECT" :value="props.query.cohort ?? ''" @change="onCohort">
-        <option value="">Everyone</option>
-        <option v-for="cohort in COHORTS" :key="cohort.value" :value="cohort.value">
-          {{ cohort.label }}
-        </option>
-      </select>
-    </label>
-
-    <fieldset id="filter-plan" class="flex flex-col gap-2 scroll-mt-6">
-      <legend class="text-caption text-text-secondary">Plan</legend>
-      <div class="flex flex-wrap gap-3">
-        <label
-          v-for="plan in props.plans"
-          :key="plan"
-          class="flex items-center gap-2 text-ui text-text-secondary"
-        >
-          <input
-            type="checkbox"
-            class="size-4 rounded-control accent-accent-fill"
-            :checked="props.query.planIds.includes(plan)"
-            @change="togglePlan(plan)"
-          />
-          <span class="font-numeric text-dense">{{ plan }}</span>
-        </label>
-      </div>
-    </fieldset>
-
-    <!-- Sorting, not filtering, and the only order control that is not a column header, because
-         the order it turns on cannot be drawn as an arrow. Given its own caption for the same
-         reason: sitting unlabelled next to the plan boxes, it read as a sixth plan. -->
-    <fieldset class="flex flex-col gap-2 border-l border-border pl-4">
-      <legend class="text-caption text-text-secondary">Order</legend>
-      <label class="flex items-center gap-2 text-ui text-text-secondary">
-        <input
-          type="checkbox"
-          class="size-4 rounded-control accent-accent-fill"
-          :checked="urgent"
-          @change="toggleUrgency"
+    <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <legend class="sr-only">State</legend>
+      <span class="w-12 text-caption text-text-secondary" aria-hidden="true">State</span>
+      <label
+        v-for="state in STATES"
+        :key="state"
+        class="flex items-center gap-2 text-ui text-text-secondary"
+      >
+        <Checkbox
+          :model-value="props.query.states.includes(state)"
+          @update:model-value="toggleState(state)"
         />
-        Most urgent first
+        {{ STATE_LABELS[state] }}
       </label>
     </fieldset>
 
-    <AppButton variant="plain" @click="apply({ states: [], cohort: null, planIds: [], q: null })">
-      Clear filters
-    </AppButton>
+    <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <legend class="sr-only">Plan</legend>
+      <span class="w-12 text-caption text-text-secondary" aria-hidden="true">Plan</span>
+      <label
+        v-for="plan in props.plans"
+        :key="plan"
+        class="flex items-center gap-2 text-ui text-text-secondary"
+      >
+        <Checkbox
+          :model-value="props.query.planIds.includes(plan)"
+          @update:model-value="togglePlan(plan)"
+        />
+        <span class="font-numeric text-dense">{{ plan }}</span>
+      </label>
+    </fieldset>
+
+    <!-- Actions, not filters. Sorting and clearing both change the table without narrowing it, and
+         standing them among the checkboxes is what made the order control read as a sixth plan. -->
+    <div class="flex flex-wrap items-center gap-3">
+      <AppButton :variant="urgent ? 'outlined' : 'plain'" @click="toggleUrgency">
+        {{ urgent ? 'Sorted by urgency' : 'Sort by urgency' }}
+      </AppButton>
+      <AppButton variant="plain" @click="apply({ states: [], cohort: null, planIds: [], q: null })">
+        Clear filters
+      </AppButton>
+    </div>
   </form>
 </template>

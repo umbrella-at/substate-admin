@@ -40,11 +40,14 @@ class Cohort(StrEnum):
     """Lists to act on, not numbers to look at.
 
     Each one answers a question somebody has already asked themselves: who is about to lapse, who
-    lapsed and might still be saved, who is paying without turning up, who cancelled but is still
-    inside a period they paid for.
+    is paying without turning up, who cancelled but is still inside a period they paid for.
+
+    Every one of them is a question the state filter cannot ask, and that is the entry condition.
+    There was a fourth, `in-grace`, whose predicate was `row.state is State.GRACE` — the same
+    question as `?state=grace`, in a second vocabulary. Two names for one question is worse than
+    one name, because the reader has to work out whether the difference means something.
     """
 
-    IN_GRACE = "in-grace"
     QUIET = "quiet"
     TRIAL_ENDING = "trial-ending"
     CANCELLED_STILL_ACTIVE = "cancelled-still-active"
@@ -170,8 +173,6 @@ def _matches(row: SubscriberRow, query: SubscriberQuery, now: datetime) -> bool:
 
 def _in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
     match cohort:
-        case Cohort.IN_GRACE:
-            return row.state is State.GRACE
         case Cohort.QUIET:
             return (
                 row.state in (State.TRIAL, State.ACTIVE, State.GRACE)

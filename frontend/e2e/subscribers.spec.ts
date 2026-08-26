@@ -72,7 +72,7 @@ test.describe('the subscriber table', () => {
   })
 
   test('a filter narrows the table and says so in the address', async () => {
-    await page.getByLabel('In grace', { exact: true }).check()
+    await page.getByRole('checkbox', { name: 'In grace' }).click()
     await expect(page).toHaveURL(/state=grace/)
     await expect(rows(page).first().getByText('In grace')).toBeVisible()
 
@@ -85,7 +85,7 @@ test.describe('the subscriber table', () => {
     const count = page.getByText(/\d+ subscribers?/)
     const unfiltered = await count.textContent()
 
-    await page.getByLabel('Expired', { exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Expired' }).click()
     await expect(page).toHaveURL(/state=expired/)
     // Waiting for the answer, not for the address: the count is the last thing to change, and
     // reading it too early compares the filtered table against the unfiltered number.
@@ -93,16 +93,16 @@ test.describe('the subscriber table', () => {
     const before = await count.textContent()
 
     await page.reload()
-    await expect(page.getByLabel('Expired', { exact: true })).toBeChecked()
+    await expect(page.getByRole('checkbox', { name: 'Expired' })).toBeChecked()
     await expect(count).toHaveText(before ?? '')
   })
 
   test('the back button walks the filters rather than leaving', async () => {
-    await page.getByLabel('Trial', { exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Trial' }).click()
     await expect(page).toHaveURL(/state=trial/)
     await page.goBack()
     await expect(page).toHaveURL(/\/subscribers$/)
-    await expect(page.getByLabel('Trial', { exact: true })).not.toBeChecked()
+    await expect(page.getByRole('checkbox', { name: 'Trial' })).not.toBeChecked()
   })
 
   test('sorting is a link, and reverses on the second click', async () => {
@@ -124,28 +124,33 @@ test.describe('the subscriber table', () => {
     await expect(rows(page).first().locator('td').nth(3)).not.toHaveText('—')
   })
 
-  // A category header offers no order, because there is none to offer. It offers the thing the
-  // column is actually for.
-  test('a category header leads to its filter, not to an order', async () => {
+  // A category header offers no order, because there is none to offer — and it offers nothing
+  // else either. It was briefly a link to the filter panel, which scrolled the page a hundred
+  // pixels, put nothing new on screen, and read as a control that had broken.
+  test('a category header is inert, and the page does not move when it is clicked', async () => {
     const headers = page.getByRole('columnheader')
-    await expect(headers.getByRole('link', { name: 'State' })).toHaveAttribute(
-      'href',
-      /#filter-state$/,
-    )
-    await expect(headers.getByRole('link', { name: 'Plan' })).toHaveAttribute(
-      'href',
-      /#filter-plan$/,
-    )
+    await expect(headers.getByRole('link', { name: 'State' })).toHaveCount(0)
+    await expect(headers.getByRole('link', { name: 'Plan' })).toHaveCount(0)
+
+    // `globalThis` rather than `window`: this file is type-checked without the DOM lib, the same
+    // way the session scenario reaches localStorage.
+    const scrollY = () =>
+      page.evaluate(() => (globalThis as unknown as { scrollY: number }).scrollY)
+
+    const before = await scrollY()
+    await headers.filter({ hasText: 'State' }).click()
+    await expect.poll(scrollY).toBe(before)
   })
 
   // The order over states is a name, and the API decides it: in grace first, because that is a
   // paying customer whose payment failed today.
   test('the urgency order puts what needs doing at the top', async () => {
-    await page.getByLabel('Most urgent first').check()
+    await page.getByRole('button', { name: 'Sort by urgency' }).click()
     await expect(page).toHaveURL(/sort=state/)
     await expect(page.locator('tbody tr').first().getByText('In grace')).toBeVisible()
 
-    await page.getByLabel('Most urgent first').uncheck()
+    // The label says what it did, not what it will do.
+    await page.getByRole('button', { name: 'Sorted by urgency' }).click()
     await expect(page).toHaveURL(/\/subscribers$/)
   })
 
@@ -153,12 +158,12 @@ test.describe('the subscriber table', () => {
     const count = page.getByText(/\d+ subscribers?/)
 
     // Exact: "annual" is also inside "semiannual", and a substring match would tick both.
-    await page.getByLabel('weekly', { exact: true }).check()
+    await page.getByRole('checkbox', { name: 'weekly' }).click()
     await expect(page).toHaveURL(/planId=weekly/)
     await expect(count).not.toHaveText(/351/)
     const one = Number((await count.textContent())?.match(/\d+/)?.[0])
 
-    await page.getByLabel('annual', { exact: true }).check()
+    await page.getByRole('checkbox', { name: 'annual', exact: true }).click()
     await expect(page).toHaveURL(/planId=weekly.*planId=annual/)
 
     // The second plan widens the answer rather than replacing it, which is the whole difference
