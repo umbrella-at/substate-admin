@@ -1,0 +1,140 @@
+"""The subscriber table and one subscriber's card.
+
+Both routes answer from two sources and never confuse them: `substate` for the state of a
+subscription, the projection for the display name and the last time somebody turned up. The
+projection is loaded per request in one statement rather than per row — a table of three hundred
+rows that issues three hundred queries is a table that will be rewritten the first time anybody
+looks at it under load.
+"""
+
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from substate import PeriodUnit
+
+from app.db import get_session
+from app.deps import RequirePermission
+from app.errors import ApiError, ErrorCode
+from app.models import SubscriberView
+from app.routers import error_responses
+from app.schemas import (
+    PlanSummary,
+    SubscriberDetail,
+    SubscriberPage,
+    SubscriberQueryParams,
+    SubscriberSummary,
+)
+from app.seed.catalogue import PLAN_BY_ID
+from app.subscribers.query import SubscriberRow, build_row, list_subscribers
+from app.worlds.registry import BASE_WORLD_ID, World, WorldRegistry, get_registry
+
+router = APIRouter(prefix="/subscribers", tags=["subscribers"])
+
+
+def _world() -> World:
+    """The world this request reads.
+
+    Always the base world today. It is a function rather than a constant because iteration five
+    reads the world out of the token, and every caller here already goes through it — which is the
+    whole point of putting the world key on everything from the first day rather than the last.
+    """
+    registry: WorldRegistry = get_registry()
+    world = registry.get(BASE_WORLD_ID)
+    if world is None:
+        raise ApiError(
+            ErrorCode.INTERNAL_ERROR,
+            message="The demonstration world is not available.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return world
+
+
+async def _projection(
+    session: AsyncSession, world_id: str
+) -> dict[str, tuple[str, datetime | None]]:
+    rows = (
+        await session.execute(
+            select(
+                SubscriberView.user_id,
+                SubscriberView.display_name,
+                SubscriberView.last_active_at,
+            ).where(SubscriberView.world_id == world_id)
+        )
+    ).all()
+    return {row.user_id: (row.display_name, row.last_active_at) for row in rows}
+
+
+def _summary(row: SubscriberRow) -> SubscriberSummary:
+    return SubscriberSummary(
+        user_id=row.user_id,
+        display_name=row.display_name,
+        state=row.state.value,
+        plan_id=row.plan_id,
+        expires_at=row.expires_at,
+        trial_ends_at=row.trial_ends_at,
+        grace_ends_at=row.grace_ends_at,
+        last_active_at=row.last_active_at,
+        promo_code=row.promo_code,
+        referrer_id=row.referrer_id,
+    )
+
+
+@router.get(
+    "",
+    summary="One page of subscribers, filtered and sorted",
+    dependencies=[RequirePermission("subscribers.read")],
+    responses=error_responses(401, 403, 422),
+)
+async def list_page(
+    query: Annotated[SubscriberQueryParams, Query()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SubscriberPage:
+    world = _world()
+    projection = await _projection(session, world.id)
+    page = await list_subscribers(world, projection, query.to_query())
+    return SubscriberPage(
+        items=[_summary(row) for row in page.items],
+        total=page.total,
+        page=page.page,
+        page_size=page.page_size,
+    )
+
+
+@router.get(
+    "/{user_id}",
+    summary="One subscriber: the subscription, its plan, its promo code and its referrer",
+    dependencies=[RequirePermission("subscribers.read")],
+    responses=error_responses(401, 403, 404, 422),
+)
+async def read_one(
+    user_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SubscriberDetail:
+    world = _world()
+    subscription = await world.engine.get_subscription(user_id)
+    if subscription is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    projection = await _projection(session, world.id)
+    display_name, last_active_at = projection.get(user_id, (user_id, None))
+    row = build_row(subscription, display_name, last_active_at)
+    plan = PLAN_BY_ID[subscription.plan_id]
+    program_id = await world.storage.get_program_id(subscription.referrer_id or "")
+    return SubscriberDetail(
+        subscriber=_summary(row),
+        plan=PlanSummary(
+            id=plan.id,
+            price=plan.price,
+            currency=plan.currency,
+            period_unit="days" if plan.period.unit is PeriodUnit.DAYS else "months",
+            period_count=plan.period.count,
+            trial_days=plan.trial_days,
+            grace_days=plan.grace_days,
+        ),
+        promo_code=subscription.promo_code,
+        referrer_id=subscription.referrer_id,
+        referral_program_id=program_id,
+    )

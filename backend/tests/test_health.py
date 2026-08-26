@@ -51,6 +51,10 @@ async def test_health_reports_the_release_and_a_database_that_answers(client: As
         # fallback with a cheerful 200 and nothing behind it.
         "commit": os.environ["APP_COMMIT"],
         "db": True,
+        # Beside `db`, not folded into `status`. A world that failed to seed is an empty shop
+        # window while the panel keeps serving, and a smoke check that read it as an outage would
+        # roll a good deploy back over it.
+        "world": {"seeded": False, "subscribers": 0, "events": 0},
     }
 
 
@@ -70,9 +74,9 @@ async def test_health_reports_503_when_the_database_does_not_answer(client: Asyn
     assert body["status"] == "degraded"
     assert body["db"] is False
 
-    # Still the four fields, not the error envelope: a deploy comparing commits has to be able to
+    # Still the same fields, not the error envelope: a deploy comparing commits has to be able to
     # tell "the new release is up and its database is down" from "the old release is still there".
-    assert set(body) == {"status", "version", "commit", "db"}
+    assert set(body) == {"status", "version", "commit", "db", "world"}
 
     # The DSN carries the password, and a driver's connection error quotes the DSN it tried.
     assert "nothing" not in response.text

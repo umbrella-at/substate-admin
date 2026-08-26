@@ -13,8 +13,11 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
+from substate import State
+
+from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
 
 
 class ApiModel(BaseModel):
@@ -34,6 +37,21 @@ class ApiModel(BaseModel):
     )
 
 
+class WorldHealth(ApiModel):
+    """Whether the demonstration has a world behind it.
+
+    Reported beside the database rather than folded into `status`, because the two failures are
+    not the same kind. A database that does not answer means the panel cannot serve; a world that
+    failed to seed means the shop window is empty while signing in, permissions and every
+    operator screen keep working. Answering 503 for the second would make a deploy roll itself
+    back over a cosmetic problem.
+    """
+
+    seeded: bool
+    subscribers: int
+    events: int
+
+
 class HealthResponse(ApiModel):
     """GET /api/health."""
 
@@ -42,6 +60,7 @@ class HealthResponse(ApiModel):
     version: str
     commit: str
     db: bool
+    world: WorldHealth
 
 
 class LoginRequest(ApiModel):
@@ -137,3 +156,99 @@ class UserListResponse(ApiModel):
     total: int
     page: int
     page_size: int
+
+
+class SubscriberSummary(ApiModel):
+    """One row of the subscriber table.
+
+    The date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set
+    only in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a
+    field that is present in a state it does not belong to would be a type that lies.
+    """
+
+    user_id: str
+    display_name: str
+    state: Literal["trial", "active", "grace", "expired", "cancelled"]
+    plan_id: str
+    expires_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    grace_ends_at: datetime | None = None
+    last_active_at: datetime | None = None
+    promo_code: str | None = None
+    referrer_id: str | None = None
+
+
+class SubscriberPage(ApiModel):
+    """GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize."""
+
+    items: list[SubscriberSummary]
+    total: int
+    page: int
+    page_size: int
+
+
+class PlanSummary(ApiModel):
+    """The plan a subscription is on, as the card shows it."""
+
+    id: str
+    price: int
+    currency: str
+    period_unit: Literal["days", "months"]
+    period_count: int
+    trial_days: int
+    grace_days: int
+
+
+class SubscriberDetail(ApiModel):
+    """GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer."""
+
+    subscriber: SubscriberSummary
+    plan: PlanSummary
+    promo_code: str | None = None
+    referrer_id: str | None = None
+    referral_program_id: str | None = None
+
+
+class SubscriberQueryParams(ApiModel):
+    """The query string of GET /api/subscribers, and the whole of the table's state.
+
+    Every field here is also a URL parameter on the frontend, deliberately: refreshing the page
+    restores the view and the link can be sent to somebody else. A table whose state lives only in
+    component memory is a table you cannot point at.
+    """
+
+    page: int = Field(default=1, ge=1, le=1_000_000)
+    page_size: int = Field(default=25, ge=1, le=100)
+    sort: str = "-lastActiveAt"
+    state: list[Literal["trial", "active", "grace", "expired", "cancelled"]] = Field(
+        default_factory=list
+    )
+    plan_id: str | None = None
+    cohort: Literal["in-grace", "quiet", "trial-ending", "cancelled-still-active"] | None = None
+    q: str | None = Field(default=None, max_length=200)
+
+    @field_validator("sort")
+    @classmethod
+    def _known_sort(cls, value: str) -> str:
+        """An unknown sort field is refused rather than ignored.
+
+        Falling back to a default would answer a different question than the one asked and say
+        nothing about it — the table would look sorted and be sorted by something else.
+        """
+        try:
+            parse_sort(value)
+        except ValueError as unknown:
+            raise ValueError(f"unknown sort field: {value}") from unknown
+        return value
+
+    def to_query(self) -> SubscriberQuery:
+        """The query-string shape turned into the one the reader understands."""
+        return SubscriberQuery(
+            page=self.page,
+            page_size=self.page_size,
+            sort=self.sort,
+            states=tuple(State(s) for s in self.state),
+            plan_id=self.plan_id,
+            cohort=Cohort(self.cohort) if self.cohort else None,
+            search=self.q,
+        )

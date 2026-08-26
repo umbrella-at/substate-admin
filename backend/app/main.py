@@ -25,10 +25,13 @@ from starlette.routing import BaseRoute
 
 from app import __version__
 from app.config import get_settings
-from app.db import dispose_engine
+from app.db import dispose_engine, get_engine
 from app.errors import install_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
-from app.routers import auth, health, users
+from app.routers import auth, health, subscribers, users
+from app.worlds.bootstrap import build_base_world, set_base_world_status
+from app.worlds.registry import get_registry
+from app.worlds.ticker import ticking
 
 _log = get_logger(__name__)
 
@@ -43,9 +46,13 @@ API_PREFIX: Final = "/api"
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Bracket the served life of the process.
 
-    Nothing here connects to anything. `sync-permissions` runs from the deploy right after
-    `alembic upgrade head` and never from startup: a restart would race it, and a failure inside
-    a lifespan is a stack trace nobody reads at 3 a.m.
+    The base world is built here and nowhere else, and it is the only thing in this function that
+    touches the database. `sync-permissions` still runs from the deploy right after
+    `alembic upgrade head` and never from startup: a restart would race it.
+
+    Building the world cannot fail the boot. It is wrapped so that a seeder that raises leaves a
+    panel with an empty shop window rather than a unit that restarts every two seconds — and the
+    only way out of that loop is the provider's console.
     """
     settings = get_settings()
     _log.info(
@@ -55,8 +62,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         app_env=settings.app_env,
         docs=settings.docs_enabled,
     )
+    registry = get_registry()
+    _, status = await build_base_world(registry, get_engine())
+    set_base_world_status(status)
     try:
-        yield
+        async with ticking(registry):
+            yield
     finally:
         # Hands the pool's connections back rather than leaving Postgres to time out backends
         # that nothing is ever going to speak to again.
@@ -106,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
+    app.include_router(subscribers.router, prefix=API_PREFIX)
 
     return app
 

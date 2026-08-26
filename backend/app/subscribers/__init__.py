@@ -5,7 +5,15 @@ from app.subscribers.query import (
     Page,
     SubscriberQuery,
     SubscriberRow,
+    build_row,
     list_subscribers,
 )
 
-__all__ = ["Cohort", "Page", "SubscriberQuery", "SubscriberRow", "list_subscribers"]
+__all__ = [
+    "Cohort",
+    "Page",
+    "SubscriberQuery",
+    "SubscriberRow",
+    "build_row",
+    "list_subscribers",
+]

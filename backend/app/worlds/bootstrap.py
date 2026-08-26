@@ -124,3 +124,16 @@ async def build_base_world(
             exc_info=True,
         )
     return world, status
+
+
+_status = BaseWorldStatus()
+
+
+def set_base_world_status(status: BaseWorldStatus) -> None:
+    """Record what the last build produced, for `GET /api/health` to report."""
+    global _status
+    _status = status
+
+
+def base_world_status() -> BaseWorldStatus:
+    return _status

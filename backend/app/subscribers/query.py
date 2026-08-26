@@ -96,7 +96,7 @@ class Page:
     page_size: int
 
 
-def _row(
+def build_row(
     subscription: Subscription,
     display_name: str,
     last_active_at: datetime | None,
@@ -107,12 +107,17 @@ def _row(
         state=subscription.state,
         plan_id=subscription.plan_id,
         expires_at=subscription.expires_at,
-        # Taken from the model rather than derived. An earlier version worked these out from
-        # `expires_at` and `due_at` and got the trial wrong, which showed up as a cohort that
-        # always returned nothing: `substate` already answers both questions and its answer is
-        # the one that stays right when the engine changes its mind.
-        trial_ends_at=subscription.trial_ends_at,
-        grace_ends_at=subscription.grace_ends_at,
+        # Read from the model, then shown only in the state that owns them.
+        #
+        # Both halves matter. Deriving these from `expires_at` and `due_at` got the trial wrong
+        # and left a cohort that always returned nothing — `substate` answers both questions and
+        # its answer is the one that stays right. But its answers are historical: `trial_ends_at`
+        # survives the conversion that ended the trial, and `grace_ends_at` is computed from the
+        # expiry whatever state the subscription is in. Passing them through unfiltered puts a
+        # trial end and a grace end on an ACTIVE row, which is a tagged union whose tag does not
+        # decide what is in it — exactly the type that lies.
+        trial_ends_at=(subscription.trial_ends_at if subscription.state is State.TRIAL else None),
+        grace_ends_at=(subscription.grace_ends_at if subscription.state is State.GRACE else None),
         last_active_at=last_active_at,
         promo_code=subscription.promo_code,
         referrer_id=subscription.referrer_id,
@@ -208,7 +213,7 @@ async def list_subscribers(
             # subscriber, and a subscription can be removed while its history stays.
             continue
         display_name, last_active_at = projection.get(user_id, (user_id, None))
-        row = _row(subscription, display_name, last_active_at)
+        row = build_row(subscription, display_name, last_active_at)
         if _matches(row, query, moment):
             rows.append(row)
 

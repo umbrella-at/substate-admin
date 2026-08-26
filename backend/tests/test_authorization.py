@@ -121,6 +121,8 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # None: a session, and no particular permission.
         ("GET", "/api/auth/me"): None,
         ("GET", "/api/users"): "users.read",
+        ("GET", "/api/subscribers"): "subscribers.read",
+        ("GET", "/api/subscribers/{user_id}"): "subscribers.read",
     }
 
 
