@@ -81,6 +81,28 @@ async def test_the_rows_that_do_have_a_value_are_in_order(world, sort: str) -> N
     assert values == sorted(values, reverse=sort.startswith("-"))
 
 
+@pytest.mark.parametrize("sort", ["lastActiveAt", "-lastActiveAt"])
+async def test_activity_is_ordered_by_the_instant_and_not_by_how_it_reads(world, sort: str) -> None:
+    """The table draws this column as "9 days ago" and "2 months ago".
+
+    Those phrases do not order themselves — alphabetically "2 months" precedes "9 days" while the
+    instant behind it is four times older. So the order has to come from the timestamp, and the
+    second assertion is what makes the first mean something: it fails if this world ever stops
+    containing a pair the text would sort the wrong way round, at which point the test would be
+    proving nothing.
+    """
+    built, projection = world
+    rows = await _all(built, projection, sort)
+    values = [row.last_active_at for row in rows if row.last_active_at is not None]
+    assert values == sorted(values, reverse=sort.startswith("-"))
+
+    newest, oldest = max(values), min(values)
+    assert (oldest - newest).days < -30, (
+        "this world no longer spans days and months at once, so ordering by the phrase and "
+        "ordering by the instant would agree and this test would prove nothing"
+    )
+
+
 async def test_paging_covers_everybody_once(world) -> None:
     """The property that makes paging trustworthy: no row seen twice, none missed."""
     built, projection = world

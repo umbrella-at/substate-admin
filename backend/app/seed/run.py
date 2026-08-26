@@ -405,6 +405,9 @@ async def seed_world(
     """The cohort threshold, from the specification: an active subscription whose owner has not
     turned up in a month."""
 
+    FRESHEST_HOURS = 1.0
+    """How recent the most recently active subscriber is allowed to be, in hours. See below."""
+
     moment = now()
     for user_id in living:
         subscription = await engine.get_subscription(user_id)
@@ -426,7 +429,21 @@ async def seed_world(
             # Still paying, stopped coming. The people the quiet cohort exists to find.
             last_seen = moment - timedelta(days=streams.activity.uniform(35, 120))
         else:
-            last_seen = moment - timedelta(hours=streams.activity.uniform(0, 22 * 24))
+            # NEVER FRESHER THAN AN HOUR, AND THE FLOOR IS THE POINT.
+            #
+            # These timestamps are written once, when the world is built, and then stand still
+            # while the panel is looked at. The column renders them as "how long ago", so a
+            # subscriber seeded at four minutes reads as "4 minutes ago" on the first screen and
+            # "44 minutes ago" half an hour later, having done nothing — the demonstration would
+            # be claiming an activity it has no source for, and saying so in a number that visibly
+            # decays. An hour is where that claim stops being made: the value still ages, but by a
+            # unit slow enough that a session's worth of drift is indistinguishable from the
+            # truth.
+            #
+            # It costs nothing in range. The scale from hours upward is fully exercised, and the
+            # two buckets it gives up — minutes and "just now" — are the two no fixed timestamp
+            # can honestly occupy.
+            last_seen = moment - timedelta(hours=streams.activity.uniform(FRESHEST_HOURS, 22 * 24))
 
         if subscription.state in (State.TRIAL, State.ACTIVE, State.GRACE) and (
             moment - last_seen > QUIET_AFTER
