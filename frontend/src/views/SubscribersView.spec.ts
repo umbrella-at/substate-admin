@@ -125,6 +125,59 @@ describe('the four states', () => {
   })
 })
 
+/**
+ * EXACTLY ONE OF THEM, WHICH IS A DIFFERENT CLAIM FROM "THE RIGHT ONE IS THERE".
+ *
+ * The four states are a choice, and every test above asks only whether the branch it cares about
+ * rendered. None of them can fail on a second branch rendering beside it — `toContain` is a lower
+ * bound, and a lower bound cannot see a neighbour.
+ *
+ * That is not hypothetical here. A `v-if` placed between a `v-else-if` and its `v-else` silently
+ * starts a new chain and orphans the `v-else`, which then renders unconditionally; the result is
+ * valid Vue, so neither the compiler, nor vue-tsc, nor eslint says anything. Introduced into this
+ * view it puts the table on screen underneath the loading skeleton and underneath the error, and
+ * every one of the tests above still passed. It is the same slip that drew every column header
+ * twice one file over.
+ *
+ * So this asks the other half of the question: in each state, which regions are on screen.
+ */
+describe('the four states are a choice', () => {
+  function showing(view: ReturnType<typeof render>) {
+    return {
+      loading: view.text().includes('Loading subscribers'),
+      failed: view.text().includes('Try again'),
+      table: view.find('table').exists(),
+    }
+  }
+
+  it('shows only the placeholder while the first answer is outstanding', async () => {
+    const view = render(() => new Promise(() => {}))
+    await flushPromises()
+    expect(showing(view)).toEqual({ loading: true, failed: false, table: false })
+  })
+
+  it('shows only the failure when the request fails', async () => {
+    const view = render(() => Promise.reject(new ApiError(500, null)))
+    await flushPromises()
+    expect(showing(view)).toEqual({ loading: false, failed: true, table: false })
+  })
+
+  it('shows only the table once there is one', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+    expect(showing(view)).toEqual({ loading: false, failed: false, table: true })
+  })
+
+  // Empty is not a fourth region: it is the table with nothing in it, plus a sentence. The table
+  // must still be there, or the header row would vanish along with the rows.
+  it('keeps the table when it is empty, and says why', async () => {
+    const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
+    await flushPromises()
+    expect(showing(view)).toEqual({ loading: false, failed: false, table: true })
+    expect(view.text()).toContain('This world has no subscribers yet')
+  })
+})
+
 describe('the question and the answer', () => {
   it('asks the API for what the address says', async () => {
     const asked: string[] = []
