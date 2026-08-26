@@ -164,12 +164,18 @@ class SubscriberSummary(ApiModel):
     The date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set
     only in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a
     field that is present in a state it does not belong to would be a type that lies.
+
+    `accessUntil` sits alongside them rather than replacing them. It is the one of the three that
+    is true in the state the row is in, which is what a table with a single date column has to
+    show; the three stay because they are different questions and the subscriber card asks all of
+    them separately.
     """
 
     user_id: str
     display_name: str
     state: Literal["trial", "active", "grace", "expired", "cancelled"]
     plan_id: str
+    access_until: datetime | None = None
     expires_at: datetime | None = None
     trial_ends_at: datetime | None = None
     grace_ends_at: datetime | None = None

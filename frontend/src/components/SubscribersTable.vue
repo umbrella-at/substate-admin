@@ -210,8 +210,12 @@ const columns = columnHelper.columns([
     header: 'Plan',
     cell: (context) => h('span', { class: 'font-numeric text-dense' }, context.getValue()),
   }),
-  columnHelper.accessor('expiresAt', {
-    header: 'Expires',
+  columnHelper.accessor('accessUntil', {
+    // Not "Expires". A subscription has three boundaries and only one is true at a time — a trial
+    // ends at `trialEndsAt`, a courtesy period at `graceEndsAt`, everything else at `expiresAt` —
+    // and a column named for one field while showing whichever is current is a column that lies
+    // about itself. `substate` computes which; this says so.
+    header: 'Access until',
     cell: (context) => formatDate(context.getValue()),
   }),
   columnHelper.accessor('lastActiveAt', {
@@ -237,7 +241,7 @@ const columns = columnHelper.columns([
 
 /** Which headers offer an order. Deliberately narrower than the sortable fields: `state` can be
  *  sorted, but not from here — see the note above. */
-const SORTABLE_HEADERS = new Set<string>(['displayName', 'expiresAt', 'lastActiveAt'])
+const SORTABLE_HEADERS = new Set<string>(['displayName', 'accessUntil', 'lastActiveAt'])
 
 const table = useTable({
   features: FEATURES,

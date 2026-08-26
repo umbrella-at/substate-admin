@@ -20,14 +20,14 @@ describe('reading the question out of the URL', () => {
   it('keeps every filter the address carries', () => {
     const query = queryFromRoute({
       page: '3',
-      sort: '-expiresAt',
+      sort: '-accessUntil',
       state: ['grace', 'trial'],
       cohort: 'quiet',
       planId: 'monthly',
       q: 'ada',
     })
     expect(query.page).toBe(3)
-    expect(query.sort).toEqual({ field: 'expiresAt', descending: true })
+    expect(query.sort).toEqual({ field: 'accessUntil', descending: true })
     expect(query.states).toEqual(['grace', 'trial'])
     expect(query.cohort).toBe('quiet')
     expect(query.planIds).toEqual(['monthly'])

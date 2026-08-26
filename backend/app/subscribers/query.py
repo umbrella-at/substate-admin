@@ -61,11 +61,16 @@ class SortField(StrEnum):
     rather than anything about the plans. Categories are filtered, not sorted.
 
     `state` is the exception, because states DO have an order — see `STATE_URGENCY`.
+
+    `accessUntil` and `expiresAt` are both here and are not the same question. The table sorts by
+    the first, because that is the column it draws; the second orders by the paid period alone and
+    is what a report about billing would want.
     """
 
     USER_ID = "userId"
     DISPLAY_NAME = "displayName"
     STATE = "state"
+    ACCESS_UNTIL = "accessUntil"
     EXPIRES_AT = "expiresAt"
     LAST_ACTIVE_AT = "lastActiveAt"
 
@@ -102,6 +107,15 @@ class SubscriberRow:
     display_name: str
     state: State
     plan_id: str
+    access_until: datetime | None
+    """When access ends in the state this row is in, whichever field that happens to be.
+
+    `substate` computes it: a trial ends at `trial_ends_at`, a grace period at `grace_ends_at`,
+    everything else at `expires_at`. The three are kept alongside it rather than replaced, because
+    they are different questions and the subscriber card asks all of them — but a table with one
+    date column has to show the one that is true right now, and `expires_at` alone was empty on
+    every trial in the world.
+    """
     expires_at: datetime | None
     trial_ends_at: datetime | None
     grace_ends_at: datetime | None
@@ -141,6 +155,9 @@ def build_row(
         display_name=display_name,
         state=subscription.state,
         plan_id=subscription.plan_id,
+        # Not filtered by state the way the two below are, because this one is already the answer
+        # for the state it is in — that is what the property is for.
+        access_until=subscription.access_until,
         expires_at=subscription.expires_at,
         # Read from the model, then shown only in the state that owns them.
         #
@@ -200,6 +217,8 @@ def _sortable(row: SubscriberRow, field: SortField) -> str | datetime | int | No
             return row.display_name.casefold()
         case SortField.STATE:
             return STATE_URGENCY[row.state]
+        case SortField.ACCESS_UNTIL:
+            return row.access_until
         case SortField.EXPIRES_AT:
             return row.expires_at
         case SortField.LAST_ACTIVE_AT:

@@ -18,8 +18,13 @@ echo "the round shape:"
 # utility rather than deriving it from the theme. design.md reserves the 999px shape for the five
 # subscription states, and the natural place to break that is the first avatar somebody adds.
 readonly STATE_CHIP='frontend/src/components/StateChip.vue'
+#
+# Spec files are excluded. The rule is about what gets rendered, and a test does not render — but
+# it does write class names down, in fixtures and in comments explaining this very rule, and a
+# check that makes somebody reword a sentence to get past it is a check they will reword the rule
+# to get past next.
 offenders="$(grep -rln --include='*.vue' --include='*.ts' -e 'rounded-full' -e 'rounded-chip' \
-    frontend/src | grep -v "^${STATE_CHIP}$" || true)"
+    frontend/src | grep -v "^${STATE_CHIP}$" | grep -v '\.spec\.ts$' || true)"
 if [ -n "$offenders" ]; then
     while IFS= read -r file; do
         fail "$file" "rounded-full/rounded-chip outside the state chip; docs/design.md reserves the round shape for the five subscription states"

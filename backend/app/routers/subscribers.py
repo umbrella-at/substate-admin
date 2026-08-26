@@ -73,6 +73,7 @@ def _summary(row: SubscriberRow) -> SubscriberSummary:
         display_name=row.display_name,
         state=row.state.value,
         plan_id=row.plan_id,
+        access_until=row.access_until,
         expires_at=row.expires_at,
         trial_ends_at=row.trial_ends_at,
         grace_ends_at=row.grace_ends_at,

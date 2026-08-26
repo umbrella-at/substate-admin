@@ -52,7 +52,7 @@ export const COHORTS: readonly { value: Cohort; label: string }[] = [
  *  `planId` is absent because a plan is a category: any order over the five would be invented,
  *  and the alphabetical one would be about the letters of their names. `state` is here because
  *  states do have an order — see `URGENCY_SORT`. */
-export const SORT_FIELDS = ['displayName', 'state', 'expiresAt', 'lastActiveAt'] as const
+export const SORT_FIELDS = ['displayName', 'state', 'accessUntil', 'lastActiveAt'] as const
 export type SortField = (typeof SORT_FIELDS)[number]
 
 export interface Sort {
