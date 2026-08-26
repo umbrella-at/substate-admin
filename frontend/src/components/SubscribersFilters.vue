@@ -42,10 +42,14 @@ function apply(patch: Partial<SubscriberQuery>, replace = false): void {
  * history entry per character, so leaving a search would take as many presses of the back button
  * as the name had letters.
  *
- * So the text is held locally and released once the typing stops, as a replacement rather than a
- * new entry. The watcher in the other direction is what keeps that honest: an address arriving
- * from outside — the back button, a pasted link, the clear button — has to reach the field, or
- * the box would go on showing a search that is no longer being applied.
+ * So the text is held locally and released once the typing stops. Starting a search is a step
+ * worth being able to come back from, so the first one pushes; refining it is not, so the rest
+ * replace. Replacing all of them would mean the back button left the table entirely instead of
+ * clearing the search, and pushing all of them is the per-letter history this exists to avoid.
+ *
+ * The watcher in the other direction is what keeps that honest: an address arriving from outside
+ * — the back button, a pasted link, the clear button — has to reach the field, or the box would
+ * go on showing a search that is no longer being applied.
  */
 const SETTLE_MS = 300
 
@@ -67,7 +71,8 @@ watch(text, (value) => {
   const trimmed = value.trim()
   const next = trimmed === '' ? null : trimmed
   if (next === props.query.q) return
-  timer = setTimeout(() => apply({ q: next }, true), SETTLE_MS)
+  const refining = props.query.q !== null
+  timer = setTimeout(() => apply({ q: next }, refining), SETTLE_MS)
 })
 
 onBeforeUnmount(() => clearTimeout(timer))

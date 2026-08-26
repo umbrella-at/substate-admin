@@ -190,7 +190,7 @@ describe('the address bar', () => {
 
   // Typing produces one question per keystroke. Forwarding those as history entries would mean
   // leaving a search took as many presses of the back button as the name had letters.
-  it('does not add a history entry for every letter typed', async () => {
+  it('makes starting a search a step the back button can undo', async () => {
     vi.useFakeTimers()
     const view = render(() => Promise.resolve(page()))
     await flushPromises()
@@ -200,9 +200,26 @@ describe('the address bar', () => {
     vi.advanceTimersByTime(400)
     await flushPromises()
 
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push.mock.calls[0]?.[0]?.query).toMatchObject({ q: 'ada' })
+  })
+
+  // Refining is not a place anybody navigates back to, and one entry per letter would mean
+  // leaving a search took as many presses of back as the name had letters.
+  it('does not add an entry for every letter after that', async () => {
+    vi.useFakeTimers()
+    routeQuery.value = { q: 'ada' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const search = view.get('input[type="text"], input:not([type])')
+    await search.setValue('adam')
+    vi.advanceTimersByTime(400)
+    await flushPromises()
+
     expect(push).not.toHaveBeenCalled()
     expect(replace).toHaveBeenCalledTimes(1)
-    expect(replace.mock.calls[0]?.[0]?.query).toMatchObject({ q: 'ada' })
+    expect(replace.mock.calls[0]?.[0]?.query).toMatchObject({ q: 'adam' })
   })
 
   it('waits for the typing to stop before asking', async () => {
@@ -217,7 +234,7 @@ describe('the address bar', () => {
     vi.advanceTimersByTime(400)
     await flushPromises()
 
-    expect(replace).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
   })
 
   // The back button, a pasted link and the clear-filters button all arrive the same way, and a
