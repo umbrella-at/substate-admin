@@ -195,6 +195,14 @@ class SeedReport:
     """The projection rows as (user_id, display_name, last_active_at). Plain tuples rather than the
     persistence type: the seeder produces a history and should not know how it is stored."""
 
+    ended_at: datetime | None = None
+    """The moment the run finished, which every `last_active_at` is measured back from.
+
+    Recorded rather than reconstructed: the world ends at the current instant by construction, so
+    reading the clock again later gives a different anchor and makes a reproducible history look
+    like it drifted.
+    """
+
     quiet: int = 0
     """How many landed in the quiet cohort. Measured, because a cohort that is empty and a cohort
     that is the whole table are equally useless and both look fine from the code."""
@@ -428,6 +436,7 @@ async def seed_world(
         report.subscribers_projection.append((user_id, names.get(user_id, user_id), last_seen))
 
     report.subscribers = len(living)
+    report.ended_at = moment
     if tally is not None:
         report.accruals_by_program = dict(tally.accruals_by_program)
         report.repeat_earners = tally.repeat_earners
