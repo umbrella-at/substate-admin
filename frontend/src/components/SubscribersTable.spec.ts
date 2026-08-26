@@ -197,11 +197,21 @@ describe('how long ago', () => {
 
   // A phrase, not a figure: monospace and a right edge would invite comparing these character by
   // character down the column, which is what the other date column is for.
+  //
+  // Asserted over the cell's whole rendered markup rather than over its class list. The `<td>`
+  // carries one static class string shared by all five columns, so an assertion about it cannot
+  // fail whatever this column renders — it would have looked like a check and been a decoration.
+  // The markup covers the element the cell actually builds, and anything nested inside it.
   it('is ordinary left-aligned text', () => {
-    const table = render()
-    const cell = table.findAll('td').at(4)
-    expect(cell?.classes().join(' ')).not.toMatch(/font-numeric|text-right/u)
-    expect(cell?.find('span').classes().join(' ')).not.toMatch(/font-numeric|text-right/u)
+    const html = render().findAll('td').at(4)?.html() ?? ''
+    expect(html).not.toMatch(/font-numeric|text-right|tabular-nums/u)
+  })
+
+  // A malformed timestamp is a defect somewhere behind this screen. It must not arrive as a
+  // confident claim about a person's behaviour.
+  it('does not call an unreadable timestamp Never', () => {
+    const table = render({ rows: [subscriber({ lastActiveAt: 'not a timestamp' })] })
+    expect(table.findAll('td').at(4)?.text()).toBe('—')
   })
 
   it('is named for what it records', () => {

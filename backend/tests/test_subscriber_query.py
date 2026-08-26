@@ -116,17 +116,7 @@ async def test_subscribers_who_never_turned_up_stay_at_the_bottom(world, sort: s
     never = sorted(built.subscribers)[:5]
     thinned = {k: v for k, v in projection.items() if k not in never}
 
-    rows = []
-    page = 1
-    while True:
-        answer = await list_subscribers(
-            built, thinned, SubscriberQuery(sort=sort, page=page, page_size=100)
-        )
-        rows.extend(answer.items)
-        if len(rows) >= answer.total:
-            break
-        page += 1
-
+    rows = await _all(built, thinned, sort)
     absent = [index for index, row in enumerate(rows) if row.last_active_at is None]
     assert len(absent) == len(never)
     assert min(absent) == len(rows) - len(absent)

@@ -106,9 +106,18 @@ function formatDate(value: string | null | undefined): string {
  * THE BUCKETS ARE SIZED SO THAT EVERY ONE OF THEM STARTS AT 1. A month of thirty days and a year
  * of twelve of those, rather than 365 days: with a calendar year the months bucket would end at
  * 360 days while the years bucket divided by 365, and the first value out of it would be zero —
- * which `numeric: 'auto'` renders as "this year" for something eleven months old. The cost is
- * five days of drift in a column that answers "recently or not", and the alternative is either
- * that bug or the calendar arithmetic this exists to avoid.
+ * which `numeric: 'auto'` renders as "this year" for something eleven months old.
+ *
+ * What that costs, stated properly rather than waved at. The unit is a fixed thirty days, so the
+ * count is elapsed÷30 and not a count of calendar months, and it reads one higher than a calendar
+ * floor would on about a tenth of the days in the bucket — the days at and just after each
+ * multiple of thirty. Ninety days renders "3 months ago" where the calendar has 2.96. That
+ * direction is the readable one: the same calendar floor renders thirty days as ZERO months,
+ * which is where "this month" came from in the first place, so being exact here means clamping
+ * anyway. The word is also looser than the arithmetic — "yesterday" is a calendar day and
+ * elapsed÷24h is not, so a gap of forty-seven hours reads as "yesterday" when the calendar may
+ * call it the day before. `numeric: 'auto'` was asked for and this is what it buys along with the
+ * idiom.
  */
 const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
@@ -184,12 +193,16 @@ const columns = columnHelper.columns([
     // be compared down the column; this is a phrase, and setting a phrase in a monospace and
     // pushing it to the right edge invites a comparison the words do not support.
     cell: (context) => {
-      const at = toDate(context.getValue())
-      if (at === null) {
-        // Not an em dash. "Never" is a fact about the person — they have not once turned up —
-        // where "—" only says this cell has nothing in it.
+      const raw = context.getValue()
+      // Absent and unreadable are not the same thing, and only one of them is a fact about the
+      // person. "Never" says they have not once turned up; an em dash says this cell has nothing
+      // in it. Collapsing the two would let a malformed timestamp — a defect on the way here —
+      // arrive as a confident claim about somebody's behaviour.
+      if (raw === null || raw === undefined) {
         return h('span', { class: 'text-text-muted' }, 'Never')
       }
+      const at = toDate(raw)
+      if (at === null) return '—'
       return h('span', { title: exactly(at) }, formatSince(at, Date.now()))
     },
   }),
