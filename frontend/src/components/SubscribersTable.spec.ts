@@ -153,17 +153,17 @@ describe('how long ago', () => {
     ['fifty-nine minutes', 59 * MINUTE, '59 minutes ago'],
     ['one hour exactly', HOUR, '1 hour ago'],
     ['twenty-three hours', 23 * HOUR, '23 hours ago'],
-    ['one day exactly', DAY, 'yesterday'],
+    ['one day exactly', DAY, '1 day ago'],
     ['nine days', 9 * DAY, '9 days ago'],
     ['twenty-nine days', 29 * DAY, '29 days ago'],
     // The days bucket runs to the real length of a month rather than to a round number, so this
     // is the one case where thirty days is still counted in days.
     ['thirty days', 30 * DAY, '30 days ago'],
-    ['one month exactly', MONTH, 'last month'],
+    ['one month exactly', MONTH, '1 month ago'],
     ['eleven months', 11 * MONTH, '11 months ago'],
-    ['one year exactly', YEAR, 'last year'],
+    ['one year exactly', YEAR, '1 year ago'],
     ['three years', 3 * YEAR, '3 years ago'],
-  ])('reads %s as "%s"', (_name, ago, expected) => {
+  ])('reads %s the way the series reads', (_name, ago, expected) => {
     expect(activity(ago)).toBe(expected)
   })
 
@@ -174,18 +174,27 @@ describe('how long ago', () => {
   it.each([
     ['300 days', 300, '9 months ago'],
     ['364 days', 364, '11 months ago'],
-    ['720 days', 720, 'last year'],
+    ['720 days', 720, '1 year ago'],
     ['1080 days', 1080, '2 years ago'],
     ['3600 days', 3600, '9 years ago'],
   ])('never rounds %s up to the next unit', (_name, days, expected) => {
     expect(activity(days * DAY)).toBe(expected)
   })
 
-  // The failure this shape of code produces: a count of zero, which `numeric: 'auto'` turns into
-  // a phrase that sounds current.
-  it('never says today, this month or this year', () => {
-    for (const ago of [MONTH - 1, MONTH, YEAR - 1, YEAR, 2 * YEAR - 1]) {
-      expect(activity(ago)).not.toMatch(/^(today|this month|this year|now)$/u)
+  // One series, read down a column. An idiom is a word that belongs to prose: "yesterday" between
+  // "2 days ago" and "23 hours ago" is the row the eye stops on, and stopping is the cost. This is
+  // an instrument, so every row is the same shape and only the number changes.
+  it('never reaches for an idiom', () => {
+    for (const ago of [DAY, 2 * DAY, MONTH, 2 * MONTH, YEAR, 2 * YEAR]) {
+      expect(activity(ago)).toMatch(/^\d+ \w+ ago$/u)
+    }
+  })
+
+  // The failure this shape of code produces is a count of zero. It used to surface as "this
+  // month"; it would now surface as "0 months ago", which is no better and no less a bug.
+  it('never counts zero of anything', () => {
+    for (const ago of [MINUTE, HOUR, DAY, MONTH - 1, MONTH, YEAR - 1, YEAR, 2 * YEAR - 1]) {
+      expect(activity(ago)).not.toMatch(/\b0 \w+ ago\b/u)
     }
   })
 

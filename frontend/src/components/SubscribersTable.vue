@@ -98,10 +98,17 @@ function formatDate(value: string | null | undefined): string {
  * The activity column answers one question — recently or not — and a bare date makes the reader
  * do the subtraction. "9 days ago" is the answer; "17 Aug 2026" is the raw material for it.
  *
- * `Intl.RelativeTimeFormat` does the wording, including the plural and the idiom: `numeric:
- * 'auto'` is what turns one day into "yesterday" and one month into "last month". A hand-written
- * version of this is twenty lines that agree with the rest of the formatting on the day they are
- * written and diverge on the first edit.
+ * `Intl.RelativeTimeFormat` does the wording and the plural. A hand-written version of this is
+ * twenty lines that agree with the rest of the formatting on the day they are written and diverge
+ * on the first edit.
+ *
+ * `numeric: 'always'`, so there are no idioms — "1 day ago" rather than "yesterday", "1 month
+ * ago" rather than "last month". Two reasons, and the second is the one that decides it. An idiom
+ * is a calendar claim laid over arithmetic that is not calendar: elapsed÷24h is not a count of
+ * days on a wall, so forty-seven hours would read as "yesterday" when the calendar calls it the
+ * day before. And this is a column, read down: "yesterday" between "23 hours ago" and "2 days ago"
+ * is the row the eye stops on, and stopping is the cost. The series matters more than any single
+ * row reading naturally, because the reader is scanning rather than reading.
  *
  * THE BUCKETS ARE SIZED SO THAT EVERY ONE OF THEM STARTS AT 1, and the table below is what makes
  * that free rather than a compromise. `YEAR` is both the limit the months bucket stops at and the
@@ -121,12 +128,8 @@ function formatDate(value: string | null | undefined): string {
  * thing it costs: a gap of exactly thirty days now reads "30 days ago" rather than "last month",
  * because the days bucket runs to the real length of a month rather than to a round number.
  *
- * The wording stays looser than the arithmetic, and that part is inherent. "yesterday" is a
- * calendar day while elapsed÷24h is not, so forty-seven hours reads as "yesterday" where the
- * calendar may call it the day before. `numeric: 'auto'` was asked for, and the idiom is what it
- * buys.
  */
-const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -145,10 +148,10 @@ const SCALE: readonly (readonly [number, Intl.RelativeTimeFormatUnit, number])[]
   [Number.POSITIVE_INFINITY, 'year', YEAR],
 ]
 
-/** The one string `Intl` will not produce. `format(0, 'second')` is "now", which reads as a claim
- *  that something is happening; the column means "nothing since a moment ago". A timestamp in the
- *  future — a clock askew on either end — lands here too, which is the least wrong thing to say
- *  about it. */
+/** The one row that is not "N units ago", and the only string here `Intl` does not produce. A
+ *  count of seconds would be a precision this data does not have, and `format(0, 'second')` is
+ *  "now", which reads as a claim that something is happening. A timestamp in the future — a clock
+ *  askew on either end — lands here too, which is the least wrong thing to say about it. */
 const JUST_NOW = 'just now'
 
 function formatSince(at: Date, now: number): string {
