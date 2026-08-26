@@ -11,13 +11,15 @@
  * most convincing wrong answer this screen can give.
  */
 
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
 import {
   COHORTS,
+  DEFAULT_SORT,
   STATES,
+  URGENCY_SORT,
   type Cohort,
   type SubscriberQuery,
   type SubscriptionState,
@@ -97,9 +99,34 @@ function onCohort(event: Event): void {
   apply({ cohort: value === '' ? null : (value as Cohort) })
 }
 
-function onPlan(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value
-  apply({ planId: value === '' ? null : value })
+function togglePlan(planId: string): void {
+  const planIds = props.query.planIds.includes(planId)
+    ? props.query.planIds.filter((entry) => entry !== planId)
+    : [...props.query.planIds, planId]
+  apply({ planIds })
+}
+
+/* THE ORDER HAS A NAME, SO IT IS OFFERED BY NAME.
+ *
+ * The State column used to carry a sort arrow. An arrow is a direction over a quantity — it says
+ * this column runs from small to large — and a subscription state is not a quantity, so the glyph
+ * promised an order it could not describe. What it actually produced was the alphabet: ACTIVE,
+ * CANCELLED, EXPIRED, GRACE, TRIAL, which is the order of the letters and of nothing else.
+ *
+ * The order the table wants exists and is worth having, so it is here instead, wearing its name.
+ * Not reversible: the reverse of "most urgent first" is a list of people there is nothing to do
+ * about, which is not a thing anybody opens this table to see.
+ */
+const urgent = computed(
+  () => props.query.sort.field === URGENCY_SORT.field && !props.query.sort.descending,
+)
+
+function toggleUrgency(): void {
+  emit(
+    'change',
+    { ...props.query, page: 1, sort: urgent.value ? DEFAULT_SORT : URGENCY_SORT },
+    { replace: false },
+  )
 }
 
 const SELECT =
@@ -115,7 +142,7 @@ const SELECT =
       <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
     </div>
 
-    <fieldset class="flex flex-col gap-2">
+    <fieldset id="filter-state" class="flex flex-col gap-2 scroll-mt-6">
       <legend class="text-caption text-text-secondary">State</legend>
       <div class="flex flex-wrap gap-3">
         <label
@@ -144,15 +171,42 @@ const SELECT =
       </select>
     </label>
 
-    <label class="flex flex-col gap-2 text-caption text-text-secondary">
-      Plan
-      <select :class="SELECT" :value="props.query.planId ?? ''" @change="onPlan">
-        <option value="">Any plan</option>
-        <option v-for="plan in props.plans" :key="plan" :value="plan">{{ plan }}</option>
-      </select>
-    </label>
+    <fieldset id="filter-plan" class="flex flex-col gap-2 scroll-mt-6">
+      <legend class="text-caption text-text-secondary">Plan</legend>
+      <div class="flex flex-wrap gap-3">
+        <label
+          v-for="plan in props.plans"
+          :key="plan"
+          class="flex items-center gap-2 text-ui text-text-secondary"
+        >
+          <input
+            type="checkbox"
+            class="size-4 rounded-control accent-accent-fill"
+            :checked="props.query.planIds.includes(plan)"
+            @change="togglePlan(plan)"
+          />
+          <span class="font-numeric text-dense">{{ plan }}</span>
+        </label>
+      </div>
+    </fieldset>
 
-    <AppButton variant="plain" @click="apply({ states: [], cohort: null, planId: null, q: null })">
+    <!-- Sorting, not filtering, and the only order control that is not a column header, because
+         the order it turns on cannot be drawn as an arrow. Given its own caption for the same
+         reason: sitting unlabelled next to the plan boxes, it read as a sixth plan. -->
+    <fieldset class="flex flex-col gap-2 border-l border-border pl-4">
+      <legend class="text-caption text-text-secondary">Order</legend>
+      <label class="flex items-center gap-2 text-ui text-text-secondary">
+        <input
+          type="checkbox"
+          class="size-4 rounded-control accent-accent-fill"
+          :checked="urgent"
+          @change="toggleUrgency"
+        />
+        Most urgent first
+      </label>
+    </fieldset>
+
+    <AppButton variant="plain" @click="apply({ states: [], cohort: null, planIds: [], q: null })">
       Clear filters
     </AppButton>
   </form>

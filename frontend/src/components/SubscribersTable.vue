@@ -13,6 +13,18 @@
  * Sorting is a link, not a click handler. Each sortable header is a real anchor to the address the
  * click would produce, so the column order can be opened in a new tab, copied, and read by
  * anything that follows links — and the keyboard gets it for free instead of through a handler.
+ *
+ * NOT EVERY COLUMN IS SORTABLE, AND THE TWO THAT ARE NOT ARE THE CATEGORIES.
+ *
+ * State and Plan carry no arrow. An arrow is a direction over a quantity — it promises the column
+ * runs from small to large — and neither of these is one. The arrow over State used to deliver the
+ * alphabet, ACTIVE before CANCELLED before EXPIRED, which is an order over the letters of the
+ * words and over nothing an administrator came here for; the arrow over Plan would have had to
+ * invent one outright.
+ *
+ * Both are filtered instead, and their headers say so: clicking either one takes the reader to the
+ * control that does the thing the header is for. The state order that IS worth having lives beside
+ * that control, written out as "most urgent first", because it is a name and not a direction.
  */
 
 import {
@@ -26,12 +38,11 @@ import {
   FlexRender,
   useTable,
 } from '@tanstack/vue-table'
-import { h } from 'vue'
+import { computed, h } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import StateChip from '@/components/StateChip.vue'
 import {
-  SORT_FIELDS,
   type SortField,
   type SubscriberSummary,
   type Sort,
@@ -219,7 +230,16 @@ const columns = columnHelper.columns([
   }),
 ])
 
-const sortable = new Set<string>(SORT_FIELDS)
+/** Which headers offer an order. Deliberately narrower than the sortable fields: `state` can be
+ *  sorted, but not from here — see the note above. */
+const SORTABLE_HEADERS = new Set<string>(['displayName', 'expiresAt', 'lastActiveAt'])
+
+/** Which headers send the reader to a filter instead, and which control to send them to. The id
+ *  is the fieldset's, so the browser does the scrolling and the focus ring lands where it should. */
+const FILTER_HEADERS: Record<string, string> = {
+  state: 'filter-state',
+  planId: 'filter-plan',
+}
 
 const table = useTable({
   features: FEATURES,
@@ -239,10 +259,24 @@ function arrow(field: string): string {
   return props.sort.descending ? '↓' : '↑'
 }
 
-function ariaSort(field: string): 'ascending' | 'descending' | 'none' {
-  if (props.sort.field !== field) return 'none'
-  return props.sort.descending ? 'descending' : 'ascending'
+/** Only for the columns that offer an order from here. A category header announcing "none" would
+ *  be telling a screen reader it is an unsorted sortable column, which is a different claim from
+ *  not being sortable at all. */
+type AriaSort = 'ascending' | 'descending' | 'none'
+
+/** What `aria-sort` means is "the table is currently ordered by this column", which is a fact
+ *  about the table rather than about whether this header offers the control. So State carries it
+ *  whenever the urgency order is on, even though the order is turned on elsewhere — and Plan never
+ *  carries it at all, because Plan can never be the column the table is ordered by. Marking Plan
+ *  "none" would say it is a sortable column that happens to be unsorted. */
+function ariaSort(field: string): AriaSort | undefined {
+  if (props.sort.field === field) return props.sort.descending ? 'descending' : 'ascending'
+  return SORTABLE_HEADERS.has(field) ? 'none' : undefined
 }
+
+/** Named, not drawn. The table is ordered by state and the header has to say so, but an arrow
+ *  would say it in the one vocabulary this column does not have. */
+const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
 </script>
 
 <template>
@@ -260,7 +294,7 @@ function ariaSort(field: string): 'ascending' | 'descending' | 'none' {
             :aria-sort="ariaSort(header.column.id)"
           >
             <RouterLink
-              v-if="sortable.has(header.column.id)"
+              v-if="SORTABLE_HEADERS.has(header.column.id)"
               :to="props.sortHref(header.column.id as SortField)"
               class="inline-flex items-center gap-1 rounded-control hover:text-text-primary"
             >
@@ -274,11 +308,36 @@ function ariaSort(field: string): 'ascending' | 'descending' | 'none' {
                 {{ arrow(header.column.id) }}
               </span>
             </RouterLink>
+            <!-- A category. The header is not an order, so it does not offer one; it is the way
+                 to the control that does what this column is actually for. -->
+            <a
+              v-else-if="FILTER_HEADERS[header.column.id]"
+              :href="`#${FILTER_HEADERS[header.column.id]}`"
+              class="inline-flex items-center gap-1 rounded-control hover:text-text-primary"
+            >
+              <FlexRender
+                :render="header.column.columnDef.header"
+                :props="header.getContext()"
+              />
+              <span aria-hidden="true" class="text-text-muted">▾</span>
+              <span class="sr-only">— filter</span>
+            </a>
             <FlexRender
               v-else
               :render="header.column.columnDef.header"
               :props="header.getContext()"
             />
+
+            <!-- After the chain, never inside it. A v-if between a v-else-if and its v-else breaks
+                 the pair, and the v-else then renders unconditionally — which drew every header
+                 label twice and passed every test, because the duplicate sits outside the link the
+                 tests were reading. -->
+            <span
+              v-if="header.column.id === 'state' && ORDERED_BY_URGENCY"
+              class="ml-2 font-normal text-text-muted"
+            >
+              {{ props.sort.descending ? 'least urgent first' : 'urgent first' }}
+            </span>
           </th>
         </tr>
       </thead>

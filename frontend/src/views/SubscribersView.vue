@@ -96,7 +96,7 @@ const hasFilters = computed(
   () =>
     query.value.states.length > 0 ||
     query.value.cohort !== null ||
-    query.value.planId !== null ||
+    query.value.planIds.length > 0 ||
     query.value.q !== null,
 )
 

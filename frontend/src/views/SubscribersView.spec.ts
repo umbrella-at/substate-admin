@@ -254,6 +254,49 @@ describe('the address bar', () => {
     ).toBe('')
   })
 
+  // A plan is a category, so more than one of them is a sensible question. The backend takes the
+  // repeated parameter the same way it takes states.
+  it('carries more than one plan in the address', async () => {
+    const asked: string[] = []
+    routeQuery.value = { planId: ['weekly', 'annual'] }
+    render((params) => {
+      asked.push(params.toString())
+      return Promise.resolve(page())
+    })
+    await flushPromises()
+    expect(asked[0]).toContain('planId=weekly')
+    expect(asked[0]).toContain('planId=annual')
+  })
+
+  // The order over states is a name, not a direction, so it is turned on by a control that says
+  // what it does rather than by an arrow on a column that has no magnitude.
+  it('turns the urgency order on by name', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const control = view
+      .findAll('label')
+      .find((label) => label.text().includes('Most urgent first'))
+    expect(control).toBeDefined()
+
+    await control?.find('input[type="checkbox"]').trigger('change')
+    expect(push).toHaveBeenCalled()
+    expect(push.mock.calls[0]?.[0]?.query).toMatchObject({ sort: 'state' })
+  })
+
+  it('turns it off again, back to the default order', async () => {
+    routeQuery.value = { sort: 'state' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const control = view
+      .findAll('label')
+      .find((label) => label.text().includes('Most urgent first'))
+    await control?.find('input[type="checkbox"]').trigger('change')
+    // The default order stays out of the address, so turning it off leaves nothing behind.
+    expect(push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sort')
+  })
+
   it('sorts by a link, so the order can be opened in a new tab', async () => {
     const view = render(() => Promise.resolve(page()))
     await flushPromises()

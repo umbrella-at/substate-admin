@@ -124,6 +124,61 @@ test.describe('the subscriber table', () => {
     await expect(rows(page).first().locator('td').nth(3)).not.toHaveText('—')
   })
 
+  // A category header offers no order, because there is none to offer. It offers the thing the
+  // column is actually for.
+  test('a category header leads to its filter, not to an order', async () => {
+    const headers = page.getByRole('columnheader')
+    await expect(headers.getByRole('link', { name: 'State' })).toHaveAttribute(
+      'href',
+      /#filter-state$/,
+    )
+    await expect(headers.getByRole('link', { name: 'Plan' })).toHaveAttribute(
+      'href',
+      /#filter-plan$/,
+    )
+  })
+
+  // The order over states is a name, and the API decides it: in grace first, because that is a
+  // paying customer whose payment failed today.
+  test('the urgency order puts what needs doing at the top', async () => {
+    await page.getByLabel('Most urgent first').check()
+    await expect(page).toHaveURL(/sort=state/)
+    await expect(page.locator('tbody tr').first().getByText('In grace')).toBeVisible()
+
+    await page.getByLabel('Most urgent first').uncheck()
+    await expect(page).toHaveURL(/\/subscribers$/)
+  })
+
+  test('more than one plan can be asked for at once', async () => {
+    const count = page.getByText(/\d+ subscribers?/)
+
+    // Exact: "annual" is also inside "semiannual", and a substring match would tick both.
+    await page.getByLabel('weekly', { exact: true }).check()
+    await expect(page).toHaveURL(/planId=weekly/)
+    await expect(count).not.toHaveText(/351/)
+    const one = Number((await count.textContent())?.match(/\d+/)?.[0])
+
+    await page.getByLabel('annual', { exact: true }).check()
+    await expect(page).toHaveURL(/planId=weekly.*planId=annual/)
+
+    // The second plan widens the answer rather than replacing it, which is the whole difference
+    // between a set and the single value this used to be.
+    //
+    // Polled on the number rather than waited on the text: the count also carries "· page 1 of 3",
+    // so an assertion against "72 subscribers" is never equal to it and `not.toHaveText` returns
+    // at once — which is how the first version of this read the old total and compared it with
+    // itself.
+    await expect
+      .poll(async () => Number((await count.textContent())?.match(/\d+/)?.[0]))
+      .toBeGreaterThan(one)
+
+    // Whichever rows the order happens to put on this page, none of them is a third plan. The
+    // earlier version of this asserted both plans were visible here, which is a fact about the
+    // default order rather than about the filter, and it failed the first time that order moved.
+    const plans = await page.locator('tbody tr td:nth-child(3)').allTextContents()
+    for (const plan of plans) expect(['weekly', 'annual']).toContain(plan.trim())
+  })
+
   test('paging moves through the table and back', async () => {
     const firstName = await rows(page).first().locator('td').first().textContent()
     await page.getByRole('button', { name: 'Next' }).click()
