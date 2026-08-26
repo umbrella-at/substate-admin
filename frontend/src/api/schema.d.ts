@@ -664,7 +664,7 @@ export interface operations {
                 pageSize?: number;
                 sort?: string;
                 state?: ("trial" | "active" | "grace" | "expired" | "cancelled")[];
-                planId?: string | null;
+                planId?: string[];
                 cohort?: ("in-grace" | "quiet" | "trial-ending" | "cancelled-still-active") | null;
                 q?: string | null;
             };

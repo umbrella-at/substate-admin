@@ -16,7 +16,7 @@ from substate import MemoryStorage, State, SubscriptionEngine
 
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, seed_world
-from app.subscribers.query import Cohort, SubscriberQuery, list_subscribers
+from app.subscribers.query import Cohort, SubscriberQuery, list_subscribers, parse_sort
 from app.worlds.clock import OffsetClock
 from app.worlds.registry import World
 
@@ -120,6 +120,55 @@ async def test_subscribers_who_never_turned_up_stay_at_the_bottom(world, sort: s
     absent = [index for index, row in enumerate(rows) if row.last_active_at is None]
     assert len(absent) == len(never)
     assert min(absent) == len(rows) - len(absent)
+
+
+async def test_state_sorts_by_what_needs_doing_not_by_the_alphabet(world) -> None:
+    """The order is a claim about the work, and the alphabet was a claim about the letters.
+
+    Written as the domain order rather than as "not alphabetical", because those are different
+    assertions and only one of them is what the table promises. The alphabet is checked separately
+    below so this test cannot quietly start passing on an ordering that merely happens to differ.
+    """
+    built, projection = world
+    rows = await _all(built, projection, "state")
+    seen = [row.state for row in rows]
+
+    order = [
+        state
+        for state in (State.GRACE, State.TRIAL, State.ACTIVE, State.CANCELLED, State.EXPIRED)
+        if state in seen
+    ]
+    assert [state for state in dict.fromkeys(seen)] == order
+
+    alphabetical = sorted({state.value for state in seen})
+    assert [state.value for state in dict.fromkeys(seen)] != alphabetical, (
+        "the domain order and the alphabet now agree, so this test proves nothing"
+    )
+
+
+async def test_the_urgent_states_come_first(world) -> None:
+    """The reason the order exists: somebody opens this table to find who needs something today."""
+    built, projection = world
+    rows = await _all(built, projection, "state")
+    assert rows[0].state is State.GRACE
+    assert rows[-1].state is State.EXPIRED
+
+
+async def test_a_plan_cannot_be_sorted_by(world) -> None:
+    """A plan is a category. Any order over the five would be invented, and the alphabetical one
+    would be about the letters of their names."""
+    with pytest.raises(ValueError, match="planId"):
+        parse_sort("planId")
+
+
+@pytest.mark.parametrize("plans", [("weekly",), ("weekly", "annual")])
+async def test_plans_filter_as_a_set(world, plans: tuple[str, ...]) -> None:
+    built, projection = world
+    answer = await list_subscribers(
+        built, projection, SubscriberQuery(plan_ids=plans, page_size=100)
+    )
+    assert answer.total > 0
+    assert {row.plan_id for row in answer.items} <= set(plans)
 
 
 async def test_paging_covers_everybody_once(world) -> None:

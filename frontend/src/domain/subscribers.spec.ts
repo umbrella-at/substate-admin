@@ -30,7 +30,7 @@ describe('reading the question out of the URL', () => {
     expect(query.sort).toEqual({ field: 'expiresAt', descending: true })
     expect(query.states).toEqual(['grace', 'trial'])
     expect(query.cohort).toBe('quiet')
-    expect(query.planId).toBe('monthly')
+    expect(query.planIds).toEqual(['monthly'])
     expect(query.q).toBe('ada')
   })
 
@@ -87,7 +87,7 @@ describe('writing the question back', () => {
       sort: { field: 'lastActiveAt' as const, descending: false },
       states: ['active' as const, 'grace' as const],
       cohort: 'in-grace' as const,
-      planId: 'annual',
+      planIds: ['annual'],
       q: 'ada',
     }
     expect(queryFromRoute(queryToRoute(query))).toEqual(query)

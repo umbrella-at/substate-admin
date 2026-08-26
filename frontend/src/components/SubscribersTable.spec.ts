@@ -82,9 +82,64 @@ describe('the subscriber table', () => {
     expect(dates).toEqual(['10 Sep 2026', '04 Oct 2026'])
   })
 
-  it('makes every sortable header a link, so the order can be opened in a new tab', () => {
-    const links = render().findAllComponents(RouterLinkStub)
-    expect(links.length).toBe(5)
+  // Three of the five columns are quantities and offer an order from their header. The two
+  // categories do not: an arrow is a direction over a magnitude, and neither a state nor a plan
+  // is one.
+  it('offers an order only from the columns that have one', () => {
+    const table = render()
+    const ordered = table.findAllComponents(RouterLinkStub)
+    expect(ordered.length).toBe(3)
+    expect(ordered.map((link) => link.text().replace(/\s+/gu, ' ').trim())).toEqual([
+      'Subscriber',
+      'Expires',
+      'Last activity↓',
+    ])
+  })
+
+  // The header still does something, and what it does is the thing the column is for.
+  it('sends a category header to its filter instead', () => {
+    const headers = render().findAll('th')
+    expect(headers.at(1)?.find('a').attributes('href')).toBe('#filter-state')
+    expect(headers.at(2)?.find('a').attributes('href')).toBe('#filter-plan')
+  })
+
+  // aria-sort says the table is ordered by this column. Plan can never be that column, and
+  // saying "none" would claim it is a sortable one that happens to be unsorted.
+  it('never announces a sort state for the column that can never have one', () => {
+    expect(render().findAll('th').at(2)?.attributes('aria-sort')).toBeUndefined()
+    expect(
+      render({ sort: { field: 'state', descending: false } })
+        .findAll('th')
+        .at(2)
+        ?.attributes('aria-sort'),
+    ).toBeUndefined()
+  })
+
+  // State is not sorted from its header, but it can be the column the table is ordered by, and
+  // aria-sort is a fact about the table rather than about where the control lives.
+  it('announces the urgency order on the column it orders', () => {
+    const headers = render({ sort: { field: 'state', descending: false } }).findAll('th')
+    expect(headers.at(1)?.attributes('aria-sort')).toBe('ascending')
+    expect(render().findAll('th').at(1)?.attributes('aria-sort')).toBeUndefined()
+  })
+
+  // Caught by looking rather than by any of the assertions above: a v-if placed between a
+  // v-else-if and its v-else breaks the pair, and the orphaned v-else renders unconditionally.
+  // Every header label was drawn twice and every test still passed, because the tests read the
+  // link and the duplicate sits beside it.
+  it('draws each header label once', () => {
+    const table = render({ sort: { field: 'state', descending: false } })
+    for (const [index, label] of ['Subscriber', 'State', 'Plan', 'Expires', 'Last activity'].entries()) {
+      const text = table.findAll('th').at(index)?.text() ?? ''
+      expect(text.split(label).length - 1).toBe(1)
+    }
+  })
+
+  // And says it in words, because the vocabulary this column lacks is the arrow.
+  it('names the order in the header rather than drawing it', () => {
+    const header = render({ sort: { field: 'state', descending: false } }).findAll('th').at(1)
+    expect(header?.text()).toContain('urgent first')
+    expect(header?.text()).not.toMatch(/[↑↓]/u)
   })
 
   // The arrow is decoration; this is the part a screen reader announces.
@@ -104,8 +159,15 @@ describe('the subscriber table', () => {
   })
 
   it('draws exactly one arrow', () => {
-    const table = render({ sort: { field: 'state', descending: false } })
+    const table = render({ sort: { field: 'expiresAt', descending: false } })
     expect(table.text().match(/[↑↓]/gu) ?? []).toHaveLength(1)
+  })
+
+  // Sorting by state is the API's urgency order, and it is offered by name elsewhere rather than
+  // as an arrow here. The header must not start drawing one just because the sort is active.
+  it('draws no arrow when the order is one it does not offer', () => {
+    const table = render({ sort: { field: 'state', descending: false } })
+    expect(table.text().match(/[↑↓]/gu) ?? []).toHaveLength(0)
   })
 
   it('says when it is waiting, without emptying itself', () => {

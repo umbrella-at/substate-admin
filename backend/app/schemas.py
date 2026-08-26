@@ -223,7 +223,7 @@ class SubscriberQueryParams(ApiModel):
     state: list[Literal["trial", "active", "grace", "expired", "cancelled"]] = Field(
         default_factory=list
     )
-    plan_id: str | None = None
+    plan_id: list[str] = Field(default_factory=list)
     cohort: Literal["in-grace", "quiet", "trial-ending", "cancelled-still-active"] | None = None
     q: str | None = Field(default=None, max_length=200)
 
@@ -248,7 +248,7 @@ class SubscriberQueryParams(ApiModel):
             page_size=self.page_size,
             sort=self.sort,
             states=tuple(State(s) for s in self.state),
-            plan_id=self.plan_id,
+            plan_ids=tuple(self.plan_id),
             cohort=Cohort(self.cohort) if self.cohort else None,
             search=self.q,
         )

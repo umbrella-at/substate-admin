@@ -43,14 +43,12 @@ export const COHORTS: readonly { value: Cohort; label: string }[] = [
 ] as const
 
 /** The columns the backend will sort by. Kept as a list here so an unknown `sort=` in a
- *  hand-edited URL is dropped on the way in rather than sent on to be refused. */
-export const SORT_FIELDS = [
-  'displayName',
-  'state',
-  'planId',
-  'expiresAt',
-  'lastActiveAt',
-] as const
+ *  hand-edited URL is dropped on the way in rather than sent on to be refused.
+ *
+ *  `planId` is absent because a plan is a category: any order over the five would be invented,
+ *  and the alphabetical one would be about the letters of their names. `state` is here because
+ *  states do have an order — see `URGENCY_SORT`. */
+export const SORT_FIELDS = ['displayName', 'state', 'expiresAt', 'lastActiveAt'] as const
 export type SortField = (typeof SORT_FIELDS)[number]
 
 export interface Sort {
@@ -63,7 +61,7 @@ export interface SubscriberQuery {
   pageSize: number
   sort: Sort
   states: SubscriptionState[]
-  planId: string | null
+  planIds: string[]
   cohort: Cohort | null
   q: string | null
 }
@@ -79,6 +77,16 @@ export const DEFAULT_PAGE_SIZE = 25
  *  the running service to confirm the two still agree. */
 export const DEFAULT_SORT: Sort = { field: 'lastActiveAt', descending: true }
 
+/** Sorting by state, which the API orders by urgency rather than alphabetically: in grace first,
+ *  then trials, then everyone there is nothing to do about.
+ *
+ *  It is offered as one named thing rather than as an arrow on the State header. An arrow is a
+ *  direction over a quantity, and a state is not one — the glyph would promise that the column
+ *  runs from small to large and say nothing about what the order actually is. So the control
+ *  carries the name of the order, and reversing it is not offered: the reverse of "most urgent
+ *  first" is a list nobody opens this table to see. */
+export const URGENCY_SORT: Sort = { field: 'state', descending: false }
+
 /** The bounds the API enforces. Mirrored rather than discovered by being refused: a hand-edited
  *  `?pageSize=400` should give the table it asks for as closely as the API allows, not an error
  *  page about a query parameter. The values are the ones in the request schema, and a test asks
@@ -91,7 +99,7 @@ export const EMPTY_QUERY: SubscriberQuery = {
   pageSize: DEFAULT_PAGE_SIZE,
   sort: DEFAULT_SORT,
   states: [],
-  planId: null,
+  planIds: [],
   cohort: null,
   q: null,
 }
@@ -153,7 +161,6 @@ function all(value: QueryValue | readonly QueryValue[]): string[] {
 
 export function queryFromRoute(source: QuerySource): SubscriberQuery {
   const q = first(source['q'])
-  const planId = first(source['planId'])
   const cohort = first(source['cohort'])
   return {
     page: bounded(first(source['page']), 1, MAX_PAGE),
@@ -162,7 +169,9 @@ export function queryFromRoute(source: QuerySource): SubscriberQuery {
     // Deduplicated: `?state=active&state=active` is one filter, and letting it through would
     // send the same value twice and make two identical URLs cache as different questions.
     states: [...new Set(all(source['state']).filter(isState))],
-    planId: planId === null || planId === '' ? null : planId,
+    // Deduplicated like the states, and for the same reason: two spellings of one question would
+    // be two cache entries and two requests for one answer.
+    planIds: [...new Set(all(source['planId']).filter((plan) => plan !== ''))],
     cohort: cohort !== null && isCohort(cohort) ? cohort : null,
     q: q === null || q.trim() === '' ? null : q.trim(),
   }
@@ -176,7 +185,7 @@ export function queryToRoute(query: SubscriberQuery): Record<string, string | st
   if (query.pageSize !== DEFAULT_PAGE_SIZE) route['pageSize'] = String(query.pageSize)
   if (!sameSort(query.sort, DEFAULT_SORT)) route['sort'] = formatSort(query.sort)
   if (query.states.length > 0) route['state'] = [...query.states]
-  if (query.planId !== null) route['planId'] = query.planId
+  if (query.planIds.length > 0) route['planId'] = [...query.planIds]
   if (query.cohort !== null) route['cohort'] = query.cohort
   if (query.q !== null) route['q'] = query.q
   return route
@@ -192,7 +201,7 @@ export function queryToSearchParams(query: SubscriberQuery): URLSearchParams {
   // for the request to depend on their agreeing tomorrow.
   params.set('sort', formatSort(query.sort))
   for (const state of query.states) params.append('state', state)
-  if (query.planId !== null) params.set('planId', query.planId)
+  for (const planId of query.planIds) params.append('planId', planId)
   if (query.cohort !== null) params.set('cohort', query.cohort)
   if (query.q !== null) params.set('q', query.q)
   return params
