@@ -51,12 +51,44 @@ class Cohort(StrEnum):
 
 
 class SortField(StrEnum):
+    """What the table can be ordered by.
+
+    `planId` is deliberately absent. A plan is a category, not a quantity: putting the five in any
+    order at all would be inventing one, and alphabetical would be the letters of their names
+    rather than anything about the plans. Categories are filtered, not sorted.
+
+    `state` is the exception, because states DO have an order — see `STATE_URGENCY`.
+    """
+
     USER_ID = "userId"
     DISPLAY_NAME = "displayName"
     STATE = "state"
-    PLAN_ID = "planId"
     EXPIRES_AT = "expiresAt"
     LAST_ACTIVE_AT = "lastActiveAt"
+
+
+STATE_URGENCY: Final[dict[State, int]] = {
+    State.GRACE: 0,
+    State.TRIAL: 1,
+    State.ACTIVE: 2,
+    State.CANCELLED: 3,
+    State.EXPIRED: 4,
+}
+"""The order sorting by state produces. A claim about the work, not about the words.
+
+Alphabetical put ACTIVE, CANCELLED, EXPIRED, GRACE, TRIAL at the top of the table in that order,
+which is the order of the letters and of nothing else. What an administrator opens this table to
+find is who needs something done today, so that is the order:
+
+    GRACE      a paying customer whose payment failed. Today, or they are gone.
+    TRIAL      deciding right now whether to pay. The only window there is.
+    ACTIVE     paying and fine. Nothing to do.
+    CANCELLED  said no, still inside a period they paid for. Worth a call, not an urgent one.
+    EXPIRED    already gone. Nothing here is time-critical.
+
+It lives on this side because sorting is server-side, so the order is part of what the API
+promises rather than a rendering choice — a second client would otherwise invent its own.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +115,7 @@ class SubscriberQuery:
     page_size: int = DEFAULT_PAGE_SIZE
     sort: str = "-lastActiveAt"
     states: tuple[State, ...] = ()
-    plan_id: str | None = None
+    plan_ids: tuple[str, ...] = ()
     cohort: Cohort | None = None
     search: str | None = None
 
@@ -127,7 +159,7 @@ def build_row(
 def _matches(row: SubscriberRow, query: SubscriberQuery, now: datetime) -> bool:
     if query.states and row.state not in query.states:
         return False
-    if query.plan_id is not None and row.plan_id != query.plan_id:
+    if query.plan_ids and row.plan_id not in query.plan_ids:
         return False
     if query.search:
         needle = query.search.casefold()
@@ -158,7 +190,7 @@ def _in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
             )
 
 
-def _sortable(row: SubscriberRow, field: SortField) -> str | datetime | None:
+def _sortable(row: SubscriberRow, field: SortField) -> str | datetime | int | None:
     """The value a row is ordered by, or None when the row has none."""
     match field:
         case SortField.USER_ID:
@@ -166,9 +198,7 @@ def _sortable(row: SubscriberRow, field: SortField) -> str | datetime | None:
         case SortField.DISPLAY_NAME:
             return row.display_name.casefold()
         case SortField.STATE:
-            return row.state.value
-        case SortField.PLAN_ID:
-            return row.plan_id
+            return STATE_URGENCY[row.state]
         case SortField.EXPIRES_AT:
             return row.expires_at
         case SortField.LAST_ACTIVE_AT:

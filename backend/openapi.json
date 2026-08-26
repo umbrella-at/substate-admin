@@ -918,15 +918,11 @@
             "name": "planId",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Planid"
+              "items": {
+                "type": "string"
+              },
+              "title": "Planid",
+              "type": "array"
             }
           },
           {
