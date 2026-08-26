@@ -15,13 +15,13 @@ usable, which is the thing worth being told about.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from substate import MemoryStorage, SubscriptionEngine
 
 from app.seed.catalogue import PLANS, PROMO_CODES, REFERRAL_PROGRAMS, USERS_PROGRAM
-from app.seed.run import HISTORY_DAYS, EventTally, SeedReport, seed_world
+from app.seed.run import HISTORY_DAYS, SEED, EventTally, SeedReport, seed_world
 from app.subscribers.query import QUIET_AFTER
 from app.worlds.clock import OffsetClock
 
@@ -37,13 +37,13 @@ POPULATIONS: dict[str, tuple[int | None, int | None]] = {
 }
 
 
-async def run_once() -> tuple[SeedReport, OffsetClock, EventTally]:
+async def run_once(seed: int = SEED) -> tuple[SeedReport, OffsetClock, EventTally]:
     clock = OffsetClock(timedelta(days=-HISTORY_DAYS))
     tally = EventTally()
     engine = SubscriptionEngine(
         MemoryStorage(), clock=clock, on_event=tally, default_program=USERS_PROGRAM
     )
-    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
+    report = await seed_world(engine, clock.advance, clock.now, seed=seed, tally=tally)
     return report, clock, tally
 
 
@@ -171,6 +171,94 @@ async def test_recent_activity_is_the_normal_case(
     moment = clock.now()
     recent = sum(1 for _, _, seen in report.subscribers_projection if moment - seen <= QUIET_AFTER)
     assert recent > len(report.subscribers_projection) / 2
+
+
+async def test_the_top_of_the_scale_is_used(
+    seeded: tuple[SeedReport, OffsetClock, EventTally],
+) -> None:
+    """Somebody was here today.
+
+    Without this the column opens on "9 days ago" with the whole recent end of its scale unused,
+    which reads as a service nobody uses rather than as a scale that stops where honesty stops.
+    """
+    report, _, _ = seeded
+    assert report.ended_at is not None
+
+    within_a_day = sum(
+        1
+        for *_, seen in report.subscribers_projection
+        if report.ended_at - seen < timedelta(days=1)
+    )
+    assert within_a_day > 0, "nobody was active in the last day, so the top of the scale is unused"
+
+
+# Several seeds, not the one the demonstration ships. The floor is a bound on a distribution, and
+# on the shipping seed the freshest draw lands at nine hours whether or not the floor is there —
+# a single-seed assertion would pass with the floor deleted and prove nothing. Across these five
+# it does not: the third puts somebody at thirty-seven minutes the moment the bound is removed.
+@pytest.mark.parametrize("seed", [SEED, SEED + 1, SEED + 2, SEED + 3, SEED + 4])
+async def test_no_seed_puts_activity_inside_the_minutes(seed: int) -> None:
+    """These timestamps are written once and then stand still while somebody looks at the panel,
+    and the table renders them as "how long ago". A subscriber seeded four minutes back reads as
+    "4 minutes ago" on the first screen and "44 minutes ago" half an hour later, having done
+    nothing — the demonstration claiming an activity it has no source for, in a number that
+    visibly decays. An hour is where that claim stops being made."""
+    report, _, _ = await run_once(seed)
+    assert report.ended_at is not None
+
+    freshest = min(report.ended_at - seen for *_, seen in report.subscribers_projection)
+    assert freshest >= timedelta(hours=1), (
+        f"seed {seed} put somebody at {freshest}, inside the minutes the scale cannot honestly hold"
+    )
+
+
+async def test_nobody_was_active_before_they_existed() -> None:
+    """The larger of the two honesty problems in this column, and the one a date column hid.
+
+    Every activity window is a fixed span measured back from the end of the run, while arrivals
+    ramp up across the history, so most subscribers are younger than the window they are drawn
+    from. Unclipped, that credited 87 of 351 rows with activity from before they subscribed — the
+    worst by 181 days — and nineteen of the twenty-four trials, including a fourteen-day trial two
+    days old whose owner was last seen three months earlier and who was returned by the Quiet
+    cohort. "17 Aug 2026" made that invisible; "3 months ago" beside a trial that started on
+    Tuesday does not.
+
+    The two rows this still allows are the residue of the freshness floor, which wins where the
+    two rules disagree: somebody who arrived on the last simulated day has no age to spare, and is
+    credited with an hour they did not have. Two rows wrong by an hour against 87 wrong by months.
+    """
+    clock = OffsetClock(timedelta(days=-HISTORY_DAYS))
+    tally = EventTally()
+
+    first_event: dict[str, datetime] = {}
+
+    def watch(event: object) -> None:
+        user_id = getattr(event, "user_id", None)
+        occurred_at = getattr(event, "occurred_at", None)
+        if isinstance(user_id, str) and isinstance(occurred_at, datetime):
+            first_event.setdefault(user_id, occurred_at)
+        tally(event)
+
+    engine = SubscriptionEngine(
+        MemoryStorage(), clock=clock, on_event=watch, default_program=USERS_PROGRAM
+    )
+    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
+
+    impossible = [
+        (user_id, first_event[user_id] - seen)
+        for user_id, _, seen in report.subscribers_projection
+        if user_id in first_event and seen < first_event[user_id]
+    ]
+
+    assert len(impossible) <= 2, (
+        f"{len(impossible)} subscribers were active before they subscribed: "
+        + ", ".join(f"{user_id} by {gap}" for user_id, gap in impossible[:5])
+    )
+    for user_id, gap in impossible:
+        assert gap <= timedelta(hours=1), (
+            f"{user_id} was active {gap} before subscribing, which is not the hour the freshness "
+            f"floor accounts for"
+        )
 
 
 async def test_the_catalogue_stays_inside_what_the_engine_allows() -> None:
