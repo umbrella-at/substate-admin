@@ -27,6 +27,7 @@ dependencies = [
     "pyjwt>=2.10,<3.0",
     "argon2-cffi>=23.1,<26.0",
     "structlog>=25.1,<27.0",
+    "substate>=0.1,<0.2",
 ]
 # python-multipart is deliberately absent: login takes a JSON body, not a form, and nothing
 # else in this service accepts multipart. FastAPI only needs it for Form()/File() parameters.
@@ -62,6 +63,9 @@ target-version = "py313"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "S"]
 
 [tool.ruff.lint.per-file-ignores]
+# The seeder's whole purpose is a reproducible pseudo-random history: `random` is the right
+# tool and `secrets` would destroy the property the determinism test rests on.
+"app/seed/*" = ["S311"]
 # S101 asserts are how a test states its expectation, and every "password" in a fixture is a
 # literal by definition. Relaxed here and nowhere else.
 "tests/**/*.py" = ["S101", "S105", "S106", "S311"]

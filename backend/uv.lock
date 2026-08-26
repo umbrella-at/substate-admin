@@ -646,6 +646,15 @@ wheels = [
 ]
 
 [[package]]
+name = "substate"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/f9/59fd63d5627f5fd27cbfe28b2996411a02e21f906075243be1053fc10bd6/substate-0.1.0.tar.gz", hash = "sha256:ddb7c37ed0b2fa1927f867331a5032821ddd686b6b5d0777153ce491ea79233d", size = 56112, upload-time = "2026-08-23T05:51:35.864Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/82/dc45a0dbf252d5245f6ec6f7f825b65a71714cd8ddd3ff71f71a30e32131/substate-0.1.0-py3-none-any.whl", hash = "sha256:6b01c985a697359796a9cd4b7a0bbe62c91b9dd179a5b27b367d895a0d72cee8", size = 30893, upload-time = "2026-08-23T05:51:34.415Z" },
+]
+
+[[package]]
 name = "substate-admin"
 source = { editable = "." }
 dependencies = [
@@ -658,6 +667,7 @@ dependencies = [
     { name = "pyjwt" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
+    { name = "substate" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -682,6 +692,7 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.10,<3.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<2.1" },
     { name = "structlog", specifier = ">=25.1,<27.0" },
+    { name = "substate", specifier = ">=0.1,<0.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1.0" },
 ]
 
