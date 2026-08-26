@@ -34,6 +34,10 @@ os.environ.setdefault("JWT_SECRET", "a-signing-secret-that-exists-only-in-this-p
 os.environ.setdefault("IP_HASH_PEPPER", "a-pepper-that-exists-only-in-this-process")
 os.environ.setdefault("APP_COMMIT", "0f1e2d3")
 os.environ["APP_ENV"] = "test"
+# No dotenv. The suite states its own environment above, and a `.env` left behind by
+# following the README would otherwise fill in exactly the values the refusal tests
+# clear on purpose — passing in CI and failing on a laptop.
+os.environ["APP_ENV_FILE"] = ""
 
 # ruff: noqa: E402
 

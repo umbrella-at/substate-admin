@@ -104,6 +104,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plans
+         * @description The whole catalogue, in the order the table's plan filter should offer it.
+         *
+         *     The filter needs every plan, not the ones that happen to appear on the page being looked at —
+         *     a filter offering four of five because the fifth is on page two is a filter that hides people.
+         *     The order is the catalogue's own, which is the duration ladder, so it reads shortest to
+         *     longest rather than alphabetically.
+         */
+        get: operations["list_plans_api_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One page of subscribers, filtered and sorted */
+        get: operations["list_page_api_subscribers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One subscriber: the subscription, its plan, its promo code and its referrer */
+        get: operations["read_one_api_subscribers__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -173,6 +232,7 @@ export interface components {
             status: "ok" | "degraded";
             /** Version */
             version: string;
+            world: components["schemas"]["WorldHealth"];
         };
         /**
          * LoginRequest
@@ -202,6 +262,29 @@ export interface components {
             worldId?: string | null;
         };
         /**
+         * PlanSummary
+         * @description The plan a subscription is on, as the card shows it.
+         */
+        PlanSummary: {
+            /** Currency */
+            currency: string;
+            /** Gracedays */
+            graceDays: number;
+            /** Id */
+            id: string;
+            /** Periodcount */
+            periodCount: number;
+            /**
+             * Periodunit
+             * @enum {string}
+             */
+            periodUnit: "days" | "months";
+            /** Price */
+            price: number;
+            /** Trialdays */
+            trialDays: number;
+        };
+        /**
          * RoleSummary
          * @description A role as the panel displays it. `id` stays inside the process.
          */
@@ -210,6 +293,67 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /**
+         * SubscriberDetail
+         * @description GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer.
+         */
+        SubscriberDetail: {
+            plan: components["schemas"]["PlanSummary"];
+            /** Promocode */
+            promoCode?: string | null;
+            /** Referralprogramid */
+            referralProgramId?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
+            subscriber: components["schemas"]["SubscriberSummary"];
+        };
+        /**
+         * SubscriberPage
+         * @description GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.
+         */
+        SubscriberPage: {
+            /** Items */
+            items: components["schemas"]["SubscriberSummary"][];
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * SubscriberSummary
+         * @description One row of the subscriber table.
+         *
+         *     The date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set
+         *     only in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a
+         *     field that is present in a state it does not belong to would be a type that lies.
+         */
+        SubscriberSummary: {
+            /** Displayname */
+            displayName: string;
+            /** Expiresat */
+            expiresAt?: string | null;
+            /** Graceendsat */
+            graceEndsAt?: string | null;
+            /** Lastactiveat */
+            lastActiveAt?: string | null;
+            /** Planid */
+            planId: string;
+            /** Promocode */
+            promoCode?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "trial" | "active" | "grace" | "expired" | "cancelled";
+            /** Trialendsat */
+            trialEndsAt?: string | null;
+            /** Userid */
+            userId: string;
         };
         /**
          * TokenResponse
@@ -282,6 +426,24 @@ export interface components {
             /** Lastloginat */
             lastLoginAt: string | null;
             role: components["schemas"]["RoleSummary"];
+        };
+        /**
+         * WorldHealth
+         * @description Whether the demonstration has a world behind it.
+         *
+         *     Reported beside the database rather than folded into `status`, because the two failures are
+         *     not the same kind. A database that does not answer means the panel cannot serve; a world that
+         *     failed to seed means the shop window is empty while signing in, permissions and every
+         *     operator screen keep working. Answering 503 for the second would make a deploy roll itself
+         *     back over a cosmetic problem.
+         */
+        WorldHealth: {
+            /** Events */
+            events: number;
+            /** Seeded */
+            seeded: boolean;
+            /** Subscribers */
+            subscribers: number;
         };
     };
     responses: never;
@@ -453,6 +615,157 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    list_plans_api_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanSummary"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_page_api_subscribers_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                sort?: string;
+                state?: ("trial" | "active" | "grace" | "expired" | "cancelled")[];
+                planId?: string | null;
+                cohort?: ("in-grace" | "quiet" | "trial-ending" | "cancelled-still-active") | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_one_api_subscribers__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

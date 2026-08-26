@@ -171,7 +171,18 @@ development setup would exercise cookie rules that never ship and break in produ
 also why there is no `VITE_API_BASE_URL` anywhere in this repository and no CORS middleware
 anywhere in the backend.
 
-The checks, each of which CI runs by the same name:
+Everything CI checks, in one command:
+
+```sh
+./scripts/gate.sh
+```
+
+It exits `0` when every check ran and passed, `1` when one failed, and `2` when one could not run
+at all — no database, no API, no docker. The third exists because a gate that quietly skipped
+those would report success for a run that proved less than the last one, and the whole value of
+running the checks before pushing is that the answer means the same thing every time.
+
+The pieces, each of which CI runs by the same name:
 
 ```sh
 npm run lint                               # eslint
@@ -179,12 +190,17 @@ npm run typecheck                          # vue-tsc --build
 npm run test                               # vitest
 npm run test:e2e                           # playwright: sign in, reload, still signed in
 npm run types                              # regenerate src/api/schema.d.ts
+./scripts/check-schema.sh                  # and verify it still describes the backend
+./scripts/check-design.sh                  # the rules docs/design.md says the build enforces
+./deploy/check-units.sh                    # the systemd units
 ```
 
 `npm run types` reads `backend/openapi.json`, which the backend writes with `uv run python -m
-app.openapi`. Both files are committed, and CI regenerates both and fails on `git diff
---exit-code` — a generated file that no longer describes its source is worse than no file at all,
-so run the pair together and commit them together.
+app.openapi`. Both files are committed, and both are regenerated and compared on every run — a
+generated file that no longer describes its source is worse than no file at all. Generate them
+that one way: a document written by any other route can describe exactly the same API with
+different bytes, and the diff then reads as routes appearing and disappearing rather than as
+reordering.
 
 `npm run test:e2e` builds the SPA and serves it with `vite preview` behind that same `/api` proxy,
 so the browser sees one origin there too. It needs the API running and an account to sign in as:

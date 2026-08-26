@@ -17,7 +17,8 @@ from app import __version__
 from app.config import get_settings
 from app.db import check_database
 from app.deps import Public
-from app.schemas import HealthResponse
+from app.schemas import HealthResponse, WorldHealth
+from app.worlds.bootstrap import base_world_status
 
 router = APIRouter(tags=["health"])
 
@@ -39,6 +40,7 @@ async def health(response: Response) -> HealthResponse:
     # Never raises: `check_database` swallows the driver error, which would otherwise carry the
     # DSN — and the DSN carries the password — into an exception handler and a log line.
     reachable = await check_database()
+    world = base_world_status()
 
     # Set on the injected response rather than raised, because a raise would be answered by the
     # error handlers with the envelope and none of the fields below.
@@ -49,4 +51,7 @@ async def health(response: Response) -> HealthResponse:
         version=__version__,
         commit=get_settings().commit,
         db=reachable,
+        # Beside the database, not folded into `status`: an empty world is a bad shop window and
+        # not an outage, and a smoke check that treated it as one would roll a deploy back over it.
+        world=WorldHealth(seeded=world.seeded, subscribers=world.subscribers, events=world.events),
     )

@@ -52,11 +52,13 @@ jobs:
       # nothing to pin. --severity=warning fails the job on errors and warnings but tolerates
       # info/style notes (SC1091 "not following sourced file" fires on every provisioning script
       # that reads /etc/os-release, and is noise, not a finding).
-      # Every script under deploy/, not one named file: the check that guards the units was itself
-      # unguarded until it was moved into a script, and a lint that only knows about the files that
-      # existed when it was written is the same mistake one layer down.
-      - name: shellcheck the deploy scripts
-        run: shellcheck --severity=warning --shell=bash deploy/*.sh
+      # Every script under deploy/ and scripts/, not one named file: the check that guards the
+      # units was itself unguarded until it was moved into a script, and a lint that only knows
+      # about the files that existed when it was written is the same mistake one layer down. That
+      # is not hypothetical — scripts/ was left out when it was created, so the checks CI runs on
+      # this repository were the ones nothing checked.
+      - name: shellcheck the shell scripts
+        run: shellcheck --severity=warning --shell=bash deploy/*.sh scripts/*.sh
 
   config:
     name: config
@@ -262,26 +264,13 @@ jobs:
           uv python install
           uv sync --frozen
 
-      # backend/openapi.json and frontend/src/api/schema.d.ts are committed so that the type check
-      # needs no running server — a generator that required the API to be up could not run in the
-      # job that decides whether the API is correct. The whole worth of a committed generated file
-      # is that it still describes its source, and this is the step that keeps that true: both are
-      # regenerated from scratch and any difference is a failure.
-      #
-      # `git ls-files --error-unmatch` first, because `git diff` says nothing at all about a file
-      # git is not tracking. Without it, a schema that was generated but never committed would
-      # sail through this check as silently as a schema that matched.
-      - name: Regenerate the schema and its types
-        run: |
-          set -euo pipefail
-          git ls-files --error-unmatch backend/openapi.json frontend/src/api/schema.d.ts > /dev/null
-          (cd backend && uv run python -m app.openapi)
-          (cd frontend && npm run types)
-          if ! git diff --exit-code -- backend/openapi.json frontend/src/api/schema.d.ts; then
-            echo "::error::the committed schema is not the one this backend serves; regenerate it with 'uv run python -m app.openapi' in backend/ and 'npm run types' in frontend/, then commit both"
-            exit 1
-          fi
-          echo "the committed schema and types match the backend"
+      # A script rather than inline YAML, for the reason the units check already gives: the command
+      # a laptop runs before pushing has to be the one the runner runs. This step was the exception
+      # and it cost a red build — the schema was regenerated locally by a shell one-liner that
+      # produced the same API with different bytes, `git status` was clean, and nothing on the
+      # laptop could contradict that because the check only existed here.
+      - name: Check the schema and its types
+        run: ./scripts/check-schema.sh
 
 
   design:

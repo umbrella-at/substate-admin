@@ -4,6 +4,7 @@ In production the values arrive from /etc/substate-admin/api.env through the sys
 EnvironmentFile. Locally they come from a .env beside this package, which is never committed.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Final, Literal
@@ -38,8 +39,14 @@ def _release_file_commit() -> str:
 class Settings(BaseSettings):
     """Everything this process needs to know that is not in the code."""
 
+    # The dotenv path is itself configurable, and the reason is a test suite that was quietly
+    # dependent on whether the developer had ever followed the README. Several tests clear the
+    # environment on purpose to check that the application refuses to start without its secrets;
+    # with an unconditional `.env` those refusals never happened, and the suite passed in CI and
+    # failed on a laptop for reasons that looked like nothing to do with the change being made.
+    # Setting APP_ENV_FILE to an empty string reads no file at all.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.environ.get("APP_ENV_FILE", ".env") or None,
         env_file_encoding="utf-8",
         # api.env is also read by the deploy shell and may grow keys this process does not care
         # about; an unknown variable must not stop the service from starting.

@@ -121,6 +121,11 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # None: a session, and no particular permission.
         ("GET", "/api/auth/me"): None,
         ("GET", "/api/users"): "users.read",
+        # The catalogue is read by the table's plan filter, so it is gated with the table rather
+        # than left open: knowing what is sold and at what price is not a public fact here.
+        ("GET", "/api/plans"): "subscribers.read",
+        ("GET", "/api/subscribers"): "subscribers.read",
+        ("GET", "/api/subscribers/{user_id}"): "subscribers.read",
     }
 
 

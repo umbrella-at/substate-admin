@@ -182,6 +182,57 @@
   }
 }
 
+/* The shadcn-vue palette, expressed as aliases onto the tokens above.
+ *
+ * shadcn components are written against a fixed vocabulary — `bg-background`, `text-muted-
+ * foreground`, `border-input` — and its `init` ships that vocabulary as a second, complete set of
+ * colour values: a light `:root`, a `.dark` override, and `@theme inline` mapping each
+ * `--color-x` onto a `--x`. Kept, that would have been two palettes, and docs/design.md would
+ * have been the one nobody edits. So the generated values are discarded and the names are
+ * pointed at ours instead. Every shadcn utility resolves to a token from the design file, one
+ * substitution away, and there is nothing to keep in sync.
+ *
+ * `inline` is what makes that work: it substitutes the value where the utility is used, so
+ * `bg-card` compiles to `var(--color-surface-1)` rather than to a copy of its value. Names we
+ * already define — `--color-border` among them — need no alias and get none.
+ */
+@theme inline {
+  --color-background: var(--color-surface-0);
+  --color-foreground: var(--color-text-primary);
+
+  --color-card: var(--color-surface-1);
+  --color-card-foreground: var(--color-text-primary);
+  --color-popover: var(--color-surface-1);
+  --color-popover-foreground: var(--color-text-primary);
+
+  --color-primary: var(--color-accent-fill);
+  --color-primary-foreground: var(--color-on-accent);
+  --color-secondary: var(--color-surface-2);
+  --color-secondary-foreground: var(--color-text-secondary);
+
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent: var(--color-accent-bg);
+  --color-accent-foreground: var(--color-accent-text);
+
+  /* Danger is a text and border role here, never a fill: the design file has no bright red
+   * surface to offer, and `bg-destructive` would put white on #F0837E. A destructive fill, if one
+   * is ever needed, is a decision for the design file, not a default inherited from a generator. */
+  --color-destructive: var(--color-danger-text);
+
+  --color-input: var(--color-control-border);
+  --color-ring: var(--color-accent-text);
+
+  /* shadcn sizes radii from a single `--radius` and arithmetic. Ours are named for what they sit
+   * on, so the four steps map onto the three that exist; `rounded-xl` gets the card radius rather
+   * than inventing a fourth value nothing in the design file asks for. */
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-panel);
+  --radius-xl: var(--radius-card);
+}
+
+
 /* Focus, from the Floor section: visible everywhere, one description, no per-component variants. */
 @layer base {
   :focus-visible {

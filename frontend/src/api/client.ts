@@ -13,6 +13,9 @@ type ErrorBody = components['schemas']['ErrorBody']
 export type ErrorCode = components['schemas']['ErrorCode']
 export type TokenResponse = components['schemas']['TokenResponse']
 export type MeResponse = components['schemas']['MeResponse']
+export type SubscriberPage = components['schemas']['SubscriberPage']
+export type SubscriberDetail = components['schemas']['SubscriberDetail']
+export type PlanSummary = components['schemas']['PlanSummary']
 /** The three things asking for a new access token can mean, and they must stay three. Collapsing
  *  the last two into one boolean is what turns a two-second deploy restart into every open tab
  *  being signed out of a session the server still considers perfectly valid. */
@@ -188,6 +191,17 @@ export function createClient(hooks: ClientHooks) {
     logout: () => request<null>(`${BASE}/auth/logout`, { method: 'POST' }),
 
     me: (signal?: AbortSignal) => request<MeResponse>(`${BASE}/auth/me`, { signal }),
+
+    // The signal is required rather than optional. Every caller of this is a table whose filters
+    // change while a request is in flight, and a page of the previous question arriving after the
+    // page of the current one is the defect this parameter exists to prevent.
+    subscribers: (params: URLSearchParams, signal: AbortSignal) =>
+      request<SubscriberPage>(`${BASE}/subscribers?${params.toString()}`, { signal }),
+
+    plans: (signal?: AbortSignal) => request<PlanSummary[]>(`${BASE}/plans`, { signal }),
+
+    subscriber: (userId: string, signal: AbortSignal) =>
+      request<SubscriberDetail>(`${BASE}/subscribers/${encodeURIComponent(userId)}`, { signal }),
   }
 }
 

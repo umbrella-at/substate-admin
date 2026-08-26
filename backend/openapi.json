@@ -85,13 +85,17 @@
           "version": {
             "title": "Version",
             "type": "string"
+          },
+          "world": {
+            "$ref": "#/components/schemas/WorldHealth"
           }
         },
         "required": [
           "status",
           "version",
           "commit",
-          "db"
+          "db",
+          "world"
         ],
         "title": "HealthResponse",
         "type": "object"
@@ -166,6 +170,55 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "PlanSummary": {
+        "additionalProperties": false,
+        "description": "The plan a subscription is on, as the card shows it.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "graceDays": {
+            "title": "Gracedays",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "periodCount": {
+            "title": "Periodcount",
+            "type": "integer"
+          },
+          "periodUnit": {
+            "enum": [
+              "days",
+              "months"
+            ],
+            "title": "Periodunit",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "integer"
+          },
+          "trialDays": {
+            "title": "Trialdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "price",
+          "currency",
+          "periodUnit",
+          "periodCount",
+          "trialDays",
+          "graceDays"
+        ],
+        "title": "PlanSummary",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -184,6 +237,197 @@
           "name"
         ],
         "title": "RoleSummary",
+        "type": "object"
+      },
+      "SubscriberDetail": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer.",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/PlanSummary"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          },
+          "referralProgramId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referralprogramid"
+          },
+          "referrerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerid"
+          },
+          "subscriber": {
+            "$ref": "#/components/schemas/SubscriberSummary"
+          }
+        },
+        "required": [
+          "subscriber",
+          "plan"
+        ],
+        "title": "SubscriberDetail",
+        "type": "object"
+      },
+      "SubscriberPage": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriberSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "SubscriberPage",
+        "type": "object"
+      },
+      "SubscriberSummary": {
+        "additionalProperties": false,
+        "description": "One row of the subscriber table.\n\nThe date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set\nonly in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a\nfield that is present in a state it does not belong to would be a type that lies.",
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "graceEndsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graceendsat"
+          },
+          "lastActiveAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastactiveat"
+          },
+          "planId": {
+            "title": "Planid",
+            "type": "string"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          },
+          "referrerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerid"
+          },
+          "state": {
+            "enum": [
+              "trial",
+              "active",
+              "grace",
+              "expired",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "trialEndsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trialendsat"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "state",
+          "planId"
+        ],
+        "title": "SubscriberSummary",
         "type": "object"
       },
       "TokenResponse": {
@@ -331,6 +575,31 @@
           "role"
         ],
         "title": "UserSummary",
+        "type": "object"
+      },
+      "WorldHealth": {
+        "additionalProperties": false,
+        "description": "Whether the demonstration has a world behind it.\n\nReported beside the database rather than folded into `status`, because the two failures are\nnot the same kind. A database that does not answer means the panel cannot serve; a world that\nfailed to seed means the shop window is empty while signing in, permissions and every\noperator screen keep working. Answering 503 for the second would make a deploy roll itself\nback over a cosmetic problem.",
+        "properties": {
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "seeded": {
+            "title": "Seeded",
+            "type": "boolean"
+          },
+          "subscribers": {
+            "title": "Subscribers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seeded",
+          "subscribers",
+          "events"
+        ],
+        "title": "WorldHealth",
         "type": "object"
       }
     },
@@ -533,6 +802,300 @@
         "summary": "Report the service version and whether the database answers",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/plans": {
+      "get": {
+        "description": "The whole catalogue, in the order the table's plan filter should offer it.\n\nThe filter needs every plan, not the ones that happen to appear on the page being looked at —\na filter offering four of five because the fifth is on page two is a filter that hides people.\nThe order is the catalogue's own, which is the duration ladder, so it reads shortest to\nlongest rather than alphabetically.",
+        "operationId": "list_plans_api_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanSummary"
+                  },
+                  "title": "Response List Plans Api Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Plans",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/subscribers": {
+      "get": {
+        "operationId": "list_page_api_subscribers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-lastActiveAt",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "trial",
+                  "active",
+                  "grace",
+                  "expired",
+                  "cancelled"
+                ],
+                "type": "string"
+              },
+              "title": "State",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "planId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Planid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cohort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "in-grace",
+                    "quiet",
+                    "trial-ending",
+                    "cancelled-still-active"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cohort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One page of subscribers, filtered and sorted",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}": {
+      "get": {
+        "operationId": "read_one_api_subscribers__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One subscriber: the subscription, its plan, its promo code and its referrer",
+        "tags": [
+          "subscribers"
         ]
       }
     },
