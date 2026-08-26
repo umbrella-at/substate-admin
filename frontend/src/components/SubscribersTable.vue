@@ -103,28 +103,36 @@ function formatDate(value: string | null | undefined): string {
  * version of this is twenty lines that agree with the rest of the formatting on the day they are
  * written and diverge on the first edit.
  *
- * THE BUCKETS ARE SIZED SO THAT EVERY ONE OF THEM STARTS AT 1. A month of thirty days and a year
- * of twelve of those, rather than 365 days: with a calendar year the months bucket would end at
- * 360 days while the years bucket divided by 365, and the first value out of it would be zero —
- * which `numeric: 'auto'` renders as "this year" for something eleven months old.
+ * THE BUCKETS ARE SIZED SO THAT EVERY ONE OF THEM STARTS AT 1, and the table below is what makes
+ * that free rather than a compromise. `YEAR` is both the limit the months bucket stops at and the
+ * unit the years bucket divides by, so the two cannot drift apart: whatever a month is worth, a
+ * year is worth twelve of them, and the first count out of every bucket is exactly one. Nothing
+ * here ever renders "today", "this month" or "this year", which is what `numeric: 'auto'` does
+ * with a count of zero and how a row eleven months old would come to claim the current year.
  *
- * What that costs, stated properly rather than waved at. The unit is a fixed thirty days, so the
- * count is elapsed÷30 and not a count of calendar months, and it reads one higher than a calendar
- * floor would on about a tenth of the days in the bucket — the days at and just after each
- * multiple of thirty. Ninety days renders "3 months ago" where the calendar has 2.96. That
- * direction is the readable one: the same calendar floor renders thirty days as ZERO months,
- * which is where "this month" came from in the first place, so being exact here means clamping
- * anyway. The word is also looser than the arithmetic — "yesterday" is a calendar day and
- * elapsed÷24h is not, so a gap of forty-seven hours reads as "yesterday" when the calendar may
- * call it the day before. `numeric: 'auto'` was asked for and this is what it buys along with the
- * idiom.
+ * An earlier version of this comment claimed that invariant forced a thirty-day month, and cost
+ * "five days of drift". Both were wrong. It forces nothing — the mean month works and holds every
+ * boundary — and a thirty-day month did not drift by five days but over-reported by a whole unit
+ * near every anniversary: 720 days read as "2 years ago" against a true one year eleven months,
+ * and 3,600 days as "10 years ago" against nine years ten months. A phrase that says "ago" is a
+ * floor, and a floor that rounds up is simply wrong.
+ *
+ * The month is therefore 30.436875 days, which is 365.2425 ÷ 12 — the Gregorian mean. The one
+ * thing it costs: a gap of exactly thirty days now reads "30 days ago" rather than "last month",
+ * because the days bucket runs to the real length of a month rather than to a round number.
+ *
+ * The wording stays looser than the arithmetic, and that part is inherent. "yesterday" is a
+ * calendar day while elapsed÷24h is not, so forty-seven hours reads as "yesterday" where the
+ * calendar may call it the day before. `numeric: 'auto'` was asked for, and the idiom is what it
+ * buys.
  */
 const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
-const MONTH = 30 * DAY
+/** The Gregorian mean month, 365.2425 ÷ 12. Not thirty: see above. */
+const MONTH = 30.436875 * DAY
 const YEAR = 12 * MONTH
 
 /** Each row: the elapsed time this bucket stops at, the unit it counts in, and how long that unit

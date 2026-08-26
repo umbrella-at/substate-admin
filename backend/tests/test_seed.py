@@ -15,7 +15,7 @@ usable, which is the thing worth being told about.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from substate import MemoryStorage, SubscriptionEngine
@@ -210,6 +210,55 @@ async def test_no_seed_puts_activity_inside_the_minutes(seed: int) -> None:
     assert freshest >= timedelta(hours=1), (
         f"seed {seed} put somebody at {freshest}, inside the minutes the scale cannot honestly hold"
     )
+
+
+async def test_nobody_was_active_before_they_existed() -> None:
+    """The larger of the two honesty problems in this column, and the one a date column hid.
+
+    Every activity window is a fixed span measured back from the end of the run, while arrivals
+    ramp up across the history, so most subscribers are younger than the window they are drawn
+    from. Unclipped, that credited 87 of 351 rows with activity from before they subscribed — the
+    worst by 181 days — and nineteen of the twenty-four trials, including a fourteen-day trial two
+    days old whose owner was last seen three months earlier and who was returned by the Quiet
+    cohort. "17 Aug 2026" made that invisible; "3 months ago" beside a trial that started on
+    Tuesday does not.
+
+    The two rows this still allows are the residue of the freshness floor, which wins where the
+    two rules disagree: somebody who arrived on the last simulated day has no age to spare, and is
+    credited with an hour they did not have. Two rows wrong by an hour against 87 wrong by months.
+    """
+    clock = OffsetClock(timedelta(days=-HISTORY_DAYS))
+    tally = EventTally()
+
+    first_event: dict[str, datetime] = {}
+
+    def watch(event: object) -> None:
+        user_id = getattr(event, "user_id", None)
+        occurred_at = getattr(event, "occurred_at", None)
+        if isinstance(user_id, str) and isinstance(occurred_at, datetime):
+            first_event.setdefault(user_id, occurred_at)
+        tally(event)
+
+    engine = SubscriptionEngine(
+        MemoryStorage(), clock=clock, on_event=watch, default_program=USERS_PROGRAM
+    )
+    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
+
+    impossible = [
+        (user_id, first_event[user_id] - seen)
+        for user_id, _, seen in report.subscribers_projection
+        if user_id in first_event and seen < first_event[user_id]
+    ]
+
+    assert len(impossible) <= 2, (
+        f"{len(impossible)} subscribers were active before they subscribed: "
+        + ", ".join(f"{user_id} by {gap}" for user_id, gap in impossible[:5])
+    )
+    for user_id, gap in impossible:
+        assert gap <= timedelta(hours=1), (
+            f"{user_id} was active {gap} before subscribing, which is not the hour the freshness "
+            f"floor accounts for"
+        )
 
 
 async def test_the_catalogue_stays_inside_what_the_engine_allows() -> None:

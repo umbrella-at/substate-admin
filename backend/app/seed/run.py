@@ -308,6 +308,14 @@ async def seed_world(
 
     names: dict[str, str] = {}
     living: list[str] = []
+    joined_on: dict[str, int] = {}
+    """Which simulated day each subscriber arrived on. Activity has to be bounded by it, see below.
+
+    The DAY, not the timestamp. `OffsetClock` reads the real clock and adds a fixed offset, so two
+    calls to `now()` in the same run are microseconds apart and the same call in two runs is not —
+    a stored instant would carry that jitter into every age, and the run would stop being
+    reproducible for reasons nothing in the model chose. The simulation moves a day at a time and
+    the day is the same number every run."""
     partners: set[str] = set()
     ruled_on: dict[str, datetime] = {}
     """The renewal each subscriber has already been decided about, keyed by its due date.
@@ -349,6 +357,7 @@ async def seed_world(
                 # one of the answers this history is supposed to contain.
                 continue
             living.append(user_id)
+            joined_on[user_id] = day
             if streams.promos.random() < how.promo_use:
                 with suppress(SubstateError):
                     # A spent code, or one already bound to this subscriber, is a real answer.
@@ -405,8 +414,8 @@ async def seed_world(
     """The cohort threshold, from the specification: an active subscription whose owner has not
     turned up in a month."""
 
-    FRESHEST_HOURS = 1.0
-    """How recent the most recently active subscriber is allowed to be, in hours. See below."""
+    FRESHEST = timedelta(hours=1)
+    """How recent the most recently active subscriber is allowed to be. See below."""
 
     moment = now()
     for user_id in living:
@@ -422,28 +431,52 @@ async def seed_world(
         # quiet" would come to mean "pays monthly" — a cohort that is true of most of the table
         # and therefore says nothing about anyone.
         if subscription.state is State.CANCELLED:
-            last_seen = moment - timedelta(days=streams.activity.uniform(30, 240))
+            window = (timedelta(days=30), timedelta(days=240))
         elif subscription.state is State.EXPIRED:
-            last_seen = moment - timedelta(days=streams.activity.uniform(14, 150))
+            window = (timedelta(days=14), timedelta(days=150))
         elif streams.activity.random() < how.quiet_share:
             # Still paying, stopped coming. The people the quiet cohort exists to find.
-            last_seen = moment - timedelta(days=streams.activity.uniform(35, 120))
+            window = (timedelta(days=35), timedelta(days=120))
         else:
-            # NEVER FRESHER THAN AN HOUR, AND THE FLOOR IS THE POINT.
-            #
-            # These timestamps are written once, when the world is built, and then stand still
-            # while the panel is looked at. The column renders them as "how long ago", so a
-            # subscriber seeded at four minutes reads as "4 minutes ago" on the first screen and
-            # "44 minutes ago" half an hour later, having done nothing — the demonstration would
-            # be claiming an activity it has no source for, and saying so in a number that visibly
-            # decays. An hour is where that claim stops being made: the value still ages, but by a
-            # unit slow enough that a session's worth of drift is indistinguishable from the
-            # truth.
-            #
-            # It costs nothing in range. The scale from hours upward is fully exercised, and the
-            # two buckets it gives up — minutes and "just now" — are the two no fixed timestamp
-            # can honestly occupy.
-            last_seen = moment - timedelta(hours=streams.activity.uniform(FRESHEST_HOURS, 22 * 24))
+            window = (FRESHEST, timedelta(days=22))
+
+        # BOUNDED BY THE SUBSCRIBER'S OWN AGE, WHICH IS THE LARGER OF THE TWO HONESTY PROBLEMS
+        # THIS COLUMN HAS.
+        #
+        # Each window above is a fixed span measured back from the end of the run, and arrivals
+        # ramp up over the history, so most subscribers are younger than the window they are drawn
+        # from. Left alone that produced activity from before the person existed: measured on this
+        # seed, 87 of 351 rows, the worst by 181 days, and nineteen of the twenty-four trials — a
+        # fourteen-day trial two days old reporting its owner last seen three months ago, in the
+        # Quiet cohort, which is a named list somebody is invited to click. A date column hid
+        # that; a column that says "3 months ago" next to a trial that started on Tuesday does not.
+        #
+        # The window is therefore clipped to the time the subscriber has existed. Where the whole
+        # window falls outside that life it collapses to its end, which reads as "last seen when
+        # they signed up" — true, and the most that can be said.
+        low, high = window
+        # `days - 1 - day`: the clock advances at the top of each pass, so somebody who arrived on
+        # the last pass arrives at the instant the history ends and has an age of zero.
+        high = min(high, timedelta(days=days - 1 - joined_on[user_id]))
+        low = min(low, high)
+        gap = low + (high - low) * streams.activity.random()
+
+        # NEVER FRESHER THAN AN HOUR, AND THE FLOOR IS THE POINT.
+        #
+        # These timestamps are written once, when the world is built, and then stand still while
+        # the panel is looked at. The column renders them as "how long ago", so a subscriber
+        # seeded at four minutes reads as "4 minutes ago" on the first screen and "44 minutes ago"
+        # half an hour later, having done nothing — the demonstration claiming an activity it has
+        # no source for, in a number that visibly decays. An hour is where that claim stops being
+        # made: the value still ages, but by a unit slow enough that a session's worth of drift is
+        # indistinguishable from the truth.
+        #
+        # The floor wins over the clip when the two disagree, which they do only for somebody who
+        # arrived in the last hour of the history — two subscribers on this seed. They are then
+        # credited with activity up to an hour before they signed up. That is the residue of this
+        # rule, stated so nobody has to find it: two rows wrong by an hour, where leaving the clip
+        # out was 87 rows wrong by up to 181 days.
+        last_seen = moment - max(gap, FRESHEST)
 
         if subscription.state in (State.TRIAL, State.ACTIVE, State.GRACE) and (
             moment - last_seen > QUIET_AFTER

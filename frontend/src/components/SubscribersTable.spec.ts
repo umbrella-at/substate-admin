@@ -129,7 +129,7 @@ describe('how long ago', () => {
   const MINUTE = 60_000
   const HOUR = 60 * MINUTE
   const DAY = 24 * HOUR
-  const MONTH = 30 * DAY
+  const MONTH = 30.436875 * DAY
   const YEAR = 12 * MONTH
 
   beforeEach(() => {
@@ -156,12 +156,29 @@ describe('how long ago', () => {
     ['one day exactly', DAY, 'yesterday'],
     ['nine days', 9 * DAY, '9 days ago'],
     ['twenty-nine days', 29 * DAY, '29 days ago'],
+    // The days bucket runs to the real length of a month rather than to a round number, so this
+    // is the one case where thirty days is still counted in days.
+    ['thirty days', 30 * DAY, '30 days ago'],
     ['one month exactly', MONTH, 'last month'],
     ['eleven months', 11 * MONTH, '11 months ago'],
     ['one year exactly', YEAR, 'last year'],
     ['three years', 3 * YEAR, '3 years ago'],
   ])('reads %s as "%s"', (_name, ago, expected) => {
     expect(activity(ago)).toBe(expected)
+  })
+
+  // Anchored on the calendar rather than on this file's copy of the constants, which is what the
+  // table above is: a scale built from a thirty-day month passes every one of those cases and
+  // still reads 720 days as "2 years ago" for something one year and eleven months old. A phrase
+  // ending in "ago" is a floor, and these are the values a floor must not round up.
+  it.each([
+    ['300 days', 300, '9 months ago'],
+    ['364 days', 364, '11 months ago'],
+    ['720 days', 720, 'last year'],
+    ['1080 days', 1080, '2 years ago'],
+    ['3600 days', 3600, '9 years ago'],
+  ])('never rounds %s up to the next unit', (_name, days, expected) => {
+    expect(activity(days * DAY)).toBe(expected)
   })
 
   // The failure this shape of code produces: a count of zero, which `numeric: 'auto'` turns into
