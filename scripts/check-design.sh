@@ -28,11 +28,46 @@ else
     ok "the 999px shape appears only where design.md allows it"
 fi
 
+css="$(find frontend/dist/assets -name '*.css' 2>/dev/null | head -1)"
+# Two of the checks below read the build rather than the source, which makes them quietly wrong
+# when the build is older than the file they are judging: a utility written a minute ago is absent
+# from last hour's CSS, and the failure names the utility rather than the reason. CI builds
+# immediately before running this, so this only ever fires for someone running it by hand.
+if [ -n "$css" ] && [ -n "$(find frontend/src -newer "$css" -type f -print -quit)" ]; then
+    fail "frontend/dist" "the build is older than frontend/src; run npm run build before this check, or the font and radius rules judge stale CSS"
+fi
+
+echo "the radii:"
+# The other half of a closed --radius-* namespace. `rounded-full` survives it and is caught above;
+# `rounded-2xl` does the opposite — it compiles to nothing at all. No warning, no error, no rule in
+# the output, and the element renders with square corners. shadcn components are written against
+# the full stock scale, so the first card or dialog somebody generates is the likely way in.
+#
+# Checked against the build rather than a list, so the rule needs no editing when a radius is
+# added: a utility that produced CSS appears in a selector, and one that produced nothing does not.
+used="$(grep -rhoE 'rounded(-(t|r|b|l|tl|tr|br|bl|s|e|ss|se|es|ee))?-[a-z0-9]+' \
+    --include='*.vue' --include='*.ts' frontend/src | sort -u || true)"
+missing=""
+if [ -z "$css" ]; then
+    : # already reported by the font check
+else
+    while IFS= read -r utility; do
+        [ -n "$utility" ] || continue
+        grep -qF "$utility" "$css" || missing="$missing $utility"
+    done <<<"$used"
+fi
+if [ -n "$missing" ]; then
+    for utility in $missing; do
+        fail "frontend/src" "$utility is written in the source and compiles to nothing; the --radius-* namespace is closed, so it silently renders square"
+    done
+else
+    ok "every radius utility written in the source produces a rule"
+fi
+
 echo "the fonts:"
 # Declared as a dependency and imported nowhere is a silent failure: the fallback stack renders,
 # nothing looks broken, and the whole typography section is quietly unimplemented. No other check
 # can see the difference, because there is nothing to see.
-css="$(find frontend/dist/assets -name '*.css' 2>/dev/null | head -1)"
 if [ -z "$css" ]; then
     fail "frontend/dist" "no built CSS found; run npm run build in frontend/ before this check"
 else
