@@ -103,6 +103,35 @@ async def test_activity_is_ordered_by_the_instant_and_not_by_how_it_reads(world,
     )
 
 
+@pytest.mark.parametrize("sort", ["lastActiveAt", "-lastActiveAt"])
+async def test_subscribers_who_never_turned_up_stay_at_the_bottom(world, sort: str) -> None:
+    """The table draws these as "Never", and they belong under everybody who did turn up.
+
+    The seeder gives every subscriber a last activity, so this cannot be asked of the seeded world
+    the way the same question is asked of expiry — the rows simply do not exist. They are made
+    here by removing people from the projection, which is the state the application already
+    handles: a subscriber the journal knows and the projection has no row for.
+    """
+    built, projection = world
+    never = sorted(built.subscribers)[:5]
+    thinned = {k: v for k, v in projection.items() if k not in never}
+
+    rows = []
+    page = 1
+    while True:
+        answer = await list_subscribers(
+            built, thinned, SubscriberQuery(sort=sort, page=page, page_size=100)
+        )
+        rows.extend(answer.items)
+        if len(rows) >= answer.total:
+            break
+        page += 1
+
+    absent = [index for index, row in enumerate(rows) if row.last_active_at is None]
+    assert len(absent) == len(never)
+    assert min(absent) == len(rows) - len(absent)
+
+
 async def test_paging_covers_everybody_once(world) -> None:
     """The property that makes paging trustworthy: no row seen twice, none missed."""
     built, projection = world
