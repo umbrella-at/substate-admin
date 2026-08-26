@@ -249,6 +249,23 @@ Tables are the widest thing in the application and are allowed to be: no content
 max-width, horizontal scroll on the table container rather than truncation of
 columns that matter.
 
+**There are no shadows.** A layer that floats — a select's list, a menu, a dialog — is separated
+by `--surface-2` against the surface beneath it and a `--border-strong` outline, and that is the
+whole mechanism. A shadow on a dark theme is nearly invisible and would need a scale of its own to
+be used consistently; one floating layer is not enough reason to have one.
+
+**A control's height is not a number.** It comes from its vertical padding and the size of its
+text: `py-2` on `--text-ui`. Not `h-9`, which would be a number arguing with the type scale rather
+than following it — and which does not exist here anyway, the spacing namespace being closed. Two
+controls of the same padding and the same type size are the same height by construction; where
+they differ by a pixel or two because one is an `<input>` and one is not, they are aligned on
+their bottom edge and the difference does not read.
+
+**A control that opens a list is as wide as its content.** Not a fixed width, because there is no
+width step here for "wider than the longest label" and inventing one is how a design file stops
+being the place values come from. Placed at the end of its row, so it grows leftward into space
+rather than pushing anything.
+
 Table row `40px`, header row `34px`, `14px` horizontal cell padding.
 
 ## Signature element
@@ -285,6 +302,8 @@ a month, and nobody can tell which half. So:
 | no spacing step outside the scale | `--spacing-*` cleared; `p-5` does not exist |
 | the round shape is for subscription states only | a CI grep for `rounded-full` outside the state-chip component |
 | the fonts actually ship | CI counts `@font-face` rules in the built CSS |
+| nothing loads from another origin | `scripts/assets.py` reads every `url()` and `@import` in the built CSS |
+| every utility resolves to something | `scripts/utilities.py` fails on a class name that produced no CSS |
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
@@ -299,6 +318,30 @@ a month, and nobody can tell which half. So:
 `rounded-full` deserves a note: it survives even a cleared `--radius-*`, because Tailwind ships it
 as a static utility rather than deriving it from the theme. The grep is the only thing standing
 between this rule and the first avatar somebody adds.
+
+**A cleared namespace fails in the other direction too, and that one is silent.** The first six
+rows above are all the same mechanism — the value does not exist, so the utility asking for it
+does not exist either. Tailwind does not warn about that. It emits no rule, and the element
+renders with square corners, or with no height, or at its content width, while the source reads
+correctly. Three real defects arrived that way, every one of them from a component generated
+against Tailwind's stock scale and dropped into this project's smaller one:
+
+| written | wanted | rendered |
+|---|---|---|
+| `rounded-2xl` | a radius this file does not have | square corners |
+| `h-9` | `--spacing-9` | a control twenty pixels tall |
+| `min-w-0` | `--spacing-0` | a flex child that would not shrink |
+
+That is what `scripts/utilities.py` is for. It reads the class names the markup actually contains
+— `class` attributes and string literals, comments removed — and fails on any that produced no
+CSS. A closed namespace means a foreign vocabulary silently yields nothing; this is the thing that
+notices, rather than an eye on a screenshot.
+
+The same shape of silence is why `scripts/assets.py` exists. A generator that writes
+`@import url('https://fonts.googleapis.com/…')` into this stylesheet costs nothing visible: the
+panel's CSP refuses the request, the page renders on the fallback stack, and the `@font-face`
+count stays green because a remote import contributes none. Everything the stylesheet loads has to
+be bundled beside it.
 
 ## Floor
 

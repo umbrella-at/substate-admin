@@ -49,6 +49,18 @@ else
     failures=$((failures + 1))
 fi
 
+echo "what the stylesheet loads:"
+# Everything it loads has to be next to it, and the reasoning is in scripts/assets.py. In short:
+# the generator writes a Google Fonts @import, the CSP refuses it, the page renders on the fallback
+# stack, and the @font-face count below stays green because a remote import contributes none.
+if [ -z "$css" ]; then
+    : # already reported by the staleness guard
+elif python3 scripts/assets.py "$css"; then
+    ok "every asset the stylesheet loads is served from this origin"
+else
+    failures=$((failures + 1))
+fi
+
 echo "the fonts:"
 # Declared as a dependency and imported nowhere is a silent failure: the fallback stack renders,
 # nothing looks broken, and the whole typography section is quietly unimplemented. No other check
