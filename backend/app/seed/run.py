@@ -56,7 +56,7 @@ class Behaviour:
     """
 
     signups_at_start: float = 0.35
-    signups_at_end: float = 2.1
+    signups_at_end: float = 2.2
     """Arrivals ramp over the run, because a service that is working acquires people faster than
     it did nine months ago. This is not decoration: the standing TRIAL population is whoever
     signed up within the last two weeks and has not paid yet, so a flat arrival rate puts about
@@ -64,13 +64,17 @@ class Behaviour:
     rate would need four signups a day and a thousand subscribers, which is neither the volume the
     specification asks for nor a shape any real service has."""
 
-    trial_conversion: float = 0.45
+    trial_conversion: float = 0.26
     """How often a trial turns into a first payment."""
 
-    renewal: float = 0.55
-    """How often an active subscriber pays for the next period. The complement is what feeds
-    GRACE, and grace is a transient state: at any snapshot it holds only those who lapsed within
-    the last few days, so this number moves the standing grace population a long way."""
+    renewal: float = 0.89
+    """How often an active subscriber pays for the next period, decided once per renewal.
+
+    Held at a figure a real service would recognise. An earlier calibration reached 0.55 because
+    it was the only lever that filled GRACE, and the resulting population told a lie about how
+    subscriptions work: the median subscriber renewed twice and seven in ten had expired at least
+    once. A demonstration whose numbers are reachable only by making the product fail is not
+    demonstrating the product."""
 
     grace_rescue: float = 0.07
     """Per day, how often somebody in grace pays before it runs out. This sets how long they

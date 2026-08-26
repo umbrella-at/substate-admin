@@ -97,5 +97,10 @@ PLAN_BY_ID: Final[dict[str, Plan]] = {plan.id: plan for plan in PLANS}
 # chance to fall behind per year. A table where most people renew twice a year has nobody in
 # arrears to look at on any given day, and the state the design calls "call today" is an empty
 # filter.
-PLAN_WEIGHTS: Final[tuple[float, ...]] = (0.15, 0.45, 0.20, 0.12, 0.08)
-"""In the order of `PLANS`: weekly, monthly, quarterly, semiannual, annual."""
+PLAN_WEIGHTS: Final[tuple[float, ...]] = (0.20, 0.42, 0.19, 0.11, 0.08)
+"""In the order of `PLANS`: weekly, monthly, quarterly, semiannual, annual.
+
+Calibrated at exactly these two-decimal values rather than rounded afterwards.
+Rounding them changed the standing GRACE population from six to two: `random.choices`
+draws the same numbers and maps them differently, so every plan assignment shifts.
+What is measured has to be what ships."""
