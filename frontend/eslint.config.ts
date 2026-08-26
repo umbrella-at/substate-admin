@@ -10,10 +10,15 @@
  * `src/api/schema.d.ts` is ignored because it is generated: `npm run types` writes it from
  * backend/openapi.json, and a lint finding in it could only be fixed by hand, in a file the next
  * regeneration overwrites.
+ *
+ * Layout is prettier's, and `eslint-config-prettier` is last so that it switches off every rule
+ * here that has an opinion about it. Two tools arguing over a comma is a job that fails with no
+ * way to satisfy both, and the one that loses should be the one that is not the formatter.
  */
 
 import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 import { globalIgnores } from 'eslint/config'
+import configPrettier from 'eslint-config-prettier/flat'
 import pluginVue from 'eslint-plugin-vue'
 
 export default defineConfigWithVueTs(
@@ -72,4 +77,8 @@ export default defineConfigWithVueTs(
       'vue/multi-word-component-names': 'off',
     },
   },
+
+  // Last on purpose: it turns rules off, and a rule turned off by something above it would be
+  // turned back on here.
+  configPrettier,
 )

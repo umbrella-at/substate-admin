@@ -123,7 +123,9 @@ describe('empty', () => {
 
 describe('error', () => {
   it('says what happened, offers the retry, and does not apologise', async () => {
-    const { wrapper, client } = mountDashboard(() => Promise.reject(new TypeError('Failed to fetch')))
+    const { wrapper, client } = mountDashboard(() =>
+      Promise.reject(new TypeError('Failed to fetch')),
+    )
     await flushPromises()
 
     const text = wrapper.text()

@@ -237,7 +237,6 @@
   --radius-xl: var(--radius-card);
 }
 
-
 /* Focus, from the Floor section: visible everywhere, one description, no per-component variants. */
 @layer base {
   :focus-visible {

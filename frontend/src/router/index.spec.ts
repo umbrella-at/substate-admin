@@ -47,7 +47,8 @@ function clientFor(me: MeResponse | null, delayMs = 0): ApiClient {
       return me !== null ? ('renewed' as const) : ('refused' as const)
     },
     me: async () => {
-      if (me === null) throw new ApiError(401, { code: 'NOT_AUTHENTICATED', message: 'No session.' })
+      if (me === null)
+        throw new ApiError(401, { code: 'NOT_AUTHENTICATED', message: 'No session.' })
       return me
     },
   } as Partial<ApiClient> as ApiClient

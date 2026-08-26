@@ -1,4 +1,4 @@
-<script setup lang='ts'>
+<script setup lang="ts">
 /**
  * The subscriber table, and the one place that owns the address bar.
  *
@@ -46,16 +46,8 @@ const client = useApiClient()
 
 const query = computed<SubscriberQuery>(() => queryFromRoute(route.query))
 
-const {
-  rows,
-  total,
-  pageCount,
-  isPending,
-  isError,
-  error,
-  isRefreshing,
-  refetch,
-} = useSubscribers(query)
+const { rows, total, pageCount, isPending, isError, error, isRefreshing, refetch } =
+  useSubscribers(query)
 
 /** The catalogue for the plan filter. Separate from the table's own request because it does not
  *  change when the filters do, and refetching five unchanging rows on every keystroke would be
@@ -81,8 +73,7 @@ function go(next: SubscriberQuery, options: { replace: boolean } = { replace: fa
  *  cycling through it means one click in three appears to do nothing. */
 function sortHref(field: SortField): RouteLocationRaw {
   const current = query.value.sort
-  const descending =
-    current !== null && current.field === field && !current.descending
+  const descending = current !== null && current.field === field && !current.descending
   return {
     query: queryToRoute({
       ...query.value,
@@ -104,8 +95,7 @@ const UNREACHABLE = 'The service could not be reached.'
 
 const failure = computed(() => {
   const cause = error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '')
-    return cause.message
+  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
   return UNREACHABLE
 })
 </script>
@@ -153,10 +143,7 @@ const failure = computed(() => {
           />
         </div>
 
-        <div
-          v-if="rows.length === 0"
-          class="flex flex-col items-start gap-3 py-8"
-        >
+        <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
           <p class="text-ui text-text-secondary">
             {{
               hasFilters

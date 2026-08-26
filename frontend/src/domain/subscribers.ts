@@ -159,7 +159,8 @@ function first(value: QueryValue | readonly QueryValue[]): string | null {
 }
 
 function all(value: QueryValue | readonly QueryValue[]): string[] {
-  if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === 'string')
+  if (Array.isArray(value))
+    return value.filter((entry): entry is string => typeof entry === 'string')
   return typeof value === 'string' ? [value] : []
 }
 

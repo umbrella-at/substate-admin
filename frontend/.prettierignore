@@ -1,0 +1,21 @@
+# Generated files are formatted by whatever generates them, and reformatting one here means the
+# next regeneration undoes it. Worse: `scripts/check-schema.sh` regenerates the schema and its
+# types and fails on any difference, so a formatter touching them would make that check fail every
+# time somebody ran it.
+src/api/schema.d.ts
+../backend/openapi.json
+
+# `shadcn-vue add` writes these, in its own style, and will write them again. They are ours to
+# edit — and edited, which is why their class lists speak this project's vocabulary — but their
+# layout is the generator's, and a formatter fighting it turns every future `add` into a diff of
+# reflowed lines with the real change buried inside.
+src/components/ui/
+
+# npm owns this one.
+package-lock.json
+
+# Build output and test artefacts. Nothing here is read by a person.
+dist/
+coverage/
+playwright-report/
+test-results/
