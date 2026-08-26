@@ -933,7 +933,6 @@
               "anyOf": [
                 {
                   "enum": [
-                    "in-grace",
                     "quiet",
                     "trial-ending",
                     "cancelled-still-active"

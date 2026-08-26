@@ -120,6 +120,8 @@ const failure = computed(() => {
       </p>
     </header>
 
+    <!-- The 24px to the table is this section's own `gap-6`. An `mb-6` here as well made it 48,
+         which is the number that arrives when two people each add the gap they think is missing. -->
     <SubscribersFilters :query="query" :plans="planIds" @change="go" />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a

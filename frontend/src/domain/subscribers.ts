@@ -34,9 +34,13 @@ export const STATES: readonly SubscriptionState[] = [
  *
  *  Named for the person, not the predicate. "Quiet" is a column of people who have not been seen
  *  in a month; calling it `last_active_at < now() - 30d` in the interface would move the reader's
- *  work from reading to translating. */
+ *  work from reading to translating.
+ *
+ *  Every one of them asks something the state checkboxes cannot. There was a fourth, "In grace",
+ *  whose predicate on the API side was literally `state is GRACE` — the same question as the
+ *  checkbox two controls to its left, in a second vocabulary. Two controls doing one thing, side
+ *  by side, make everybody who sees them work out whether the difference means something. */
 export const COHORTS: readonly { value: Cohort; label: string }[] = [
-  { value: 'in-grace', label: 'In grace' },
   { value: 'trial-ending', label: 'Trial ending' },
   { value: 'quiet', label: 'Quiet' },
   { value: 'cancelled-still-active', label: 'Cancelled, still active' },

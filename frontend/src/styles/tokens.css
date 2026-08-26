@@ -122,6 +122,11 @@
   --radius-chip: 999px;
 
   /* --- Spacing: 4 · 8 · 12 · 16 · 24 · 32 · 48, and nothing between. --- */
+  /* Zero is not a design decision, it is the absence of one — but Tailwind reads `min-w-0` and
+   * `p-0` through this scale, so the step has to exist for them to compile at all. Without it
+   * `min-w-0` produced no rule and the flex child it was written on would not shrink below its
+   * content. */
+  --spacing-0: 0px;
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;

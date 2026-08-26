@@ -37,31 +37,28 @@ if [ -n "$css" ] && [ -n "$(find frontend/src -newer "$css" -type f -print -quit
     fail "frontend/dist" "the build is older than frontend/src; run npm run build before this check, or the font and radius rules judge stale CSS"
 fi
 
-echo "the radii:"
-# The other half of a closed --radius-* namespace. `rounded-full` survives it and is caught above;
-# `rounded-2xl` does the opposite — it compiles to nothing at all. No warning, no error, no rule in
-# the output, and the element renders with square corners. shadcn components are written against
-# the full stock scale, so the first card or dialog somebody generates is the likely way in.
-#
-# Checked against the build rather than a list, so the rule needs no editing when a radius is
-# added: a utility that produced CSS appears in a selector, and one that produced nothing does not.
-used="$(grep -rhoE 'rounded(-(t|r|b|l|tl|tr|br|bl|s|e|ss|se|es|ee))?-[a-z0-9]+' \
-    --include='*.vue' --include='*.ts' frontend/src | sort -u || true)"
-missing=""
+echo "utilities that compile to nothing:"
+# The other half of a closed namespace, and the reasoning is in scripts/utilities.py. In short: a
+# utility asking for a step this project does not define produces no CSS at all, silently, and the
+# element renders with square corners or with no height while the source looks right.
 if [ -z "$css" ]; then
-    : # already reported by the font check
+    : # already reported by the staleness guard
+elif python3 scripts/utilities.py "$css"; then
+    ok "every utility written in the markup produces a rule"
 else
-    while IFS= read -r utility; do
-        [ -n "$utility" ] || continue
-        grep -qF "$utility" "$css" || missing="$missing $utility"
-    done <<<"$used"
+    failures=$((failures + 1))
 fi
-if [ -n "$missing" ]; then
-    for utility in $missing; do
-        fail "frontend/src" "$utility is written in the source and compiles to nothing; the --radius-* namespace is closed, so it silently renders square"
-    done
+
+echo "what the stylesheet loads:"
+# Everything it loads has to be next to it, and the reasoning is in scripts/assets.py. In short:
+# the generator writes a Google Fonts @import, the CSP refuses it, the page renders on the fallback
+# stack, and the @font-face count below stays green because a remote import contributes none.
+if [ -z "$css" ]; then
+    : # already reported by the staleness guard
+elif python3 scripts/assets.py "$css"; then
+    ok "every asset the stylesheet loads is served from this origin"
 else
-    ok "every radius utility written in the source produces a rule"
+    failures=$((failures + 1))
 fi
 
 echo "the fonts:"

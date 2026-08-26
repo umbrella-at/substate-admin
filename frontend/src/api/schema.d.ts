@@ -665,7 +665,7 @@ export interface operations {
                 sort?: string;
                 state?: ("trial" | "active" | "grace" | "expired" | "cancelled")[];
                 planId?: string[];
-                cohort?: ("in-grace" | "quiet" | "trial-ending" | "cancelled-still-active") | null;
+                cohort?: ("quiet" | "trial-ending" | "cancelled-still-active") | null;
                 q?: string | null;
             };
             header?: never;

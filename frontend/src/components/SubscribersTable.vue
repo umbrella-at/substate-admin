@@ -22,9 +22,14 @@
  * words and over nothing an administrator came here for; the arrow over Plan would have had to
  * invent one outright.
  *
- * Both are filtered instead, and their headers say so: clicking either one takes the reader to the
- * control that does the thing the header is for. The state order that IS worth having lives beside
- * that control, written out as "most urgent first", because it is a name and not a direction.
+ * Both are filtered from the panel above the table, and their headers are plain text. They were
+ * briefly links to that panel, which was worse than doing nothing: the jump scrolled the page a
+ * hundred pixels, put nothing new on screen, and read as a control that had broken. The filters
+ * are in plain sight a finger's width above; a header that leads to them answers a question
+ * nobody had.
+ *
+ * The state order that IS worth having lives beside those filters, written out as "sort by
+ * urgency", because it is a name and not a direction.
  */
 
 import {
@@ -234,13 +239,6 @@ const columns = columnHelper.columns([
  *  sorted, but not from here — see the note above. */
 const SORTABLE_HEADERS = new Set<string>(['displayName', 'expiresAt', 'lastActiveAt'])
 
-/** Which headers send the reader to a filter instead, and which control to send them to. The id
- *  is the fieldset's, so the browser does the scrolling and the focus ring lands where it should. */
-const FILTER_HEADERS: Record<string, string> = {
-  state: 'filter-state',
-  planId: 'filter-plan',
-}
-
 const table = useTable({
   features: FEATURES,
   columns,
@@ -308,20 +306,8 @@ const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
                 {{ arrow(header.column.id) }}
               </span>
             </RouterLink>
-            <!-- A category. The header is not an order, so it does not offer one; it is the way
-                 to the control that does what this column is actually for. -->
-            <a
-              v-else-if="FILTER_HEADERS[header.column.id]"
-              :href="`#${FILTER_HEADERS[header.column.id]}`"
-              class="inline-flex items-center gap-1 rounded-control hover:text-text-primary"
-            >
-              <FlexRender
-                :render="header.column.columnDef.header"
-                :props="header.getContext()"
-              />
-              <span aria-hidden="true" class="text-text-muted">▾</span>
-              <span class="sr-only">— filter</span>
-            </a>
+            <!-- A category, or a column whose order is set elsewhere. Plain text, because there
+                 is nothing here to click and nothing here should look as though there is. -->
             <FlexRender
               v-else
               :render="header.column.columnDef.header"
