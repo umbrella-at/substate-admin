@@ -93,6 +93,10 @@ class Behaviour:
     promo_use: float = 0.22
     referral_use: float = 0.3
 
+    quiet_share: float = 0.18
+    """How many subscribers stopped turning up while still paying. The cohort the analytics round
+    is built around — people whose money still arrives and whose attention has gone."""
+
     partner_share: float = 0.12
     """How many referrers are on the partners programme rather than the default. Small on purpose:
     a service has a few people with an audience and a lot of people with a friend, and if the two
@@ -151,6 +155,7 @@ class Streams:
     demonstration.
     """
 
+    activity: random.Random
     arrivals: random.Random
     payments: random.Random
     cancels: random.Random
@@ -164,6 +169,7 @@ class Streams:
         # Distinct constants rather than sequential ones: neighbouring seeds produce correlated
         # first draws in a Mersenne Twister, and correlated streams would defeat the point.
         return cls(
+            activity=random.Random(seed ^ 0x5EED_0008),
             arrivals=random.Random(seed ^ 0x5EED_0001),
             payments=random.Random(seed ^ 0x5EED_0002),
             cancels=random.Random(seed ^ 0x5EED_0003),
@@ -184,6 +190,14 @@ class SeedReport:
     states: dict[str, int] = field(default_factory=dict)
     plans: dict[str, int] = field(default_factory=dict)
     seconds: float = 0.0
+
+    subscribers_projection: list[tuple[str, str, datetime]] = field(default_factory=list)
+    """The projection rows as (user_id, display_name, last_active_at). Plain tuples rather than the
+    persistence type: the seeder produces a history and should not know how it is stored."""
+
+    quiet: int = 0
+    """How many landed in the quiet cohort. Measured, because a cohort that is empty and a cohort
+    that is the whole table are equally useless and both look fine from the code."""
 
     accruals_by_program: dict[str, int] = field(default_factory=dict)
     """How many referral payouts each programme produced. Measured rather than assumed: both
@@ -379,12 +393,39 @@ async def seed_world(
         await engine.tick()
         report.ticks += 1
 
+    QUIET_AFTER = timedelta(days=30)
+    """The cohort threshold, from the specification: an active subscription whose owner has not
+    turned up in a month."""
+
+    moment = now()
     for user_id in living:
         subscription = await engine.get_subscription(user_id)
         if subscription is None:
             continue
         report.states[subscription.state.value] = report.states.get(subscription.state.value, 0) + 1
         report.plans[subscription.plan_id] = report.plans.get(subscription.plan_id, 0) + 1
+
+        # `last_active_at` is drawn from its own stream and is deliberately NOT derived from the
+        # payment dates. If it were, a threshold of thirty days against a monthly plan would
+        # collect everybody who simply had not logged in since their last renewal, and "went
+        # quiet" would come to mean "pays monthly" — a cohort that is true of most of the table
+        # and therefore says nothing about anyone.
+        if subscription.state is State.CANCELLED:
+            last_seen = moment - timedelta(days=streams.activity.uniform(30, 240))
+        elif subscription.state is State.EXPIRED:
+            last_seen = moment - timedelta(days=streams.activity.uniform(14, 150))
+        elif streams.activity.random() < how.quiet_share:
+            # Still paying, stopped coming. The people the quiet cohort exists to find.
+            last_seen = moment - timedelta(days=streams.activity.uniform(35, 120))
+        else:
+            last_seen = moment - timedelta(hours=streams.activity.uniform(0, 22 * 24))
+
+        if subscription.state in (State.TRIAL, State.ACTIVE, State.GRACE) and (
+            moment - last_seen > QUIET_AFTER
+        ):
+            report.quiet += 1
+
+        report.subscribers_projection.append((user_id, names.get(user_id, user_id), last_seen))
 
     report.subscribers = len(living)
     if tally is not None:

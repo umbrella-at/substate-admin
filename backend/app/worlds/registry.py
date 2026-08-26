@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from substate import Event, MemoryStorage, SubscriptionEngine
+from substate import Event, MemoryStorage, ReferralProgram, SubscriptionEngine
 
 from app.worlds.clock import OffsetClock
 
@@ -28,6 +28,20 @@ class World:
     created_at: datetime
     expires_at: datetime | None = None
     seeded: bool = False
+
+    subscribers: set[str] = field(default_factory=set)
+    """Who exists in this world.
+
+    The panel keeps this itself because the storage protocol has no way to ask. `substate` offers
+    `get_subscription(user_id)` and `iter_due(now)` and nothing that lists — reasonable for an
+    engine, useless for a table of everybody. The alternative was reaching into
+    `MemoryStorage._subscriptions`, which is a private field that would keep working right up
+    until it silently did not.
+
+    Only identity lives here. The state of a subscription is asked of the engine every time, so
+    this index cannot drift into being a second, wrong answer to a question `substate` already
+    answers. When the SQLAlchemy storage arrives with a real query interface, this goes.
+    """
 
 
 @dataclass(slots=True)
@@ -53,6 +67,7 @@ class WorldRegistry:
         on_event: Callable[[Event], None] | None = None,
         ttl: timedelta | None = None,
         offset: timedelta = timedelta(),
+        default_program: ReferralProgram | None = None,
     ) -> World:
         """Build a world and put it in the registry, replacing any world of the same id."""
         identifier = world_id if world_id is not None else str(uuid.uuid4())
@@ -61,7 +76,9 @@ class WorldRegistry:
         now = datetime.now(UTC)
         world = World(
             id=identifier,
-            engine=SubscriptionEngine(storage, clock=clock, on_event=on_event),
+            engine=SubscriptionEngine(
+                storage, clock=clock, on_event=on_event, default_program=default_program
+            ),
             clock=clock,
             storage=storage,
             created_at=now,
