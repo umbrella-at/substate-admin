@@ -133,6 +133,7 @@ if ! have npm; then
     skip 'frontend' 'npm is not on PATH'
 else
     run_in frontend 'eslint' npm run lint --silent
+    run_in frontend 'prettier --check' npm run format:check --silent
     run_in frontend 'vue-tsc' npm run typecheck --silent
     run_in frontend 'vitest' npm run test --silent
 

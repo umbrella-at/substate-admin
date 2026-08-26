@@ -245,6 +245,12 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      # Beside eslint and for the same reason it is a separate step: a red X should say which of
+      # the three it was. Layout is not a rule to argue with, it is a command to run.
+      - name: prettier --check
+        working-directory: frontend
+        run: npm run format:check
+
       - name: vue-tsc
         working-directory: frontend
         run: npm run typecheck
