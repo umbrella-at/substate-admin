@@ -70,6 +70,12 @@ export const router = createRouter({
       component: () => import('@/views/DashboardView.vue'),
     },
     {
+      path: '/subscribers',
+      name: 'subscribers',
+      meta: { permission: 'subscribers.read' },
+      component: () => import('@/views/SubscribersView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       meta: { requiresAuth: false },

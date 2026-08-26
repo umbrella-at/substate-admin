@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report the service version and whether the database answers
+         * @description Answer 200 when Postgres responds and 503 when it does not.
+         */
+        get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -18,6 +38,26 @@ export interface paths {
          * @description Authenticate a person and start a refresh-token family for the device they used.
          */
         post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the refresh cookie and mint a new access token
+         * @description Consume the presented refresh token and issue its successor in the same family.
+         */
+        post: operations["refresh_api_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -64,46 +104,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Rotate the refresh cookie and mint a new access token
-         * @description Consume the presented refresh token and issue its successor in the same family.
-         */
-        post: operations["refresh_api_auth_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Report the service version and whether the database answers
-         * @description Answer 200 when Postgres responds and 503 when it does not.
-         */
-        get: operations["health_api_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -124,6 +124,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plans
+         * @description The whole catalogue, in the order the table's plan filter should offer it.
+         *
+         *     The filter needs every plan, not the ones that happen to appear on the page being looked at —
+         *     a filter offering four of five because the fifth is on page two is a filter that hides people.
+         *     The order is the catalogue's own, which is the duration ladder, so it reads shortest to
+         *     longest rather than alphabetically.
+         */
+        get: operations["list_plans_api_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One page of subscribers, filtered and sorted */
+        get: operations["list_page_api_subscribers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One subscriber: the subscription, its plan, its promo code and its referrer */
+        get: operations["read_one_api_subscribers__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -134,10 +193,10 @@ export interface components {
          */
         ErrorBody: {
             code: components["schemas"]["ErrorCode"];
-            /** Field */
-            field?: string | null;
             /** Message */
             message: string;
+            /** Field */
+            field?: string | null;
         };
         /**
          * ErrorCode
@@ -162,10 +221,6 @@ export interface components {
          * @description GET /api/health.
          */
         HealthResponse: {
-            /** Commit */
-            commit: string;
-            /** Db */
-            db: boolean;
             /**
              * Status
              * @enum {string}
@@ -173,6 +228,11 @@ export interface components {
             status: "ok" | "degraded";
             /** Version */
             version: string;
+            /** Commit */
+            commit: string;
+            /** Db */
+            db: boolean;
+            world: components["schemas"]["WorldHealth"];
         };
         /**
          * LoginRequest
@@ -189,17 +249,40 @@ export interface components {
          * @description GET /api/auth/me.
          */
         MeResponse: {
+            user: components["schemas"]["UserProfile"];
+            role: components["schemas"]["RoleSummary"];
+            /** Permissions */
+            permissions: string[];
             /**
              * Kind
              * @enum {string}
              */
             kind: "user" | "demo";
-            /** Permissions */
-            permissions: string[];
-            role: components["schemas"]["RoleSummary"];
-            user: components["schemas"]["UserProfile"];
             /** Worldid */
             worldId?: string | null;
+        };
+        /**
+         * PlanSummary
+         * @description The plan a subscription is on, as the card shows it.
+         */
+        PlanSummary: {
+            /** Id */
+            id: string;
+            /** Price */
+            price: number;
+            /** Currency */
+            currency: string;
+            /**
+             * Periodunit
+             * @enum {string}
+             */
+            periodUnit: "days" | "months";
+            /** Periodcount */
+            periodCount: number;
+            /** Trialdays */
+            trialDays: number;
+            /** Gracedays */
+            graceDays: number;
         };
         /**
          * RoleSummary
@@ -210,6 +293,67 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /**
+         * SubscriberDetail
+         * @description GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer.
+         */
+        SubscriberDetail: {
+            subscriber: components["schemas"]["SubscriberSummary"];
+            plan: components["schemas"]["PlanSummary"];
+            /** Promocode */
+            promoCode?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
+            /** Referralprogramid */
+            referralProgramId?: string | null;
+        };
+        /**
+         * SubscriberPage
+         * @description GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.
+         */
+        SubscriberPage: {
+            /** Items */
+            items: components["schemas"]["SubscriberSummary"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
+        };
+        /**
+         * SubscriberSummary
+         * @description One row of the subscriber table.
+         *
+         *     The date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set
+         *     only in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a
+         *     field that is present in a state it does not belong to would be a type that lies.
+         */
+        SubscriberSummary: {
+            /** Userid */
+            userId: string;
+            /** Displayname */
+            displayName: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "trial" | "active" | "grace" | "expired" | "cancelled";
+            /** Planid */
+            planId: string;
+            /** Expiresat */
+            expiresAt?: string | null;
+            /** Trialendsat */
+            trialEndsAt?: string | null;
+            /** Graceendsat */
+            graceEndsAt?: string | null;
+            /** Lastactiveat */
+            lastActiveAt?: string | null;
+            /** Promocode */
+            promoCode?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
         };
         /**
          * TokenResponse
@@ -231,12 +375,12 @@ export interface components {
         UserListResponse: {
             /** Items */
             items: components["schemas"]["UserSummary"][];
+            /** Total */
+            total: number;
             /** Page */
             page: number;
             /** Pagesize */
             pageSize: number;
-            /** Total */
-            total: number;
         };
         /**
          * UserProfile
@@ -244,19 +388,19 @@ export interface components {
          */
         UserProfile: {
             /**
-             * Createdat
-             * Format: date-time
-             */
-            createdAt: string;
-            /** Email */
-            email: string;
-            /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Email */
+            email: string;
             /** Isactive */
             isActive: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
             /** Lastloginat */
             lastLoginAt: string | null;
         };
@@ -266,22 +410,40 @@ export interface components {
          */
         UserSummary: {
             /**
-             * Createdat
-             * Format: date-time
-             */
-            createdAt: string;
-            /** Email */
-            email: string;
-            /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Email */
+            email: string;
             /** Isactive */
             isActive: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
             /** Lastloginat */
             lastLoginAt: string | null;
             role: components["schemas"]["RoleSummary"];
+        };
+        /**
+         * WorldHealth
+         * @description Whether the demonstration has a world behind it.
+         *
+         *     Reported beside the database rather than folded into `status`, because the two failures are
+         *     not the same kind. A database that does not answer means the panel cannot serve; a world that
+         *     failed to seed means the shop window is empty while signing in, permissions and every
+         *     operator screen keep working. Answering 503 for the second would make a deploy roll itself
+         *     back over a cosmetic problem.
+         */
+        WorldHealth: {
+            /** Seeded */
+            seeded: boolean;
+            /** Subscribers */
+            subscribers: number;
+            /** Events */
+            events: number;
         };
     };
     responses: never;
@@ -292,6 +454,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    health_api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description The database did not answer. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
     login_api_auth_login_post: {
         parameters: {
             query?: never;
@@ -325,6 +516,44 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    refresh_api_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -390,73 +619,6 @@ export interface operations {
             };
         };
     };
-    refresh_api_auth_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    health_api_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-            /** @description The database did not answer. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
     list_users_api_users_get: {
         parameters: {
             query?: {
@@ -489,6 +651,157 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_plans_api_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanSummary"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_page_api_subscribers_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                sort?: string;
+                state?: ("trial" | "active" | "grace" | "expired" | "cancelled")[];
+                planId?: string | null;
+                cohort?: ("in-grace" | "quiet" | "trial-ending" | "cancelled-still-active") | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_one_api_subscribers__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
