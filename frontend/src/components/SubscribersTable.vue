@@ -39,7 +39,7 @@ import {
 
 const props = defineProps<{
   rows: SubscriberSummary[]
-  sort: Sort | null
+  sort: Sort
   /** Where clicking a given column header would lead. Built by the view, which owns the URL. */
   sortHref: (field: SortField) => RouteLocationRaw
   busy: boolean
@@ -62,8 +62,14 @@ const columnHelper = createColumnHelper<typeof FEATURES, SubscriberSummary>()
 
 /** A date as a person would check it: absolute, unambiguous between British and American
  *  readings, and the same width down the column so the eye can compare without reading. An em
- *  dash where there is no date, because "—" reads as "not applicable" and an empty cell reads as
- *  a bug. */
+ *  dash where there is no date, because "—" reads as "not applicable" while an empty cell reads
+ *  as a bug.
+ *
+ *  Assembled from parts rather than taken whole, for one word. Every day-first English locale
+ *  abbreviates September as "Sept" and every other month to three letters, so one row in twelve
+ *  is a character wider than the rest and the column stops lining up — which is the entire reason
+ *  for choosing a fixed-width form. Month-first locales give "Sep" and cost the unambiguous
+ *  order, which is the more expensive thing to lose. */
 const DATE = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit',
   month: 'short',
@@ -74,7 +80,10 @@ const DATE = new Intl.DateTimeFormat('en-GB', {
 function formatDate(value: string | null | undefined): string {
   if (value === null || value === undefined) return '—'
   const at = new Date(value)
-  return Number.isNaN(at.getTime()) ? '—' : DATE.format(at)
+  if (Number.isNaN(at.getTime())) return '—'
+  return DATE.formatToParts(at)
+    .map((part) => (part.type === 'month' ? part.value.slice(0, 3) : part.value))
+    .join('')
 }
 
 // `columns()` rather than a bare array: it keeps each column's own value type instead of widening
@@ -126,12 +135,12 @@ const table = useTable({
 /** Drawn only for the column actually sorted, so the header row shows one arrow rather than a
  *  row of them with one highlighted. */
 function arrow(field: string): string {
-  if (props.sort === null || props.sort.field !== field) return ''
+  if (props.sort.field !== field) return ''
   return props.sort.descending ? '↓' : '↑'
 }
 
 function ariaSort(field: string): 'ascending' | 'descending' | 'none' {
-  if (props.sort === null || props.sort.field !== field) return 'none'
+  if (props.sort.field !== field) return 'none'
   return props.sort.descending ? 'descending' : 'ascending'
 }
 </script>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_PAGE_SIZE,
+  DEFAULT_SORT,
   EMPTY_QUERY,
   MAX_PAGE_SIZE,
   parseSort,
@@ -45,7 +46,8 @@ describe('reading the question out of the URL', () => {
     })
     expect(query.page).toBe(1)
     expect(query.pageSize).toBe(DEFAULT_PAGE_SIZE)
-    expect(query.sort).toBeNull()
+    // Falls back to the order the API would have applied anyway, rather than to no order.
+    expect(query.sort).toEqual(DEFAULT_SORT)
     expect(query.states).toEqual(['grace'])
     expect(query.cohort).toBeNull()
   })
@@ -123,5 +125,15 @@ describe('sort', () => {
 
   it('refuses a column the API does not sort by', () => {
     expect(parseSort('secret')).toBeNull()
+  })
+
+  // Sending it is what keeps the header honest if the API's default ever moves.
+  it('is always sent to the API, even when the address does not carry it', () => {
+    expect(queryToSearchParams(EMPTY_QUERY).get('sort')).toBe('-lastActiveAt')
+  })
+
+  it('stays out of the address while it is the default', () => {
+    expect(queryToRoute(EMPTY_QUERY)).not.toHaveProperty('sort')
+    expect(queryToRoute({ ...EMPTY_QUERY, sort: DEFAULT_SORT })).toEqual({})
   })
 })

@@ -61,7 +61,7 @@ export interface Sort {
 export interface SubscriberQuery {
   page: number
   pageSize: number
-  sort: Sort | null
+  sort: Sort
   states: SubscriptionState[]
   planId: string | null
   cohort: Cohort | null
@@ -69,6 +69,15 @@ export interface SubscriberQuery {
 }
 
 export const DEFAULT_PAGE_SIZE = 25
+
+/** The order the API applies when asked for none.
+ *
+ *  Stated here rather than left implicit, because a table cannot show an order it does not know
+ *  it has: with no sort in the address the header drew no arrow while the rows arrived newest
+ *  first, so the column order was real and the only thing that could explain it said nothing.
+ *  Mirroring the API's default is what makes the header honest on the first screen; a test asks
+ *  the running service to confirm the two still agree. */
+export const DEFAULT_SORT: Sort = { field: 'lastActiveAt', descending: true }
 
 /** The bounds the API enforces. Mirrored rather than discovered by being refused: a hand-edited
  *  `?pageSize=400` should give the table it asks for as closely as the API allows, not an error
@@ -80,7 +89,7 @@ export const MAX_PAGE = 1_000_000
 export const EMPTY_QUERY: SubscriberQuery = {
   page: 1,
   pageSize: DEFAULT_PAGE_SIZE,
-  sort: null,
+  sort: DEFAULT_SORT,
   states: [],
   planId: null,
   cohort: null,
@@ -108,9 +117,12 @@ export function parseSort(raw: string | null): Sort | null {
   return isSortField(field) ? { field, descending } : null
 }
 
-export function formatSort(sort: Sort | null): string | null {
-  if (sort === null) return null
+export function formatSort(sort: Sort): string {
   return sort.descending ? `-${sort.field}` : sort.field
+}
+
+function sameSort(a: Sort, b: Sort): boolean {
+  return a.field === b.field && a.descending === b.descending
 }
 
 /** A whole number inside the bounds, or the fallback. Anything else in the URL — a word, a
@@ -146,7 +158,7 @@ export function queryFromRoute(source: QuerySource): SubscriberQuery {
   return {
     page: bounded(first(source['page']), 1, MAX_PAGE),
     pageSize: bounded(first(source['pageSize']), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
-    sort: parseSort(first(source['sort'])),
+    sort: parseSort(first(source['sort'])) ?? DEFAULT_SORT,
     // Deduplicated: `?state=active&state=active` is one filter, and letting it through would
     // send the same value twice and make two identical URLs cache as different questions.
     states: [...new Set(all(source['state']).filter(isState))],
@@ -162,8 +174,7 @@ export function queryToRoute(query: SubscriberQuery): Record<string, string | st
   const route: Record<string, string | string[]> = {}
   if (query.page !== 1) route['page'] = String(query.page)
   if (query.pageSize !== DEFAULT_PAGE_SIZE) route['pageSize'] = String(query.pageSize)
-  const sort = formatSort(query.sort)
-  if (sort !== null) route['sort'] = sort
+  if (!sameSort(query.sort, DEFAULT_SORT)) route['sort'] = formatSort(query.sort)
   if (query.states.length > 0) route['state'] = [...query.states]
   if (query.planId !== null) route['planId'] = query.planId
   if (query.cohort !== null) route['cohort'] = query.cohort
@@ -177,8 +188,9 @@ export function queryToSearchParams(query: SubscriberQuery): URLSearchParams {
   const params = new URLSearchParams()
   params.set('page', String(query.page))
   params.set('pageSize', String(query.pageSize))
-  const sort = formatSort(query.sort)
-  if (sort !== null) params.set('sort', sort)
+  // Always sent, like page and size: the API's default and ours agreeing today is not a reason
+  // for the request to depend on their agreeing tomorrow.
+  params.set('sort', formatSort(query.sort))
   for (const state of query.states) params.append('state', state)
   if (query.planId !== null) params.set('planId', query.planId)
   if (query.cohort !== null) params.set('cohort', query.cohort)

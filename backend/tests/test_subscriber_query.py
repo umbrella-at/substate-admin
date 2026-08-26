@@ -109,6 +109,14 @@ async def test_every_cohort_holds_somebody(world) -> None:
         assert answer.total > 0, f"nobody is in {cohort.value}"
 
 
+def test_the_default_order_is_the_one_the_table_draws_an_arrow_for() -> None:
+    """The frontend mirrors this value so the header can explain the order on the first screen,
+    where the address carries no sort at all. If it moves here without moving there, the table
+    goes back to showing a real order with nothing on screen to account for it — which is not a
+    failure any other test can see."""
+    assert SubscriberQuery().sort == "-lastActiveAt"
+
+
 async def test_search_matches_a_name_somebody_can_see(world) -> None:
     built, projection = world
     first = (await list_subscribers(built, projection, SubscriberQuery(page_size=1))).items[0]

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { RouterLinkStub } from '@vue/test-utils'
 
 import SubscribersTable from '@/components/SubscribersTable.vue'
-import type { SubscriberSummary } from '@/domain/subscribers'
+import { DEFAULT_SORT, type SubscriberSummary } from '@/domain/subscribers'
 
 function subscriber(over: Partial<SubscriberSummary> = {}): SubscriberSummary {
   return {
@@ -31,7 +31,7 @@ function render(props: Partial<InstanceType<typeof SubscribersTable>['$props']> 
   return mount(SubscribersTable, {
     props: {
       rows: [subscriber()],
-      sort: null,
+      sort: DEFAULT_SORT,
       sortHref: (field: string) => ({ query: { sort: field } }),
       busy: false,
       ...props,
@@ -70,6 +70,19 @@ describe('the subscriber table', () => {
     expect(table.findAll('td').at(3)?.text()).toBe('—')
   })
 
+  // Every day-first English locale writes September as "Sept" and everything else with three
+  // letters, so one month in twelve breaks the alignment the fixed-width form exists for.
+  it('gives every month the same width', () => {
+    const table = render({
+      rows: [
+        subscriber({ userId: 'a', expiresAt: '2026-09-10T00:00:00Z' }),
+        subscriber({ userId: 'b', expiresAt: '2026-10-04T00:00:00Z' }),
+      ],
+    })
+    const dates = table.findAll('tbody tr').map((row) => row.findAll('td').at(3)?.text())
+    expect(dates).toEqual(['10 Sep 2026', '04 Oct 2026'])
+  })
+
   it('makes every sortable header a link, so the order can be opened in a new tab', () => {
     const links = render().findAllComponents(RouterLinkStub)
     expect(links.length).toBe(5)
@@ -81,6 +94,14 @@ describe('the subscriber table', () => {
     const headers = table.findAll('th')
     expect(headers.at(3)?.attributes('aria-sort')).toBe('descending')
     expect(headers.at(0)?.attributes('aria-sort')).toBe('none')
+  })
+
+  // The first screen carries no sort in its address and is still sorted, by the order the API
+  // applies when asked for none. A header that drew nothing there would leave a real order with
+  // nothing on screen to explain it.
+  it('marks the default order on a table nobody has sorted yet', () => {
+    const headers = render({ sort: DEFAULT_SORT }).findAll('th')
+    expect(headers.at(4)?.attributes('aria-sort')).toBe('descending')
   })
 
   it('draws exactly one arrow', () => {
