@@ -95,7 +95,6 @@ function toggleState(state: SubscriptionState): void {
   apply({ states })
 }
 
-
 /** The select carries a sentinel for "no cohort" rather than an empty string: an empty value in a
  *  Reka select is indistinguishable from nothing selected, and the placeholder would show where
  *  "Everyone" belongs. */
@@ -134,7 +133,6 @@ function toggleUrgency(): void {
     { replace: false },
   )
 }
-
 </script>
 
 <template>

@@ -227,7 +227,9 @@ describe('the endpoints the machinery must not touch', () => {
 
 describe('failures that are not the server refusing', () => {
   it('leaves the session alone when the API is broken rather than unconvinced', async () => {
-    fetchMock.mockImplementation(async () => refused(500, 'INTERNAL_ERROR', 'Something went wrong.'))
+    fetchMock.mockImplementation(async () =>
+      refused(500, 'INTERNAL_ERROR', 'Something went wrong.'),
+    )
 
     const api = client()
     api.setAccessToken('good')

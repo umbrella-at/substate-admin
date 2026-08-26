@@ -33,9 +33,11 @@ const replace = vi.fn((to: { query: Record<string, string | string[]> }) => {
 
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
-  useRoute: () => ({ get query() {
-    return routeQuery.value
-  } }),
+  useRoute: () => ({
+    get query() {
+      return routeQuery.value
+    },
+  }),
   useRouter: () => ({ push, replace }),
 }))
 
@@ -80,7 +82,10 @@ function render(subscribers: (params: URLSearchParams, signal: AbortSignal) => P
     slots: { default: () => h(SubscribersView) },
     global: {
       plugins: [
-        [VueQueryPlugin, { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) }],
+        [
+          VueQueryPlugin,
+          { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+        ],
       ],
       provide: { [apiClientKey as symbol]: client },
       stubs: { RouterLink: RouterLinkStub },

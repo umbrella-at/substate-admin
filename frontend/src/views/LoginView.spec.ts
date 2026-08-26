@@ -96,7 +96,9 @@ describe('the sentence a refusal produces', () => {
   })
 
   it('does not blame the password when the service was never reached', async () => {
-    const client = stubClient({ login: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) })
+    const client = stubClient({
+      login: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+    })
     const wrapper = await signIn(client)
     const text = wrapper.find('[role="alert"]').text()
     expect(text).toContain('could not be reached')
@@ -105,7 +107,9 @@ describe('the sentence a refusal produces', () => {
 
   it('does not blame the password for a 500 either', async () => {
     const client = stubClient({
-      login: vi.fn().mockRejectedValue(apiError(500, 'INTERNAL_ERROR', 'Something went wrong. Try again.')),
+      login: vi
+        .fn()
+        .mockRejectedValue(apiError(500, 'INTERNAL_ERROR', 'Something went wrong. Try again.')),
     })
     const wrapper = await signIn(client)
     const text = wrapper.find('[role="alert"]').text()
@@ -118,7 +122,9 @@ describe('the sentence a refusal produces', () => {
     const client = stubClient({
       login: vi
         .fn()
-        .mockRejectedValue(apiError(429, 'RATE_LIMITED', 'Too many attempts. Try again in a few minutes.')),
+        .mockRejectedValue(
+          apiError(429, 'RATE_LIMITED', 'Too many attempts. Try again in a few minutes.'),
+        ),
     })
     const wrapper = await signIn(client)
     const text = wrapper.find('[role="alert"]').text()
@@ -145,7 +151,9 @@ describe('the sentence a refusal produces', () => {
       stubClient({
         login: vi
           .fn()
-          .mockRejectedValue(apiError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.')),
+          .mockRejectedValue(
+            apiError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.'),
+          ),
       }),
     )
     expect(refused.findAll('input')[0]?.attributes('aria-invalid')).toBe('true')

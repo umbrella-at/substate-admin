@@ -36,13 +36,14 @@ function subscriber(over: Partial<SubscriberSummary> = {}): SubscriberSummary {
 function render(props: Partial<InstanceType<typeof SubscribersTable>['$props']> = {}) {
   return mount(TooltipProvider, {
     slots: {
-      default: () => h(SubscribersTable, {
-        rows: [subscriber()],
-        sort: DEFAULT_SORT,
-        sortHref: (field: string) => ({ query: { sort: field } }),
-        busy: false,
-        ...props,
-      }),
+      default: () =>
+        h(SubscribersTable, {
+          rows: [subscriber()],
+          sort: DEFAULT_SORT,
+          sortHref: (field: string) => ({ query: { sort: field } }),
+          busy: false,
+          ...props,
+        }),
     },
     global: { stubs: { RouterLink: RouterLinkStub } },
   })
@@ -141,7 +142,13 @@ describe('the subscriber table', () => {
   // link and the duplicate sits beside it.
   it('draws each header label once', () => {
     const table = render({ sort: { field: 'state', descending: false } })
-    for (const [index, label] of ['Subscriber', 'State', 'Plan', 'Access until', 'Last activity'].entries()) {
+    for (const [index, label] of [
+      'Subscriber',
+      'State',
+      'Plan',
+      'Access until',
+      'Last activity',
+    ].entries()) {
       const text = table.findAll('th').at(index)?.text() ?? ''
       expect(text.split(label).length - 1).toBe(1)
     }
@@ -149,7 +156,9 @@ describe('the subscriber table', () => {
 
   // And says it in words, because the vocabulary this column lacks is the arrow.
   it('names the order in the header rather than drawing it', () => {
-    const header = render({ sort: { field: 'state', descending: false } }).findAll('th').at(1)
+    const header = render({ sort: { field: 'state', descending: false } })
+      .findAll('th')
+      .at(1)
     expect(header?.text()).toContain('urgent first')
     expect(header?.text()).not.toMatch(/[↑↓]/u)
   })
@@ -286,9 +295,7 @@ describe('how long ago', () => {
     const table = render({
       rows: [subscriber({ lastActiveAt: '2026-08-17T09:41:03.472Z' })],
     })
-    expect(table.findAll('td').at(4)?.find('span').attributes('title')).toBe(
-      '2026-08-17T09:41:03Z',
-    )
+    expect(table.findAll('td').at(4)?.find('span').attributes('title')).toBe('2026-08-17T09:41:03Z')
   })
 
   it('does not claim a future timestamp is happening', () => {

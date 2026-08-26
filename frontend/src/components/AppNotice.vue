@@ -25,10 +25,7 @@ const SHAPE: Record<Role, string> = {
 
 <template>
   <div
-    :class="[
-      'flex items-start gap-2 rounded-control border px-3 py-2 text-dense',
-      SHAPE[role],
-    ]"
+    :class="['flex items-start gap-2 rounded-control border px-3 py-2 text-dense', SHAPE[role]]"
     :role="assertive ? 'alert' : 'status'"
   >
     <slot name="icon" />

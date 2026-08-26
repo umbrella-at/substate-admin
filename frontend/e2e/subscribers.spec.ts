@@ -66,9 +66,7 @@ test.describe('the subscriber table', () => {
   // reading it, and the two dates somebody would act on.
   test('every row carries a state chip', async () => {
     const first = rows(page).first()
-    await expect(
-      first.getByText(/^(Trial|Active|In grace|Expired|Cancelled)$/),
-    ).toBeVisible()
+    await expect(first.getByText(/^(Trial|Active|In grace|Expired|Cancelled)$/)).toBeVisible()
   })
 
   test('a filter narrows the table and says so in the address', async () => {

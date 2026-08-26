@@ -47,11 +47,7 @@ import { computed, h } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import StateChip from '@/components/StateChip.vue'
-import {
-  type SortField,
-  type SubscriberSummary,
-  type Sort,
-} from '@/domain/subscribers'
+import { type SortField, type SubscriberSummary, type Sort } from '@/domain/subscribers'
 
 const props = defineProps<{
   rows: SubscriberSummary[]
@@ -300,10 +296,7 @@ const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
               :to="props.sortHref(header.column.id as SortField)"
               class="inline-flex items-center gap-1 rounded-control hover:text-text-primary"
             >
-              <FlexRender
-                :render="header.column.columnDef.header"
-                :props="header.getContext()"
-              />
+              <FlexRender :render="header.column.columnDef.header" :props="header.getContext()" />
               <!-- The arrow is decoration; aria-sort on the cell is what a screen reader reads,
                    so this is hidden rather than described twice. -->
               <span aria-hidden="true" class="text-text-muted">

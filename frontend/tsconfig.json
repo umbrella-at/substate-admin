@@ -1,9 +1,6 @@
 {
   "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
   // A solution-style tsconfig compiles nothing, and `paths` here is inherited by neither
   // reference — tsconfig.app.json declares its own. It is repeated because the shadcn-vue CLI
   // reads this file to find the import alias and refuses to run without one.
