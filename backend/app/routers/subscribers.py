@@ -13,15 +13,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from substate import PeriodUnit
 
 from app.db import get_session
 from app.deps import RequirePermission
 from app.errors import ApiError, ErrorCode
 from app.models import SubscriberView
 from app.routers import error_responses
+from app.routers.plans import plan_summary
 from app.schemas import (
-    PlanSummary,
     SubscriberDetail,
     SubscriberPage,
     SubscriberQueryParams,
@@ -37,9 +36,10 @@ router = APIRouter(prefix="/subscribers", tags=["subscribers"])
 def _world() -> World:
     """The world this request reads.
 
-    Always the base world today. It is a function rather than a constant because iteration five
-    reads the world out of the token, and every caller here already goes through it — which is the
-    whole point of putting the world key on everything from the first day rather than the last.
+    Always the base world today. It is a function rather than a constant because the world will
+    eventually be read out of the token, once a visitor can have a sandbox of their own, and every
+    caller here already goes through it — which is the whole point of putting the world key on
+    everything from the first day rather than the last.
     """
     registry: WorldRegistry = get_registry()
     world = registry.get(BASE_WORLD_ID)
@@ -125,15 +125,7 @@ async def read_one(
     program_id = await world.storage.get_program_id(subscription.referrer_id or "")
     return SubscriberDetail(
         subscriber=_summary(row),
-        plan=PlanSummary(
-            id=plan.id,
-            price=plan.price,
-            currency=plan.currency,
-            period_unit="days" if plan.period.unit is PeriodUnit.DAYS else "months",
-            period_count=plan.period.count,
-            trial_days=plan.trial_days,
-            grace_days=plan.grace_days,
-        ),
+        plan=plan_summary(plan),
         promo_code=subscription.promo_code,
         referrer_id=subscription.referrer_id,
         referral_program_id=program_id,

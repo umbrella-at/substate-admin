@@ -28,7 +28,7 @@ from app.config import get_settings
 from app.db import dispose_engine, get_engine
 from app.errors import install_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
-from app.routers import auth, health, subscribers, users
+from app.routers import auth, health, plans, subscribers, users
 from app.worlds.bootstrap import build_base_world, set_base_world_status
 from app.worlds.registry import get_registry
 from app.worlds.ticker import ticking
@@ -117,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
+    app.include_router(plans.router, prefix=API_PREFIX)
     app.include_router(subscribers.router, prefix=API_PREFIX)
 
     return app
