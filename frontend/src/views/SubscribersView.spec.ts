@@ -13,10 +13,11 @@
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { h, ref } from 'vue'
 
 import { ApiError, type PlanSummary, type SubscriberPage } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SubscriberSummary } from '@/domain/subscribers'
 import SubscribersView from '@/views/SubscribersView.vue'
 
@@ -44,6 +45,7 @@ function subscriber(over: Partial<SubscriberSummary> = {}): SubscriberSummary {
     displayName: 'Ada Lovelace',
     state: 'active',
     planId: 'monthly',
+    accessUntil: '2026-09-01T00:00:00Z',
     expiresAt: '2026-09-01T00:00:00Z',
     lastActiveAt: '2026-08-20T00:00:00Z',
     ...over,
@@ -71,7 +73,11 @@ function render(subscribers: (params: URLSearchParams, signal: AbortSignal) => P
     subscribers,
     plans: () => Promise.resolve(PLANS),
   }
-  return mount(SubscribersView, {
+  // Mounted inside the provider the application wraps itself in. The state chip's tooltip is a
+  // Reka component whose root refuses to render without one, so a bare mount of this view renders
+  // no rows at all — which every assertion below would notice and none would explain.
+  return mount(TooltipProvider, {
+    slots: { default: () => h(SubscribersView) },
     global: {
       plugins: [
         [VueQueryPlugin, { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) }],
@@ -181,14 +187,14 @@ describe('the four states are a choice', () => {
 describe('the question and the answer', () => {
   it('asks the API for what the address says', async () => {
     const asked: string[] = []
-    routeQuery.value = { state: ['grace'], sort: '-expiresAt', page: '2' }
+    routeQuery.value = { state: ['grace'], sort: '-accessUntil', page: '2' }
     render((params) => {
       asked.push(params.toString())
       return Promise.resolve(page())
     })
     await flushPromises()
     expect(asked[0]).toContain('state=grace')
-    expect(asked[0]).toContain('sort=-expiresAt')
+    expect(asked[0]).toContain('sort=-accessUntil')
     expect(asked[0]).toContain('page=2')
   })
 

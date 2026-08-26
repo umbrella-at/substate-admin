@@ -12,6 +12,7 @@ import { computed } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 
 import AppShell from '@/components/AppShell.vue'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const route = useRoute()
 
@@ -19,8 +20,13 @@ const framed = computed(() => route.meta.requiresAuth !== false && route.name !=
 </script>
 
 <template>
-  <AppShell v-if="framed">
-    <RouterView />
-  </AppShell>
-  <RouterView v-else />
+  <!-- One provider for the application. It owns the delay before a tooltip opens and the rule that
+       a second one opens at once while the first is still up, and both of those are answers about
+       the interface rather than about any single chip. -->
+  <TooltipProvider>
+    <AppShell v-if="framed">
+      <RouterView />
+    </AppShell>
+    <RouterView v-else />
+  </TooltipProvider>
 </template>

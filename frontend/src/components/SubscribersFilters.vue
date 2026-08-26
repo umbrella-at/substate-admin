@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { STATE_APPEARANCE } from '@/domain/states'
 import {
   COHORTS,
   DEFAULT_SORT,
@@ -94,13 +95,6 @@ function toggleState(state: SubscriptionState): void {
   apply({ states })
 }
 
-const STATE_LABELS: Record<SubscriptionState, string> = {
-  trial: 'Trial',
-  active: 'Active',
-  grace: 'In grace',
-  expired: 'Expired',
-  cancelled: 'Cancelled',
-}
 
 /** The select carries a sentinel for "no cohort" rather than an empty string: an empty value in a
  *  Reka select is indistinguishable from nothing selected, and the placeholder would show where
@@ -188,7 +182,7 @@ function toggleUrgency(): void {
           :model-value="props.query.states.includes(state)"
           @update:model-value="toggleState(state)"
         />
-        {{ STATE_LABELS[state] }}
+        {{ STATE_APPEARANCE[state].label }}
       </label>
     </fieldset>
 

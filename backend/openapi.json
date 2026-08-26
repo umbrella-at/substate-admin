@@ -325,8 +325,20 @@
       },
       "SubscriberSummary": {
         "additionalProperties": false,
-        "description": "One row of the subscriber table.\n\nThe date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set\nonly in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a\nfield that is present in a state it does not belong to would be a type that lies.",
+        "description": "One row of the subscriber table.\n\nThe date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set\nonly in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a\nfield that is present in a state it does not belong to would be a type that lies.\n\n`accessUntil` sits alongside them rather than replacing them. It is the one of the three that\nis true in the state the row is in, which is what a table with a single date column has to\nshow; the three stay because they are different questions and the subscriber card asks all of\nthem separately.",
         "properties": {
+          "accessUntil": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessuntil"
+          },
           "displayName": {
             "title": "Displayname",
             "type": "string"

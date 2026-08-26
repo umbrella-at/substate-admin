@@ -171,6 +171,53 @@ async def test_plans_filter_as_a_set(world, plans: tuple[str, ...]) -> None:
     assert {row.plan_id for row in answer.items} <= set(plans)
 
 
+async def test_access_until_is_the_boundary_of_the_state_the_row_is_in(world) -> None:
+    """A subscription has three boundaries and only one of them is true at a time.
+
+    The table draws one date column, and drawing `expires_at` in it left every trial in the world
+    blank — the field is not set until a trial converts, and "when does this trial end" is the
+    first thing anybody asks about one.
+    """
+    built, projection = world
+    rows = await _all(built, projection, "displayName")
+    by_state: dict[State, list] = {}
+    for row in rows:
+        by_state.setdefault(row.state, []).append(row)
+
+    for state in (State.TRIAL, State.ACTIVE, State.GRACE, State.CANCELLED):
+        assert by_state.get(state), f"no {state.value} rows, so this proves nothing about them"
+
+    for row in by_state[State.TRIAL]:
+        assert row.access_until == row.trial_ends_at is not None
+    for row in by_state[State.GRACE]:
+        assert row.access_until == row.grace_ends_at is not None
+    for state in (State.ACTIVE, State.CANCELLED):
+        for row in by_state[state]:
+            assert row.access_until == row.expires_at is not None
+
+    # The one place a dash belongs: expired without ever having paid, so there is no boundary to
+    # show rather than a boundary nobody filled in.
+    blank = [row for row in rows if row.access_until is None]
+    assert blank, "no row without a boundary, so the dash is untested"
+    assert {row.state for row in blank} == {State.EXPIRED}
+
+
+@pytest.mark.parametrize("sort", ["accessUntil", "-accessUntil"])
+async def test_the_column_sorts_by_what_it_shows(world, sort: str) -> None:
+    """Ordering by `expiresAt` while drawing `accessUntil` puts the trials where they do not
+    belong, and the table looks sorted the whole time."""
+    built, projection = world
+    rows = await _all(built, projection, sort)
+
+    values = [row.access_until for row in rows if row.access_until is not None]
+    assert values == sorted(values, reverse=sort.startswith("-"))
+
+    # And the two orders really are different in this world, or the assertion above would pass
+    # against either field.
+    by_expiry = [row.user_id for row in await _all(built, projection, "expiresAt")]
+    assert [row.user_id for row in rows] != by_expiry or sort.startswith("-")
+
+
 async def test_paging_covers_everybody_once(world) -> None:
     """The property that makes paging trustworthy: no row seen twice, none missed."""
     built, projection = world

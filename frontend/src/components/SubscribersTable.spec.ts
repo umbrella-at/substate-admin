@@ -9,10 +9,12 @@
  */
 
 import { mount } from '@vue/test-utils'
+import { h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouterLinkStub } from '@vue/test-utils'
 
 import SubscribersTable from '@/components/SubscribersTable.vue'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { DEFAULT_SORT, type SubscriberSummary } from '@/domain/subscribers'
 
 function subscriber(over: Partial<SubscriberSummary> = {}): SubscriberSummary {
@@ -21,20 +23,26 @@ function subscriber(over: Partial<SubscriberSummary> = {}): SubscriberSummary {
     displayName: 'Ada Lovelace',
     state: 'active',
     planId: 'monthly',
+    accessUntil: '2026-09-01T00:00:00Z',
     expiresAt: '2026-09-01T00:00:00Z',
     lastActiveAt: '2026-08-20T00:00:00Z',
     ...over,
   }
 }
 
+// Mounted inside the provider the application wraps itself in. The state chip's tooltip is a Reka
+// component and Reka's root refuses to render without one, so a bare mount of this table renders
+// no chips at all — which every assertion here would notice, and none would explain.
 function render(props: Partial<InstanceType<typeof SubscribersTable>['$props']> = {}) {
-  return mount(SubscribersTable, {
-    props: {
-      rows: [subscriber()],
-      sort: DEFAULT_SORT,
-      sortHref: (field: string) => ({ query: { sort: field } }),
-      busy: false,
-      ...props,
+  return mount(TooltipProvider, {
+    slots: {
+      default: () => h(SubscribersTable, {
+        rows: [subscriber()],
+        sort: DEFAULT_SORT,
+        sortHref: (field: string) => ({ query: { sort: field } }),
+        busy: false,
+        ...props,
+      }),
     },
     global: { stubs: { RouterLink: RouterLinkStub } },
   })
@@ -60,12 +68,12 @@ describe('the subscriber table', () => {
 
   // An empty cell reads as a defect. A subscriber with no expiry is an ordinary thing.
   it('writes a dash where there is no date', () => {
-    const table = render({ rows: [subscriber({ expiresAt: null })] })
+    const table = render({ rows: [subscriber({ accessUntil: null, expiresAt: null })] })
     expect(table.findAll('td').at(3)?.text()).toBe('—')
   })
 
   it('survives a date the API should never send', () => {
-    const table = render({ rows: [subscriber({ expiresAt: 'not a date' })] })
+    const table = render({ rows: [subscriber({ accessUntil: 'not a date' })] })
     expect(table.findAll('td').at(3)?.text()).toBe('—')
   })
 
@@ -74,8 +82,8 @@ describe('the subscriber table', () => {
   it('gives every month the same width', () => {
     const table = render({
       rows: [
-        subscriber({ userId: 'a', expiresAt: '2026-09-10T00:00:00Z' }),
-        subscriber({ userId: 'b', expiresAt: '2026-10-04T00:00:00Z' }),
+        subscriber({ userId: 'a', accessUntil: '2026-09-10T00:00:00Z' }),
+        subscriber({ userId: 'b', accessUntil: '2026-10-04T00:00:00Z' }),
       ],
     })
     const dates = table.findAll('tbody tr').map((row) => row.findAll('td').at(3)?.text())
@@ -91,7 +99,7 @@ describe('the subscriber table', () => {
     expect(ordered.length).toBe(3)
     expect(ordered.map((link) => link.text().replace(/\s+/gu, ' ').trim())).toEqual([
       'Subscriber',
-      'Expires',
+      'Access until',
       'Last activity↓',
     ])
   })
@@ -133,7 +141,7 @@ describe('the subscriber table', () => {
   // link and the duplicate sits beside it.
   it('draws each header label once', () => {
     const table = render({ sort: { field: 'state', descending: false } })
-    for (const [index, label] of ['Subscriber', 'State', 'Plan', 'Expires', 'Last activity'].entries()) {
+    for (const [index, label] of ['Subscriber', 'State', 'Plan', 'Access until', 'Last activity'].entries()) {
       const text = table.findAll('th').at(index)?.text() ?? ''
       expect(text.split(label).length - 1).toBe(1)
     }
@@ -148,7 +156,7 @@ describe('the subscriber table', () => {
 
   // The arrow is decoration; this is the part a screen reader announces.
   it('announces which column is sorted, and which way', () => {
-    const table = render({ sort: { field: 'expiresAt', descending: true } })
+    const table = render({ sort: { field: 'accessUntil', descending: true } })
     const headers = table.findAll('th')
     expect(headers.at(3)?.attributes('aria-sort')).toBe('descending')
     expect(headers.at(0)?.attributes('aria-sort')).toBe('none')
@@ -163,7 +171,7 @@ describe('the subscriber table', () => {
   })
 
   it('draws exactly one arrow', () => {
-    const table = render({ sort: { field: 'expiresAt', descending: false } })
+    const table = render({ sort: { field: 'accessUntil', descending: false } })
     expect(table.text().match(/[↑↓]/gu) ?? []).toHaveLength(1)
   })
 

@@ -115,12 +115,12 @@ test.describe('the subscriber table', () => {
 
   // Absent values belong at the bottom in either direction. This is the browser-side half of the
   // defect found by asking the service directly: descending order used to open with them.
-  test('rows with no expiry stay at the bottom when the order reverses', async () => {
-    const header = page.getByRole('columnheader').getByRole('link', { name: 'Expires' })
+  test('rows with no access boundary stay at the bottom when the order reverses', async () => {
+    const header = page.getByRole('columnheader').getByRole('link', { name: 'Access until' })
     await header.click()
-    await expect(page).toHaveURL(/sort=expiresAt/)
+    await expect(page).toHaveURL(/sort=accessUntil/)
     await header.click()
-    await expect(page).toHaveURL(/sort=-expiresAt/)
+    await expect(page).toHaveURL(/sort=-accessUntil/)
     await expect(rows(page).first().locator('td').nth(3)).not.toHaveText('—')
   })
 
@@ -182,6 +182,59 @@ test.describe('the subscriber table', () => {
     // default order rather than about the filter, and it failed the first time that order moved.
     const plans = await page.locator('tbody tr td:nth-child(3)').allTextContents()
     for (const plan of plans) expect(['weekly', 'annual']).toContain(plan.trim())
+  })
+
+  // A subscription has three boundaries and only one is true at a time. Drawing `expiresAt` left
+  // every trial in the table blank, which is the first thing anybody asks about a trial.
+  test('every state shows the boundary that is true in it', async () => {
+    for (const [state, chip] of [
+      ['trial', 'Trial'],
+      ['grace', 'In grace'],
+      ['cancelled', 'Cancelled'],
+    ] as const) {
+      await page.goto(`/subscribers?state=${state}`)
+      await expect(page.locator('tbody tr').first()).toBeVisible()
+      const dates = await page.locator('tbody tr td:nth-child(4)').allTextContents()
+      expect(dates.length).toBeGreaterThan(0)
+      expect(dates, `${chip} rows should all carry a boundary`).not.toContain('—')
+    }
+
+    // The one place a dash belongs: expired without ever having paid, so there is no boundary
+    // rather than one nobody filled in.
+    await page.goto('/subscribers?state=expired')
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+    const expired = await page.locator('tbody tr td:nth-child(4)').allTextContents()
+    expect(expired.some((date) => date.trim() === '—')).toBe(true)
+    expect(expired.some((date) => date.trim() !== '—')).toBe(true)
+  })
+
+  // The tooltip answers on the row, which is the only place somebody meeting this table has the
+  // question. Reached by keyboard as well as by pointer: the native `title` this replaces never
+  // appeared for anybody moving through a table with the keyboard.
+  test('the state chip explains itself, to the keyboard as well', async () => {
+    await page.goto('/subscribers?state=cancelled')
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+
+    // The visible panel, not `getByRole('tooltip')`: Reka puts that role on a visually-hidden
+    // span, so asserting on it alone would pass while the panel itself never appeared. Both are
+    // checked, because the sentence has to reach an eye and a screen reader, and `toContainText`
+    // rather than `toHaveText` because the panel holds the sentence twice — once for each.
+    const panel = page.locator('[data-slot="tooltip-content"]')
+    const announced = page.locator('[role="tooltip"]')
+
+    await page.locator('tbody tr').first().getByText('Cancelled').hover()
+    const cancelled = 'Access runs to the end of the paid period, then stops.'
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText(cancelled)
+    await expect(announced).toHaveText(cancelled)
+
+    // Focus, not hover. The native `title` this replaces never opened for anybody moving through
+    // a table with the keyboard, which is half the reason it was replaced.
+    await page.goto('/subscribers?state=grace')
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+    await page.locator('tbody tr').first().getByText('In grace').focus()
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Paid period ended. Access extended as a courtesy.')
   })
 
   test('paging moves through the table and back', async () => {
