@@ -158,28 +158,21 @@ def _in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
             )
 
 
-def _key(row: SubscriberRow, field: SortField) -> tuple[int, object]:
-    """A sort key that puts absent values last whichever way the sort runs.
-
-    Returned as (present, value) so that None never has to be compared with a datetime, and so
-    that reversing the order does not float the empty rows to the top — a table sorted by "last
-    seen" should not open with everybody who has never been seen.
-    """
+def _sortable(row: SubscriberRow, field: SortField) -> str | datetime | None:
+    """The value a row is ordered by, or None when the row has none."""
     match field:
         case SortField.USER_ID:
-            return (0, row.user_id)
+            return row.user_id
         case SortField.DISPLAY_NAME:
-            return (0, row.display_name.casefold())
+            return row.display_name.casefold()
         case SortField.STATE:
-            return (0, row.state.value)
+            return row.state.value
         case SortField.PLAN_ID:
-            return (0, row.plan_id)
+            return row.plan_id
         case SortField.EXPIRES_AT:
-            return (1, row.expires_at) if row.expires_at is None else (0, row.expires_at)
+            return row.expires_at
         case SortField.LAST_ACTIVE_AT:
-            return (
-                (1, row.last_active_at) if row.last_active_at is None else (0, row.last_active_at)
-            )
+            return row.last_active_at
 
 
 def parse_sort(sort: str) -> tuple[SortField, bool]:
@@ -217,9 +210,18 @@ async def list_subscribers(
         if _matches(row, query, moment):
             rows.append(row)
 
-    # The secondary key is the user id, so that two rows with the same state or the same plan do
-    # not swap places between requests and make the table look unstable while paging through it.
-    rows.sort(key=lambda r: (_key(r, field), r.user_id), reverse=descending)
+    # Rows with no value are sorted apart from the rest and appended, so that they stay at the
+    # bottom whichever way the order runs. Carrying a "present" flag in the sort key does not do
+    # this: `reverse=True` reverses the flag along with the value, and a table sorted by newest
+    # expiry opens with the forty people who have no expiry at all.
+    #
+    # The secondary key is the user id, so two rows with the same state or the same plan do not
+    # swap places between requests and make the table look unstable while paging through it.
+    present = [row for row in rows if _sortable(row, field) is not None]
+    absent = [row for row in rows if _sortable(row, field) is None]
+    present.sort(key=lambda r: (_sortable(r, field), r.user_id), reverse=descending)
+    absent.sort(key=lambda r: r.user_id)
+    rows = present + absent
 
     total = len(rows)
     size = max(1, min(query.page_size, MAX_PAGE_SIZE))

@@ -70,6 +70,13 @@ export interface SubscriberQuery {
 
 export const DEFAULT_PAGE_SIZE = 25
 
+/** The bounds the API enforces. Mirrored rather than discovered by being refused: a hand-edited
+ *  `?pageSize=400` should give the table it asks for as closely as the API allows, not an error
+ *  page about a query parameter. The values are the ones in the request schema, and a test asks
+ *  the running service to confirm them. */
+export const MAX_PAGE_SIZE = 100
+export const MAX_PAGE = 1_000_000
+
 export const EMPTY_QUERY: SubscriberQuery = {
   page: 1,
   pageSize: DEFAULT_PAGE_SIZE,
@@ -106,14 +113,14 @@ export function formatSort(sort: Sort | null): string | null {
   return sort.descending ? `-${sort.field}` : sort.field
 }
 
-/** A positive whole number or the fallback. Anything else in the URL — a word, a negative, a
- *  fraction — is somebody editing the address bar, and the readable answer is page one rather
- *  than an error page about a query parameter. */
-function positiveInteger(raw: string | null, fallback: number): number {
+/** A whole number inside the bounds, or the fallback. Anything else in the URL — a word, a
+ *  negative, a fraction — is somebody editing the address bar, and the readable answer is the
+ *  nearest table that exists rather than an error page about a query parameter. */
+function bounded(raw: string | null, fallback: number, limit: number): number {
   if (raw === null) return fallback
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 1) return fallback
-  return value
+  return Math.min(value, limit)
 }
 
 /** Deliberately the shape vue-router hands over rather than a tidier one. `?state` with no value
@@ -137,8 +144,8 @@ export function queryFromRoute(source: QuerySource): SubscriberQuery {
   const planId = first(source['planId'])
   const cohort = first(source['cohort'])
   return {
-    page: positiveInteger(first(source['page']), 1),
-    pageSize: positiveInteger(first(source['pageSize']), DEFAULT_PAGE_SIZE),
+    page: bounded(first(source['page']), 1, MAX_PAGE),
+    pageSize: bounded(first(source['pageSize']), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
     sort: parseSort(first(source['sort'])),
     // Deduplicated: `?state=active&state=active` is one filter, and letting it through would
     // send the same value twice and make two identical URLs cache as different questions.

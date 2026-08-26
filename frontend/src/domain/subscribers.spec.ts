@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PAGE_SIZE,
   EMPTY_QUERY,
+  MAX_PAGE_SIZE,
   parseSort,
   queryFromRoute,
   queryKey,
@@ -47,6 +48,12 @@ describe('reading the question out of the URL', () => {
     expect(query.sort).toBeNull()
     expect(query.states).toEqual(['grace'])
     expect(query.cohort).toBeNull()
+  })
+
+  // The API refuses anything larger, and being refused is not a readable answer for somebody who
+  // edited the address.
+  it('clamps a page size the API would refuse', () => {
+    expect(queryFromRoute({ pageSize: '400' }).pageSize).toBe(MAX_PAGE_SIZE)
   })
 
   it('treats a repeated state as one filter', () => {
