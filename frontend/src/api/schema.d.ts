@@ -4,26 +4,6 @@
  */
 
 export interface paths {
-    "/api/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Report the service version and whether the database answers
-         * @description Answer 200 when Postgres responds and 503 when it does not.
-         */
-        get: operations["health_api_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -38,26 +18,6 @@ export interface paths {
          * @description Authenticate a person and start a refresh-token family for the device they used.
          */
         post: operations["login_api_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Rotate the refresh cookie and mint a new access token
-         * @description Consume the presented refresh token and issue its successor in the same family.
-         */
-        post: operations["refresh_api_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -104,7 +64,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users": {
+    "/api/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the refresh cookie and mint a new access token
+         * @description Consume the presented refresh token and issue its successor in the same family.
+         */
+        post: operations["refresh_api_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -112,10 +92,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the operators of this panel
-         * @description One page of users, under an ordering the client can page through safely.
+         * Report the service version and whether the database answers
+         * @description Answer 200 when Postgres responds and 503 when it does not.
          */
-        get: operations["list_users_api_users_get"];
+        get: operations["health_api_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -183,6 +163,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the operators of this panel
+         * @description One page of users, under an ordering the client can page through safely.
+         */
+        get: operations["list_users_api_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -193,10 +193,10 @@ export interface components {
          */
         ErrorBody: {
             code: components["schemas"]["ErrorCode"];
-            /** Message */
-            message: string;
             /** Field */
             field?: string | null;
+            /** Message */
+            message: string;
         };
         /**
          * ErrorCode
@@ -221,6 +221,10 @@ export interface components {
          * @description GET /api/health.
          */
         HealthResponse: {
+            /** Commit */
+            commit: string;
+            /** Db */
+            db: boolean;
             /**
              * Status
              * @enum {string}
@@ -228,10 +232,6 @@ export interface components {
             status: "ok" | "degraded";
             /** Version */
             version: string;
-            /** Commit */
-            commit: string;
-            /** Db */
-            db: boolean;
             world: components["schemas"]["WorldHealth"];
         };
         /**
@@ -249,15 +249,15 @@ export interface components {
          * @description GET /api/auth/me.
          */
         MeResponse: {
-            user: components["schemas"]["UserProfile"];
-            role: components["schemas"]["RoleSummary"];
-            /** Permissions */
-            permissions: string[];
             /**
              * Kind
              * @enum {string}
              */
             kind: "user" | "demo";
+            /** Permissions */
+            permissions: string[];
+            role: components["schemas"]["RoleSummary"];
+            user: components["schemas"]["UserProfile"];
             /** Worldid */
             worldId?: string | null;
         };
@@ -266,23 +266,23 @@ export interface components {
          * @description The plan a subscription is on, as the card shows it.
          */
         PlanSummary: {
-            /** Id */
-            id: string;
-            /** Price */
-            price: number;
             /** Currency */
             currency: string;
+            /** Gracedays */
+            graceDays: number;
+            /** Id */
+            id: string;
+            /** Periodcount */
+            periodCount: number;
             /**
              * Periodunit
              * @enum {string}
              */
             periodUnit: "days" | "months";
-            /** Periodcount */
-            periodCount: number;
+            /** Price */
+            price: number;
             /** Trialdays */
             trialDays: number;
-            /** Gracedays */
-            graceDays: number;
         };
         /**
          * RoleSummary
@@ -299,14 +299,14 @@ export interface components {
          * @description GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer.
          */
         SubscriberDetail: {
-            subscriber: components["schemas"]["SubscriberSummary"];
             plan: components["schemas"]["PlanSummary"];
             /** Promocode */
             promoCode?: string | null;
-            /** Referrerid */
-            referrerId?: string | null;
             /** Referralprogramid */
             referralProgramId?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
+            subscriber: components["schemas"]["SubscriberSummary"];
         };
         /**
          * SubscriberPage
@@ -315,12 +315,12 @@ export interface components {
         SubscriberPage: {
             /** Items */
             items: components["schemas"]["SubscriberSummary"][];
-            /** Total */
-            total: number;
             /** Page */
             page: number;
             /** Pagesize */
             pageSize: number;
+            /** Total */
+            total: number;
         };
         /**
          * SubscriberSummary
@@ -331,29 +331,29 @@ export interface components {
          *     field that is present in a state it does not belong to would be a type that lies.
          */
         SubscriberSummary: {
-            /** Userid */
-            userId: string;
             /** Displayname */
             displayName: string;
+            /** Expiresat */
+            expiresAt?: string | null;
+            /** Graceendsat */
+            graceEndsAt?: string | null;
+            /** Lastactiveat */
+            lastActiveAt?: string | null;
+            /** Planid */
+            planId: string;
+            /** Promocode */
+            promoCode?: string | null;
+            /** Referrerid */
+            referrerId?: string | null;
             /**
              * State
              * @enum {string}
              */
             state: "trial" | "active" | "grace" | "expired" | "cancelled";
-            /** Planid */
-            planId: string;
-            /** Expiresat */
-            expiresAt?: string | null;
             /** Trialendsat */
             trialEndsAt?: string | null;
-            /** Graceendsat */
-            graceEndsAt?: string | null;
-            /** Lastactiveat */
-            lastActiveAt?: string | null;
-            /** Promocode */
-            promoCode?: string | null;
-            /** Referrerid */
-            referrerId?: string | null;
+            /** Userid */
+            userId: string;
         };
         /**
          * TokenResponse
@@ -375,12 +375,12 @@ export interface components {
         UserListResponse: {
             /** Items */
             items: components["schemas"]["UserSummary"][];
-            /** Total */
-            total: number;
             /** Page */
             page: number;
             /** Pagesize */
             pageSize: number;
+            /** Total */
+            total: number;
         };
         /**
          * UserProfile
@@ -388,19 +388,19 @@ export interface components {
          */
         UserProfile: {
             /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Email */
-            email: string;
-            /** Isactive */
-            isActive: boolean;
-            /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Isactive */
+            isActive: boolean;
             /** Lastloginat */
             lastLoginAt: string | null;
         };
@@ -410,19 +410,19 @@ export interface components {
          */
         UserSummary: {
             /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Email */
-            email: string;
-            /** Isactive */
-            isActive: boolean;
-            /**
              * Createdat
              * Format: date-time
              */
             createdAt: string;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Isactive */
+            isActive: boolean;
             /** Lastloginat */
             lastLoginAt: string | null;
             role: components["schemas"]["RoleSummary"];
@@ -438,12 +438,12 @@ export interface components {
          *     back over a cosmetic problem.
          */
         WorldHealth: {
+            /** Events */
+            events: number;
             /** Seeded */
             seeded: boolean;
             /** Subscribers */
             subscribers: number;
-            /** Events */
-            events: number;
         };
     };
     responses: never;
@@ -454,35 +454,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health_api_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-            /** @description The database did not answer. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
     login_api_auth_login_post: {
         parameters: {
             query?: never;
@@ -516,44 +487,6 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Too Many Requests */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    refresh_api_auth_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -619,12 +552,9 @@ export interface operations {
             };
         };
     };
-    list_users_api_users_get: {
+    refresh_api_auth_refresh_post: {
         parameters: {
-            query?: {
-                page?: number;
-                pageSize?: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -637,7 +567,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserListResponse"];
+                    "application/json": components["schemas"]["TokenResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -649,8 +579,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Forbidden */
-            403: {
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -658,13 +588,33 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Unprocessable Content */
-            422: {
+        };
+    };
+    health_api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description The database did not answer. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
                 };
             };
         };
@@ -802,6 +752,56 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_users_api_users_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserListResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

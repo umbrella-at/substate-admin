@@ -1,48 +1,624 @@
 {
-  "openapi": "3.1.0",
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "description": "The contents of the envelope.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "description": "The closed catalogue of machine-readable failures.\n\nClosed is the point: the frontend has a switch over these values, and a code invented at a\ncall site is a code that falls through it.",
+        "enum": [
+          "INVALID_CREDENTIALS",
+          "NOT_AUTHENTICATED",
+          "TOKEN_EXPIRED",
+          "USER_INACTIVE",
+          "PERMISSION_DENIED",
+          "REFRESH_TOKEN_INVALID",
+          "REFRESH_TOKEN_REUSED",
+          "RATE_LIMITED",
+          "VALIDATION_ERROR",
+          "NOT_FOUND",
+          "METHOD_NOT_ALLOWED",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "ErrorEnvelope": {
+        "description": "The body of every non-2xx response this service produces.\n\nRoutes declare it in `responses=` so the published schema says so as well.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/health.",
+        "properties": {
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "db": {
+            "title": "Db",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "world": {
+            "$ref": "#/components/schemas/WorldHealth"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "commit",
+          "db",
+          "world"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/auth/login.",
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MeResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/auth/me.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "demo"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RoleSummary"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfile"
+          },
+          "worldId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worldid"
+          }
+        },
+        "required": [
+          "user",
+          "role",
+          "permissions",
+          "kind"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "PlanSummary": {
+        "additionalProperties": false,
+        "description": "The plan a subscription is on, as the card shows it.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "graceDays": {
+            "title": "Gracedays",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "periodCount": {
+            "title": "Periodcount",
+            "type": "integer"
+          },
+          "periodUnit": {
+            "enum": [
+              "days",
+              "months"
+            ],
+            "title": "Periodunit",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "integer"
+          },
+          "trialDays": {
+            "title": "Trialdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "price",
+          "currency",
+          "periodUnit",
+          "periodCount",
+          "trialDays",
+          "graceDays"
+        ],
+        "title": "PlanSummary",
+        "type": "object"
+      },
+      "RoleSummary": {
+        "additionalProperties": false,
+        "description": "A role as the panel displays it. `id` stays inside the process.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "RoleSummary",
+        "type": "object"
+      },
+      "SubscriberDetail": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer.",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/PlanSummary"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          },
+          "referralProgramId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referralprogramid"
+          },
+          "referrerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerid"
+          },
+          "subscriber": {
+            "$ref": "#/components/schemas/SubscriberSummary"
+          }
+        },
+        "required": [
+          "subscriber",
+          "plan"
+        ],
+        "title": "SubscriberDetail",
+        "type": "object"
+      },
+      "SubscriberPage": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriberSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "SubscriberPage",
+        "type": "object"
+      },
+      "SubscriberSummary": {
+        "additionalProperties": false,
+        "description": "One row of the subscriber table.\n\nThe date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set\nonly in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a\nfield that is present in a state it does not belong to would be a type that lies.",
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "graceEndsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graceendsat"
+          },
+          "lastActiveAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastactiveat"
+          },
+          "planId": {
+            "title": "Planid",
+            "type": "string"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          },
+          "referrerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerid"
+          },
+          "state": {
+            "enum": [
+              "trial",
+              "active",
+              "grace",
+              "expired",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "trialEndsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trialendsat"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "state",
+          "planId"
+        ],
+        "title": "SubscriberSummary",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "additionalProperties": false,
+        "description": "The answer to POST /api/auth/login and POST /api/auth/refresh.\n\nBoth mint an access token under identical terms, and the refresh token itself is never in a\nbody — it is in the cookie, where script cannot read it.",
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresIn"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "UserListResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/users.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "UserListResponse",
+        "type": "object"
+      },
+      "UserProfile": {
+        "additionalProperties": false,
+        "description": "The subject of the session, as GET /api/auth/me reports it.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "lastLoginAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastloginat"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "isActive",
+          "createdAt",
+          "lastLoginAt"
+        ],
+        "title": "UserProfile",
+        "type": "object"
+      },
+      "UserSummary": {
+        "additionalProperties": false,
+        "description": "A row of GET /api/users: the profile, plus the role it was granted.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "lastLoginAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastloginat"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RoleSummary"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "isActive",
+          "createdAt",
+          "lastLoginAt",
+          "role"
+        ],
+        "title": "UserSummary",
+        "type": "object"
+      },
+      "WorldHealth": {
+        "additionalProperties": false,
+        "description": "Whether the demonstration has a world behind it.\n\nReported beside the database rather than folded into `status`, because the two failures are\nnot the same kind. A database that does not answer means the panel cannot serve; a world that\nfailed to seed means the shop window is empty while signing in, permissions and every\noperator screen keep working. Answering 503 for the second would make a deploy roll itself\nback over a cosmetic problem.",
+        "properties": {
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "seeded": {
+            "title": "Seeded",
+            "type": "boolean"
+          },
+          "subscribers": {
+            "title": "Subscribers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seeded",
+          "subscribers",
+          "events"
+        ],
+        "title": "WorldHealth",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
   "info": {
     "title": "substate-admin API",
     "version": "0.1.0"
   },
+  "openapi": "3.1.0",
   "paths": {
-    "/api/health": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Report the service version and whether the database answers",
-        "description": "Answer 200 when Postgres responds and 503 when it does not.",
-        "operationId": "health_api_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The database did not answer.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/auth/login": {
       "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Exchange an email and password for an access token",
         "description": "Authenticate a person and start a refresh-token family for the device they used.",
         "operationId": "login_api_auth_login_post",
         "requestBody": {
@@ -57,191 +633,196 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenResponse"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
           },
           "422": {
-            "description": "Unprocessable Content",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
-            }
+            },
+            "description": "Unprocessable Content"
           },
           "429": {
-            "description": "Too Many Requests",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
-            }
+            },
+            "description": "Too Many Requests"
           }
-        }
-      }
-    },
-    "/api/auth/refresh": {
-      "post": {
+        },
+        "summary": "Exchange an email and password for an access token",
         "tags": [
           "auth"
-        ],
-        "summary": "Rotate the refresh cookie and mint a new access token",
-        "description": "Consume the presented refresh token and issue its successor in the same family.",
-        "operationId": "refresh_api_auth_refresh_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/api/auth/logout": {
       "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Revoke this device's refresh-token family",
         "description": "Always 204. A caller who is already logged out has got what they asked for.",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "204": {
             "description": "Successful Response"
           }
-        }
+        },
+        "summary": "Revoke this device's refresh-token family",
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/api/auth/me": {
       "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Describe the current session",
         "description": "Report the user, their role and what that role grants, as the database says right now.",
         "operationId": "me_api_auth_me_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MeResponse"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
+        ],
+        "summary": "Describe the current session",
+        "tags": [
+          "auth"
         ]
       }
     },
-    "/api/users": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "List the operators of this panel",
-        "description": "One page of users, under an ordering the client can page through safely.",
-        "operationId": "list_users_api_users_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000000,
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 25,
-              "title": "Pagesize"
-            }
-          }
-        ],
+    "/api/auth/refresh": {
+      "post": {
+        "description": "Consume the presented refresh token and issue its successor in the same family.",
+        "operationId": "refresh_api_auth_refresh_post",
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserListResponse"
+                  "$ref": "#/components/schemas/TokenResponse"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Rotate the refresh cookie and mint a new access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Answer 200 when Postgres responds and 503 when it does not.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "The database did not answer."
+          }
+        },
+        "summary": "Report the service version and whether the database answers",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/plans": {
+      "get": {
+        "description": "The whole catalogue, in the order the table's plan filter should offer it.\n\nThe filter needs every plan, not the ones that happen to appear on the page being looked at —\na filter offering four of five because the fifth is on page two is a filter that hides people.\nThe order is the catalogue's own, which is the duration ladder, so it reads shortest to\nlongest rather than alphabetically.",
+        "operationId": "list_plans_api_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanSummary"
+                  },
+                  "title": "Response List Plans Api Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
           },
           "401": {
             "content": {
@@ -262,124 +843,62 @@
               }
             },
             "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        }
-      }
-    },
-    "/api/plans": {
-      "get": {
-        "tags": [
-          "plans"
-        ],
-        "summary": "List Plans",
-        "description": "The whole catalogue, in the order the table's plan filter should offer it.\n\nThe filter needs every plan, not the ones that happen to appear on the page being looked at \u2014\na filter offering four of five because the fifth is on page two is a filter that hides people.\nThe order is the catalogue's own, which is the duration ladder, so it reads shortest to\nlongest rather than alphabetically.",
-        "operationId": "list_plans_api_plans_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PlanSummary"
-                  },
-                  "type": "array",
-                  "title": "Response List Plans Api Plans Get"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
           }
         },
         "security": [
           {
             "HTTPBearer": []
           }
+        ],
+        "summary": "List Plans",
+        "tags": [
+          "plans"
         ]
       }
     },
     "/api/subscribers": {
       "get": {
-        "tags": [
-          "subscribers"
-        ],
-        "summary": "One page of subscribers, filtered and sorted",
         "operationId": "list_page_api_subscribers_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
         "parameters": [
           {
-            "name": "page",
             "in": "query",
+            "name": "page",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 1,
               "maximum": 1000000,
               "minimum": 1,
-              "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "type": "integer"
             }
           },
           {
-            "name": "pageSize",
             "in": "query",
+            "name": "pageSize",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 25,
               "maximum": 100,
               "minimum": 1,
-              "default": 25,
-              "title": "Pagesize"
+              "title": "Pagesize",
+              "type": "integer"
             }
           },
           {
+            "in": "query",
             "name": "sort",
-            "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
               "default": "-lastActiveAt",
-              "title": "Sort"
+              "title": "Sort",
+              "type": "string"
             }
           },
           {
-            "name": "state",
             "in": "query",
+            "name": "state",
             "required": false,
             "schema": {
-              "type": "array",
               "items": {
                 "enum": [
                   "trial",
@@ -390,12 +909,13 @@
                 ],
                 "type": "string"
               },
-              "title": "State"
+              "title": "State",
+              "type": "array"
             }
           },
           {
-            "name": "planId",
             "in": "query",
+            "name": "planId",
             "required": false,
             "schema": {
               "anyOf": [
@@ -410,8 +930,8 @@
             }
           },
           {
-            "name": "cohort",
             "in": "query",
+            "name": "cohort",
             "required": false,
             "schema": {
               "anyOf": [
@@ -432,14 +952,14 @@
             }
           },
           {
-            "name": "q",
             "in": "query",
+            "name": "q",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "maxLength": 200
+                  "maxLength": 200,
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -451,14 +971,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SubscriberPage"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "401": {
             "content": {
@@ -490,42 +1010,42 @@
             },
             "description": "Unprocessable Content"
           }
-        }
-      }
-    },
-    "/api/subscribers/{user_id}": {
-      "get": {
-        "tags": [
-          "subscribers"
-        ],
-        "summary": "One subscriber: the subscription, its plan, its promo code and its referrer",
-        "operationId": "read_one_api_subscribers__user_id__get",
+        },
         "security": [
           {
             "HTTPBearer": []
           }
         ],
+        "summary": "One page of subscribers, filtered and sorted",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}": {
+      "get": {
+        "operationId": "read_one_api_subscribers__user_id__get",
         "parameters": [
           {
-            "name": "user_id",
             "in": "path",
+            "name": "user_id",
             "required": true,
             "schema": {
-              "type": "string",
-              "title": "User Id"
+              "title": "User Id",
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SubscriberDetail"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "401": {
             "content": {
@@ -567,619 +1087,99 @@
             },
             "description": "Unprocessable Content"
           }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "ErrorBody": {
-        "properties": {
-          "code": {
-            "$ref": "#/components/schemas/ErrorCode"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
-          "field": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Field"
-          }
         },
-        "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
-        "title": "ErrorBody",
-        "description": "The contents of the envelope."
-      },
-      "ErrorCode": {
-        "type": "string",
-        "enum": [
-          "INVALID_CREDENTIALS",
-          "NOT_AUTHENTICATED",
-          "TOKEN_EXPIRED",
-          "USER_INACTIVE",
-          "PERMISSION_DENIED",
-          "REFRESH_TOKEN_INVALID",
-          "REFRESH_TOKEN_REUSED",
-          "RATE_LIMITED",
-          "VALIDATION_ERROR",
-          "NOT_FOUND",
-          "METHOD_NOT_ALLOWED",
-          "INTERNAL_ERROR"
-        ],
-        "title": "ErrorCode",
-        "description": "The closed catalogue of machine-readable failures.\n\nClosed is the point: the frontend has a switch over these values, and a code invented at a\ncall site is a code that falls through it."
-      },
-      "ErrorEnvelope": {
-        "properties": {
-          "error": {
-            "$ref": "#/components/schemas/ErrorBody"
+        "security": [
+          {
+            "HTTPBearer": []
           }
-        },
-        "type": "object",
-        "required": [
-          "error"
         ],
-        "title": "ErrorEnvelope",
-        "description": "The body of every non-2xx response this service produces.\n\nRoutes declare it in `responses=` so the published schema says so as well."
-      },
-      "HealthResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "ok",
-              "degraded"
-            ],
-            "title": "Status"
-          },
-          "version": {
-            "type": "string",
-            "title": "Version"
-          },
-          "commit": {
-            "type": "string",
-            "title": "Commit"
-          },
-          "db": {
-            "type": "boolean",
-            "title": "Db"
-          },
-          "world": {
-            "$ref": "#/components/schemas/WorldHealth"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "status",
-          "version",
-          "commit",
-          "db",
-          "world"
-        ],
-        "title": "HealthResponse",
-        "description": "GET /api/health."
-      },
-      "LoginRequest": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "minLength": 1,
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Password"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
-        "title": "LoginRequest",
-        "description": "POST /api/auth/login."
-      },
-      "MeResponse": {
-        "properties": {
-          "user": {
-            "$ref": "#/components/schemas/UserProfile"
-          },
-          "role": {
-            "$ref": "#/components/schemas/RoleSummary"
-          },
-          "permissions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Permissions"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "user",
-              "demo"
-            ],
-            "title": "Kind"
-          },
-          "worldId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worldid"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "user",
-          "role",
-          "permissions",
-          "kind"
-        ],
-        "title": "MeResponse",
-        "description": "GET /api/auth/me."
-      },
-      "PlanSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "price": {
-            "type": "integer",
-            "title": "Price"
-          },
-          "currency": {
-            "type": "string",
-            "title": "Currency"
-          },
-          "periodUnit": {
-            "type": "string",
-            "enum": [
-              "days",
-              "months"
-            ],
-            "title": "Periodunit"
-          },
-          "periodCount": {
-            "type": "integer",
-            "title": "Periodcount"
-          },
-          "trialDays": {
-            "type": "integer",
-            "title": "Trialdays"
-          },
-          "graceDays": {
-            "type": "integer",
-            "title": "Gracedays"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "price",
-          "currency",
-          "periodUnit",
-          "periodCount",
-          "trialDays",
-          "graceDays"
-        ],
-        "title": "PlanSummary",
-        "description": "The plan a subscription is on, as the card shows it."
-      },
-      "RoleSummary": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "code",
-          "name"
-        ],
-        "title": "RoleSummary",
-        "description": "A role as the panel displays it. `id` stays inside the process."
-      },
-      "SubscriberDetail": {
-        "properties": {
-          "subscriber": {
-            "$ref": "#/components/schemas/SubscriberSummary"
-          },
-          "plan": {
-            "$ref": "#/components/schemas/PlanSummary"
-          },
-          "promoCode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Promocode"
-          },
-          "referrerId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Referrerid"
-          },
-          "referralProgramId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Referralprogramid"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "subscriber",
-          "plan"
-        ],
-        "title": "SubscriberDetail",
-        "description": "GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer."
-      },
-      "SubscriberPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SubscriberSummary"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "page": {
-            "type": "integer",
-            "title": "Page"
-          },
-          "pageSize": {
-            "type": "integer",
-            "title": "Pagesize"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "page",
-          "pageSize"
-        ],
-        "title": "SubscriberPage",
-        "description": "GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize."
-      },
-      "SubscriberSummary": {
-        "properties": {
-          "userId": {
-            "type": "string",
-            "title": "Userid"
-          },
-          "displayName": {
-            "type": "string",
-            "title": "Displayname"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "trial",
-              "active",
-              "grace",
-              "expired",
-              "cancelled"
-            ],
-            "title": "State"
-          },
-          "planId": {
-            "type": "string",
-            "title": "Planid"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expiresat"
-          },
-          "trialEndsAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Trialendsat"
-          },
-          "graceEndsAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Graceendsat"
-          },
-          "lastActiveAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastactiveat"
-          },
-          "promoCode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Promocode"
-          },
-          "referrerId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Referrerid"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "userId",
-          "displayName",
-          "state",
-          "planId"
-        ],
-        "title": "SubscriberSummary",
-        "description": "One row of the subscriber table.\n\nThe date fields are a discriminated view rather than a bag of optionals: `trialEndsAt` is set\nonly in TRIAL, `graceEndsAt` only in GRACE. The frontend's tagged union is built on that, so a\nfield that is present in a state it does not belong to would be a type that lies."
-      },
-      "TokenResponse": {
-        "properties": {
-          "accessToken": {
-            "type": "string",
-            "title": "Accesstoken"
-          },
-          "expiresIn": {
-            "type": "integer",
-            "title": "Expiresin"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "accessToken",
-          "expiresIn"
-        ],
-        "title": "TokenResponse",
-        "description": "The answer to POST /api/auth/login and POST /api/auth/refresh.\n\nBoth mint an access token under identical terms, and the refresh token itself is never in a\nbody \u2014 it is in the cookie, where script cannot read it."
-      },
-      "UserListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/UserSummary"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "page": {
-            "type": "integer",
-            "title": "Page"
-          },
-          "pageSize": {
-            "type": "integer",
-            "title": "Pagesize"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "page",
-          "pageSize"
-        ],
-        "title": "UserListResponse",
-        "description": "GET /api/users."
-      },
-      "UserProfile": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "isActive": {
-            "type": "boolean",
-            "title": "Isactive"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Createdat"
-          },
-          "lastLoginAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastloginat"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "isActive",
-          "createdAt",
-          "lastLoginAt"
-        ],
-        "title": "UserProfile",
-        "description": "The subject of the session, as GET /api/auth/me reports it."
-      },
-      "UserSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "isActive": {
-            "type": "boolean",
-            "title": "Isactive"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Createdat"
-          },
-          "lastLoginAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastloginat"
-          },
-          "role": {
-            "$ref": "#/components/schemas/RoleSummary"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "isActive",
-          "createdAt",
-          "lastLoginAt",
-          "role"
-        ],
-        "title": "UserSummary",
-        "description": "A row of GET /api/users: the profile, plus the role it was granted."
-      },
-      "WorldHealth": {
-        "properties": {
-          "seeded": {
-            "type": "boolean",
-            "title": "Seeded"
-          },
-          "subscribers": {
-            "type": "integer",
-            "title": "Subscribers"
-          },
-          "events": {
-            "type": "integer",
-            "title": "Events"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "seeded",
-          "subscribers",
-          "events"
-        ],
-        "title": "WorldHealth",
-        "description": "Whether the demonstration has a world behind it.\n\nReported beside the database rather than folded into `status`, because the two failures are\nnot the same kind. A database that does not answer means the panel cannot serve; a world that\nfailed to seed means the shop window is empty while signing in, permissions and every\noperator screen keep working. Answering 503 for the second would make a deploy roll itself\nback over a cosmetic problem."
+        "summary": "One subscriber: the subscription, its plan, its promo code and its referrer",
+        "tags": [
+          "subscribers"
+        ]
       }
     },
-    "securitySchemes": {
-      "HTTPBearer": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
+    "/api/users": {
+      "get": {
+        "description": "One page of users, under an ordering the client can page through safely.",
+        "operationId": "list_users_api_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List the operators of this panel",
+        "tags": [
+          "users"
+        ]
       }
     }
   }
