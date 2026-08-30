@@ -22,5 +22,12 @@
   /* Every file that configures a tool, and the end-to-end specs, which run in Node rather than in
      the browser. A config file left out of both projects is a file `typecheck` never opens — and
      the failure it hides is a build that only breaks in CI. */
-  "include": ["vite.config.ts", "eslint.config.ts", "playwright.config.ts", "e2e/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "eslint.config.ts",
+    "playwright.config.ts",
+    "playwright.capture.config.ts",
+    "e2e/**/*.ts",
+    "capture/**/*.ts"
+  ]
 }
