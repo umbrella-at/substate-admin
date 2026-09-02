@@ -75,12 +75,24 @@ _COMMENTS = (
     re.compile(r"(?<![:\w])//[^\n]*"),
 )
 
-# `class="..."` and `:class="..."`, plus every string and template literal in the file — a class
-# list reaches an element through `cn(...)`, through a `const` and through a ternary, and trying to
-# follow which is how a scanner starts missing things. The closed-namespace filter below is what
-# keeps ordinary prose in a string from being mistaken for a utility.
+# `class="..."` and `:class="..."`, plus every string and template literal — a class list reaches
+# an element through `cn(...)`, through a `const` and through a ternary, and trying to follow which
+# is how a scanner starts missing things. The closed-namespace filter below is what keeps ordinary
+# prose in a string from being mistaken for a utility.
 _ATTRIBUTES = re.compile(r""":?class\s*=\s*(?P<q>["'])(?P<body>.*?)(?P=q)""", re.S)
 _LITERAL = re.compile(r"""(['"`])(?P<body>(?:\\.|(?!\1).)*)\1""", re.S)
+
+# LITERALS ARE READ FROM THE SCRIPT ONLY, AND THE REASON IS AN APOSTROPHE.
+#
+# A template is not TypeScript, and its text is prose. One `service's` in a paragraph opens a
+# string literal that runs to the next apostrophe anywhere in the file, swallowing every quote in
+# between — so `class="… p-4"` two elements later is read as starting at the wrong quote, and the
+# scanner reports `p-4">` and eight of its neighbours as utilities that compile to nothing.
+#
+# Found by writing that paragraph. The failure is loud rather than silent, but it names nine
+# utilities that are all fine and hides the one that is not, which is a check people learn to
+# ignore. Attributes are still read from the whole file; only the literal sweep is narrowed.
+_SCRIPT = re.compile(r"<script\b[^>]*>(?P<body>.*?)</script>", re.S)
 
 # What a token can be wrapped in when a regex tears it out of source: the quote that ended its
 # literal, the comma after it, a stray brace from an interpolation.
@@ -93,14 +105,22 @@ def _without_comments(text: str) -> str:
     return text
 
 
-def _candidates(text: str) -> set[str]:
-    """Every whitespace-separated token that could be a class name in this file."""
+def _candidates(text: str, *, single_file_unit: bool) -> set[str]:
+    """Every whitespace-separated token that could be a class name in this file.
+
+    `single_file_unit` is true for a `.vue` file, where the template is markup and only the
+    `<script>` blocks are TypeScript.
+    """
     found: set[str] = set()
     body = _without_comments(text)
     for match in _ATTRIBUTES.finditer(body):
         found.update(match.group("body").split())
-    for literal in _LITERAL.finditer(body):
-        found.update(literal.group("body").split())
+    scripts = (
+        [block.group("body") for block in _SCRIPT.finditer(body)] if single_file_unit else [body]
+    )
+    for script in scripts:
+        for literal in _LITERAL.finditer(script):
+            found.update(literal.group("body").split())
     return {token for token in (raw.strip(_EDGES) for raw in found) if token}
 
 
@@ -148,7 +168,9 @@ def main(argv: list[str]) -> int:
     for path in sorted(SOURCE.rglob("*")):
         if path.suffix not in {".vue", ".ts"} or path.name.endswith(".spec.ts"):
             continue
-        for candidate in _candidates(path.read_text(encoding="utf-8")):
+        for candidate in _candidates(
+            path.read_text(encoding="utf-8"), single_file_unit=path.suffix == ".vue"
+        ):
             utility = _base(candidate)
             if not _is_closed_namespace(utility):
                 continue
