@@ -126,6 +126,9 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         ("GET", "/api/plans"): "subscribers.read",
         ("GET", "/api/subscribers"): "subscribers.read",
         ("GET", "/api/subscribers/{user_id}"): "subscribers.read",
+        # The feed is the card's other half and is read under the same permission: what happened
+        # to a subscription is not a more private fact than what state it is in.
+        ("GET", "/api/subscribers/{user_id}/events"): "subscribers.read",
     }
 
 

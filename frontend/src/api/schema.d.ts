@@ -163,6 +163,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subscribers/{user_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One page of what has happened to this subscriber, newest first */
+        get: operations["read_events_api_subscribers__user_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -307,6 +324,44 @@ export interface components {
             /** Referrerid */
             referrerId?: string | null;
             subscriber: components["schemas"]["SubscriberSummary"];
+        };
+        /**
+         * SubscriberEvent
+         * @description One entry of a subscriber's feed.
+         *
+         *     `payload` is whatever the event carried beyond the three columns that index it, and its keys
+         *     differ per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is
+         *     typed as an open object on purpose: naming a union of fourteen payload shapes in the schema
+         *     would make every new event in a later engine a breaking change to this API.
+         */
+        SubscriberEvent: {
+            /** Id */
+            id: string;
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+        };
+        /**
+         * SubscriberEventPage
+         * @description GET /api/subscribers/{id}/events, in the shape every collection here answers with.
+         */
+        SubscriberEventPage: {
+            /** Items */
+            items: components["schemas"]["SubscriberEvent"][];
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
+            /** Total */
+            total: number;
         };
         /**
          * SubscriberPage
@@ -737,6 +792,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubscriberDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_events_api_subscribers__user_id__events_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberEventPage"];
                 };
             };
             /** @description Unauthorized */

@@ -290,6 +290,71 @@
         "title": "SubscriberDetail",
         "type": "object"
       },
+      "SubscriberEvent": {
+        "additionalProperties": false,
+        "description": "One entry of a subscriber's feed.\n\n`payload` is whatever the event carried beyond the three columns that index it, and its keys\ndiffer per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is\ntyped as an open object on purpose: naming a union of fourteen payload shapes in the schema\nwould make every new event in a later engine a breaking change to this API.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "occurredAt",
+          "payload"
+        ],
+        "title": "SubscriberEvent",
+        "type": "object"
+      },
+      "SubscriberEventPage": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers/{id}/events, in the shape every collection here answers with.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriberEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "SubscriberEventPage",
+        "type": "object"
+      },
       "SubscriberPage": {
         "additionalProperties": false,
         "description": "GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.",
@@ -1101,6 +1166,107 @@
           }
         ],
         "summary": "One subscriber: the subscription, its plan, its promo code and its referrer",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/events": {
+      "get": {
+        "operationId": "read_events_api_subscribers__user_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One page of what has happened to this subscriber, newest first",
         "tags": [
           "subscribers"
         ]

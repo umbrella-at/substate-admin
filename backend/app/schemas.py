@@ -11,7 +11,7 @@ column by accident.
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -213,6 +213,30 @@ class SubscriberDetail(ApiModel):
     promo_code: str | None = None
     referrer_id: str | None = None
     referral_program_id: str | None = None
+
+
+class SubscriberEvent(ApiModel):
+    """One entry of a subscriber's feed.
+
+    `payload` is whatever the event carried beyond the three columns that index it, and its keys
+    differ per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is
+    typed as an open object on purpose: naming a union of fourteen payload shapes in the schema
+    would make every new event in a later engine a breaking change to this API.
+    """
+
+    id: str
+    type: str
+    occurred_at: datetime
+    payload: dict[str, Any]
+
+
+class SubscriberEventPage(ApiModel):
+    """GET /api/subscribers/{id}/events, in the shape every collection here answers with."""
+
+    items: list[SubscriberEvent]
+    total: int
+    page: int
+    page_size: int
 
 
 class SubscriberQueryParams(ApiModel):
