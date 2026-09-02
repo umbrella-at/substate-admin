@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One page of what operators did, newest first */
+        get: operations["list_page_api_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -339,6 +356,75 @@ export interface components {
         AssignProgramRequest: {
             /** Programid */
             programId: string;
+        };
+        /**
+         * AuditActor
+         * @description Who did it. The email rather than the id alone: an audit nobody can read is a log.
+         */
+        AuditActor: {
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * AuditEntry
+         * @description One row of the audit.
+         *
+         *     `ipHash` is stored and never sent. A twelve-character HMAC on screen tells a reader nothing
+         *     and is evidence leaving the machine that holds the pepper; the column is there for the day an
+         *     investigation asks the database, not for a column on a table.
+         */
+        AuditEntry: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program";
+            actor: components["schemas"]["AuditActor"];
+            errorCode?: components["schemas"]["ErrorCode"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "ok" | "refused";
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Targetid */
+            targetId: string;
+            /** Targettype */
+            targetType: string;
+            /** Worldid */
+            worldId: string;
+        };
+        /**
+         * AuditPage
+         * @description GET /api/audit.
+         */
+        AuditPage: {
+            /** Items */
+            items: components["schemas"]["AuditEntry"][];
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
+            /** Total */
+            total: number;
         };
         /**
          * ChangePlanRequest
@@ -735,6 +821,60 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_page_api_audit_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                actorUserId?: string | null;
+                action?: ("subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program")[];
+                targetId?: string | null;
+                outcome?: ("ok" | "refused") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     login_api_auth_login_post: {
         parameters: {
             query?: never;

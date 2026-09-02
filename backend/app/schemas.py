@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 from substate import State
 
+from app.audit import AuditAction
+from app.errors import ErrorCode
 from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
 
 
@@ -318,6 +320,66 @@ class SubscriberOperationResult(ApiModel):
 
     subscriber: SubscriberDetail
     events: list[EngineEvent]
+
+
+class AuditActor(ApiModel):
+    """Who did it. The email rather than the id alone: an audit nobody can read is a log."""
+
+    id: uuid.UUID
+    email: str
+
+
+class AuditEntry(ApiModel):
+    """One row of the audit.
+
+    `ipHash` is stored and never sent. A twelve-character HMAC on screen tells a reader nothing
+    and is evidence leaving the machine that holds the pepper; the column is there for the day an
+    investigation asks the database, not for a column on a table.
+    """
+
+    id: uuid.UUID
+    occurred_at: datetime
+    actor: AuditActor
+    action: AuditAction
+    target_type: str
+    target_id: str
+
+    # Which world it happened in. The base world is rebuilt at every restart, so a row older than
+    # the last one names a subscriber whose state has been reset — which is why the screen links
+    # the target only when this matches the world it is looking at.
+    world_id: str
+
+    outcome: Literal["ok", "refused"]
+    error_code: ErrorCode | None = None
+
+    # The arguments of the operation as they were submitted. Never its result.
+    payload: dict[str, Any]
+
+
+class AuditPage(ApiModel):
+    """GET /api/audit."""
+
+    items: list[AuditEntry]
+    total: int
+    page: int
+    page_size: int
+
+
+class AuditQueryParams(ApiModel):
+    """The query string of GET /api/audit.
+
+    No date range and no sort. An audit log has one order — newest first — and offering another
+    produces something that reads as a ranking of who did the most; and a date filter needs a date
+    control, which this interface does not have and `docs/design.md` has no recipe for. A filter
+    nobody can operate is not a filter.
+    """
+
+    page: int = Field(default=1, ge=1, le=1_000_000)
+    page_size: int = Field(default=25, ge=1, le=100)
+    actor_user_id: uuid.UUID | None = None
+    action: list[AuditAction] = Field(default_factory=list)
+    target_id: str | None = Field(default=None, max_length=200)
+    outcome: Literal["ok", "refused"] | None = None
 
 
 class SubscriberQueryParams(ApiModel):

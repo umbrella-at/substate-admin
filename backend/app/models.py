@@ -304,8 +304,12 @@ class AuditLog(Base):
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     world_id: Mapped[str] = mapped_column(Text)
-    # HMAC, never the address. The pepper is what stops the whole IPv4 space being a lookup table.
+    # HMAC, never the address. The pepper is what stops the whole IPv4 space being a lookup table,
+    # and no response carries this column: a truncated HMAC on a screen is not evidence.
     ip_hash: Mapped[str] = mapped_column(Text)
+    # `now()` is the transaction's timestamp, not the statement's, and each operation is its own
+    # request — so rows written together are simultaneous by construction, which is what the id
+    # tie-break in the reader's ORDER BY exists for.
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

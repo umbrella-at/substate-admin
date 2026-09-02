@@ -141,6 +141,9 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # bringing people in, which is a fact about the programme; support may serve a customer
         # and may not change what a partner earns.
         ("POST", "/api/subscribers/{user_id}/referral-program"): "referrals.write",
+        # The one code `viewer` is denied besides `users.read`: showing somebody the product is
+        # not showing them what the people who run it have been doing.
+        ("GET", "/api/audit"): "audit.read",
     }
 
 
