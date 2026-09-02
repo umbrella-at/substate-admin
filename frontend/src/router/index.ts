@@ -76,6 +76,12 @@ export const router = createRouter({
       component: () => import('@/views/SubscribersView.vue'),
     },
     {
+      path: '/subscribers/:userId',
+      name: 'subscriber',
+      meta: { permission: 'subscribers.read' },
+      component: () => import('@/views/SubscriberView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       meta: { requiresAuth: false },

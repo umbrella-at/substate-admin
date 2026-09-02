@@ -25,12 +25,25 @@ interface Destination {
   label: string
   /** Absent means every signed-in visitor may go there. */
   permission?: PermissionCode
+  /** Routes that live under this entry and should light it up. A subscriber's card is a page of
+   *  the subscriber section, and a menu that goes dark when you open one says it is not. */
+  covers?: readonly string[]
 }
 
 const DESTINATIONS: Destination[] = [
   { name: 'dashboard', label: 'Dashboard' },
-  { name: 'subscribers', label: 'Subscribers', permission: 'subscribers.read' },
+  {
+    name: 'subscribers',
+    label: 'Subscribers',
+    permission: 'subscribers.read',
+    covers: ['subscriber'],
+  },
 ]
+
+function isHere(destination: Destination): boolean {
+  const current = String(route.name ?? '')
+  return current === destination.name || (destination.covers?.includes(current) ?? false)
+}
 
 const visible = computed(() =>
   DESTINATIONS.filter(
@@ -48,8 +61,8 @@ const visible = computed(() =>
           <RouterLink
             :to="{ name: destination.name }"
             class="block rounded-control px-3 py-2 text-ui text-text-secondary hover:bg-surface-2 hover:text-text-primary"
-            :class="route.name === destination.name ? 'bg-surface-2 text-text-primary' : ''"
-            :aria-current="route.name === destination.name ? 'page' : undefined"
+            :class="isHere(destination) ? 'bg-surface-2 text-text-primary' : ''"
+            :aria-current="isHere(destination) ? 'page' : undefined"
           >
             {{ destination.label }}
           </RouterLink>
