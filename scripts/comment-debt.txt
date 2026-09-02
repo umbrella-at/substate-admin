@@ -148,7 +148,6 @@
 1 10 frontend/src/views/SubscriberView.spec.ts
 2 21 frontend/src/views/SubscriberView.vue
 3 33 frontend/src/views/SubscribersView.spec.ts
-3 27 frontend/src/views/SubscribersView.vue
 2 13 frontend/vite.config.ts
 3 13 scripts/assets.py
 4 21 scripts/check-design.sh
