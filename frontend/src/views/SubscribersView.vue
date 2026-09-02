@@ -1,22 +1,8 @@
 <script setup lang="ts">
 /**
- * The subscriber table, and the one place that owns the address bar.
- *
- * THE URL IS THE STATE. Filters, sort and page are read out of the route and written back to it,
- * and nothing here keeps a second copy. That makes the table a link — the eleven people in grace
- * can be sent to a colleague rather than described — and it makes the back button walk the
- * filters somebody actually used instead of leaving the page.
- *
- * The direction matters: the route is the source, and every control emits a whole new question
- * that this pushes. A control that edited local state and then told the router about it would
- * have two states to keep in step, and the browser's own back button would be the thing that
- * breaks them apart.
- *
- * FOUR STATES, AND THE DIFFERENCE BETWEEN TWO OF THEM. Loading with nothing on screen gets the
- * skeleton; loading with rows already on screen keeps the rows and dims them, because throwing
- * away real data to show a placeholder is a downgrade. Empty says which filters caused it and
- * offers to clear them, since an empty table under a forgotten filter reads as 'there is nobody'
- * — the most convincing wrong answer this screen can give.
+ * The route is the only state: filters, sort and page are read out of it and written back, and
+ * nothing here keeps a second copy. A control that edited its own state and then told the router
+ * would have two to keep in step, and the back button is what pulls them apart.
  */
 
 import { useQuery } from '@tanstack/vue-query'
@@ -118,11 +104,8 @@ const failure = computed(() => {
       </p>
     </header>
 
-    <!-- Hidden when there is no world. Filters over nothing are controls that answer every use
-         with the same emptiness, and a screen that offers them looks half-working rather than
-         broken — which is the confusion this whole change exists to remove.
-         The 24px to the table is this section's own `gap-6`. An `mb-6` here as well made it 48,
-         which is the number that arrives when two people each add the gap they think is missing. -->
+    <!-- Hidden with no world: filters over nothing answer every use with the same emptiness.
+         The 24px to the table is this section's `gap-6` — an `mb-6` here as well makes it 48. -->
     <SubscribersFilters v-if="!worldIsUnbuilt" :query="query" :plans="planIds" @change="go" />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a
@@ -141,11 +124,8 @@ const failure = computed(() => {
       <AppButton variant="outlined" @click="() => void refetch()">Try again</AppButton>
     </div>
 
-    <!-- A failure, not an empty result, and the difference is the whole point of asking health at
-         all. The request succeeded and returned nothing because there is nothing: the run that
-         builds the world did not finish. Left as the ordinary empty state, this screen reads as a
-         finished panel with no data in it, and a visitor closes the tab having learnt the wrong
-         thing about the demonstration. -->
+    <!-- Not the empty state: the request succeeded, and there is nothing because the run that
+         builds the world did not finish. As ordinary emptiness this reads as a finished panel. -->
     <WorldNotBuilt v-else-if="worldIsUnbuilt" />
 
     <template v-else>

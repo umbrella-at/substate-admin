@@ -1,16 +1,12 @@
 """The subscriber table, assembled from two sources that must not be confused.
 
-The state of a subscription, its plan, its dates and its promo code come from `substate` and are
-asked of it every time. The display name and `last_active_at` come from the projection, because
-the engine has never heard of them. Nothing here caches the first kind into the second: a
-projection that started answering "what state is this subscription in" would be a second answer to
-a question that already has one, and the two would disagree on the day it mattered.
+State, plan, dates and promo code come from `substate` and are asked of it every time; the
+display name and `last_active_at` come from the projection. Nothing caches the first into the
+second — a projection answering "what state is this" would be a second answer to a settled question.
 
-Filtering and sorting happen in this process rather than in Postgres, because the subscriptions
-are in this process. The base world holds a few hundred of them, so the cost is a few hundred
-dictionary lookups per request. When the SQLAlchemy storage lands this becomes a query, and the
-shape of the answer stays the same — which is the point of putting the world key on everything
-from the first day.
+Filtering and sorting happen here rather than in Postgres because the subscriptions are here. The
+shape of the answer survives the move to SQLAlchemy storage, which is what the world key on
+everything is for.
 """
 
 from __future__ import annotations
@@ -42,10 +38,8 @@ class Cohort(StrEnum):
     Each one answers a question somebody has already asked themselves: who is about to lapse, who
     is paying without turning up, who cancelled but is still inside a period they paid for.
 
-    Every one of them is a question the state filter cannot ask, and that is the entry condition.
-    There was a fourth, `in-grace`, whose predicate was `row.state is State.GRACE` — the same
-    question as `?state=grace`, in a second vocabulary. Two names for one question is worse than
-    one name, because the reader has to work out whether the difference means something.
+    Every one is a question the state filter cannot ask, and that is the entry condition: a
+    cohort whose predicate is `row.state is X` is a second vocabulary for `?state=x`.
     """
 
     QUIET = "quiet"
@@ -84,15 +78,9 @@ STATE_URGENCY: Final[dict[State, int]] = {
 }
 """The order sorting by state produces. A claim about the work, not about the words.
 
-Alphabetical put ACTIVE, CANCELLED, EXPIRED, GRACE, TRIAL at the top of the table in that order,
-which is the order of the letters and of nothing else. What an administrator opens this table to
-find is who needs something done today, so that is the order:
-
-    GRACE      a paying customer whose payment failed. Today, or they are gone.
-    TRIAL      deciding right now whether to pay. The only window there is.
-    ACTIVE     paying and fine. Nothing to do.
-    CANCELLED  said no, still inside a period they paid for. Worth a call, not an urgent one.
-    EXPIRED    already gone. Nothing here is time-critical.
+Ordered by what needs doing today, not by the letters: a failed payment runs out today, a trial
+is the only window there is, and an expiry is already history. A sixth state takes the rank its
+urgency earns, not the next number.
 
 It lives on this side because sorting is server-side, so the order is part of what the API
 promises rather than a rendering choice — a second client would otherwise invent its own.
@@ -110,11 +98,9 @@ class SubscriberRow:
     access_until: datetime | None
     """When access ends in the state this row is in, whichever field that happens to be.
 
-    `substate` computes it: a trial ends at `trial_ends_at`, a grace period at `grace_ends_at`,
-    everything else at `expires_at`. The three are kept alongside it rather than replaced, because
-    they are different questions and the subscriber card asks all of them — but a table with one
-    date column has to show the one that is true right now, and `expires_at` alone was empty on
-    every trial in the world.
+    `substate` computes it: a trial ends at `trial_ends_at`, a grace at `grace_ends_at`, anything
+    else at `expires_at`. The three are kept alongside rather than replaced — they are different
+    questions, and one date column has to show the one that is true right now.
     """
     expires_at: datetime | None
     trial_ends_at: datetime | None
@@ -166,15 +152,9 @@ def build_row(
         # for the state it is in — that is what the property is for.
         access_until=subscription.access_until,
         expires_at=subscription.expires_at,
-        # Read from the model, then shown only in the state that owns them.
-        #
-        # Both halves matter. Deriving these from `expires_at` and `due_at` got the trial wrong
-        # and left a cohort that always returned nothing — `substate` answers both questions and
-        # its answer is the one that stays right. But its answers are historical: `trial_ends_at`
-        # survives the conversion that ended the trial, and `grace_ends_at` is computed from the
-        # expiry whatever state the subscription is in. Passing them through unfiltered puts a
-        # trial end and a grace end on an ACTIVE row, which is a tagged union whose tag does not
-        # decide what is in it — exactly the type that lies.
+        # Filtered by state because `substate` answers historically: `trial_ends_at` survives the
+        # conversion that ended the trial, and `grace_ends_at` is computed whatever the state is.
+        # Unfiltered, an ACTIVE row carries a trial end — a tagged union whose tag decides nothing.
         trial_ends_at=(subscription.trial_ends_at if subscription.state is State.TRIAL else None),
         grace_ends_at=(subscription.grace_ends_at if subscription.state is State.GRACE else None),
         cancelled_at=(subscription.cancelled_at if subscription.state is State.CANCELLED else None),
@@ -269,13 +249,9 @@ async def list_subscribers(
         if _matches(row, query, moment):
             rows.append(row)
 
-    # Rows with no value are sorted apart from the rest and appended, so that they stay at the
-    # bottom whichever way the order runs. Carrying a "present" flag in the sort key does not do
-    # this: `reverse=True` reverses the flag along with the value, and a table sorted by newest
-    # expiry opens with the forty people who have no expiry at all.
-    #
-    # The secondary key is the user id, so two rows with the same state or the same plan do not
-    # swap places between requests and make the table look unstable while paging through it.
+    # Rows with no value are appended rather than keyed, so they stay at the bottom whichever way
+    # the order runs: a "present" flag in the key is reversed along with the value. The user id is
+    # the secondary key, so equal rows do not swap places between requests.
     present = [row for row in rows if _sortable(row, field) is not None]
     absent = [row for row in rows if _sortable(row, field) is None]
     present.sort(key=lambda r: (_sortable(r, field), r.user_id), reverse=descending)
