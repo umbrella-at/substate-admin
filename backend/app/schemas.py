@@ -211,6 +211,18 @@ class PlanSummary(ApiModel):
     grace_days: int
 
 
+class ReferralProgramSummary(ApiModel):
+    """A referral programme, as the control that assigns one describes it.
+
+    `percent` and `accrual` are the two knobs the engine gives a programme, and they are here so
+    the choice reads as a choice — "30% on every payment" rather than an id somebody has to know.
+    """
+
+    id: str
+    percent: int
+    accrual: Literal["first_payment_only", "every_payment"]
+
+
 class SubscriberDetail(ApiModel):
     """GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer."""
 

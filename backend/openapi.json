@@ -467,6 +467,35 @@
         "title": "RedeemRequest",
         "type": "object"
       },
+      "ReferralProgramSummary": {
+        "additionalProperties": false,
+        "description": "A referral programme, as the control that assigns one describes it.\n\n`percent` and `accrual` are the two knobs the engine gives a programme, and they are here so\nthe choice reads as a choice — \"30% on every payment\" rather than an id somebody has to know.",
+        "properties": {
+          "accrual": {
+            "enum": [
+              "first_payment_only",
+              "every_payment"
+            ],
+            "title": "Accrual",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "percent": {
+            "title": "Percent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "percent",
+          "accrual"
+        ],
+        "title": "ReferralProgramSummary",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -1432,6 +1461,57 @@
         "summary": "List Plans",
         "tags": [
           "plans"
+        ]
+      }
+    },
+    "/api/referral-programs": {
+      "get": {
+        "description": "Every referral programme, so putting a subscriber on one is a choice from a list.\n\nWithout it the control is a text field for an identifier nobody can discover, and the only way\nto learn the right value is to be refused with the wrong one.",
+        "operationId": "list_programs_api_referral_programs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReferralProgramSummary"
+                  },
+                  "title": "Response List Programs Api Referral Programs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Programs",
+        "tags": [
+          "referrals"
         ]
       }
     },

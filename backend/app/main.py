@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
     app.include_router(plans.router, prefix=API_PREFIX)
+    app.include_router(plans.programs_router, prefix=API_PREFIX)
     app.include_router(subscribers.router, prefix=API_PREFIX)
     app.include_router(audit.router, prefix=API_PREFIX)
 

@@ -125,6 +125,9 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # The catalogue is read by the table's plan filter, so it is gated with the table rather
         # than left open: knowing what is sold and at what price is not a public fact here.
         ("GET", "/api/plans"): "subscribers.read",
+        # The programme list is not read by the table, so it takes the permission named after what
+        # it is about rather than the one its neighbour happens to use.
+        ("GET", "/api/referral-programs"): "referrals.read",
         ("GET", "/api/subscribers"): "subscribers.read",
         ("GET", "/api/subscribers/{user_id}"): "subscribers.read",
         # The feed is the card's other half and is read under the same permission: what happened

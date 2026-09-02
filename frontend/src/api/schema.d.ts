@@ -146,6 +146,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/referral-programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Programs
+         * @description Every referral programme, so putting a subscriber on one is a choice from a list.
+         *
+         *     Without it the control is a text field for an identifier nobody can discover, and the only way
+         *     to learn the right value is to be refused with the wrong one.
+         */
+        get: operations["list_programs_api_referral_programs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subscribers": {
         parameters: {
             query?: never;
@@ -574,6 +597,24 @@ export interface components {
         RedeemRequest: {
             /** Promocode */
             promoCode: string;
+        };
+        /**
+         * ReferralProgramSummary
+         * @description A referral programme, as the control that assigns one describes it.
+         *
+         *     `percent` and `accrual` are the two knobs the engine gives a programme, and they are here so
+         *     the choice reads as a choice — "30% on every payment" rather than an id somebody has to know.
+         */
+        ReferralProgramSummary: {
+            /**
+             * Accrual
+             * @enum {string}
+             */
+            accrual: "first_payment_only" | "every_payment";
+            /** Id */
+            id: string;
+            /** Percent */
+            percent: number;
         };
         /**
          * RoleSummary
@@ -1056,6 +1097,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanSummary"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_programs_api_referral_programs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralProgramSummary"][];
                 };
             };
             /** @description Unauthorized */
