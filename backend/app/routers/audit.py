@@ -10,7 +10,7 @@ rather than looked up per row, which is the same rule the table's projection fol
 same reason.
 """
 
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, func, select
@@ -24,12 +24,10 @@ from app.schemas import AuditActor, AuditEntry, AuditPage, AuditQueryParams
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
+
 # The filters are applied to two different statements — the page and the count behind it — and
 # both keep their own row type through them.
-_Statement = TypeVar("_Statement", bound=Select[Any])
-
-
-def _narrowed(statement: _Statement, query: AuditQueryParams) -> _Statement:
+def _narrowed[S: Select[Any]](statement: S, query: AuditQueryParams) -> S:
     """Apply the filters the screen offers, and only those.
 
     Each one is a value the screen can produce: a row's actor, a row's action, a row's subscriber,
