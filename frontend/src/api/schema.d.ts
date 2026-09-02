@@ -163,6 +163,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subscribers/{user_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop the renewals and keep access to the end of the paid period
+         * @description No body: there is nothing to say beyond which subscription.
+         */
+        post: operations["cancel_api_subscribers__user_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}/change-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Schedule the plan the next payment will buy
+         * @description Nothing moves now. Naming the plan the subscription is already on drops a pending change.
+         */
+        post: operations["change_plan_api_subscribers__user_id__change_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subscribers/{user_id}/events": {
         parameters: {
             query?: never;
@@ -174,6 +214,94 @@ export interface paths {
         get: operations["read_events_api_subscribers__user_id__events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}/payment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a payment against this subscription
+         * @description Three of the outcomes here are events rather than refusals — duplicate, underpaid,
+         *     unmatched — and every one of them is a 200 that moved nothing. The answer carries them.
+         */
+        post: operations["payment_api_subscribers__user_id__payment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redeem a promo code against this subscription
+         * @description Spends one of the code's redemptions. There is no un-redeem, here or in the engine.
+         */
+        post: operations["redeem_api_subscribers__user_id__redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}/referral-program": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put this subscriber on a referral programme as a referrer
+         * @description Only future accruals move. What has already been paid out is history and is not recomputed.
+         *
+         *     It emits no event, so the answer carries an empty list — the card's programme row is the whole
+         *     evidence, which is why the answer is the card rather than a bare 204.
+         */
+        post: operations["assign_program_api_subscribers__user_id__referral_program_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscribers/{user_id}/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a new subscription for a subscriber whose last one has ended
+         * @description Begin a cycle in place. Refused with ALREADY_SUBSCRIBED unless the record has ended.
+         *
+         *     The one revival path there is from CANCELLED: a payment on a cancelled record is filed and
+         *     changes nothing, so without this the card for those subscribers offers no way to serve someone
+         *     who has called to come back.
+         */
+        post: operations["subscribe_api_subscribers__user_id__subscribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -205,6 +333,44 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AssignProgramRequest
+         * @description POST /api/subscribers/{id}/referral-program.
+         */
+        AssignProgramRequest: {
+            /** Programid */
+            programId: string;
+        };
+        /**
+         * ChangePlanRequest
+         * @description POST /api/subscribers/{id}/change-plan. Naming the current plan cancels a pending change.
+         */
+        ChangePlanRequest: {
+            /** Planid */
+            planId: string;
+        };
+        /**
+         * EngineEvent
+         * @description One thing `substate` emitted.
+         *
+         *     `payload` is whatever the event carried beyond the two fields above it, and its keys differ
+         *     per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is typed
+         *     as an open object on purpose: naming a union of thirteen payload shapes in the schema would
+         *     make every new event in a later engine a breaking change to this API.
+         */
+        EngineEvent: {
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+        };
+        /**
          * ErrorBody
          * @description The contents of the envelope.
          */
@@ -223,7 +389,7 @@ export interface components {
          *     call site is a code that falls through it.
          * @enum {string}
          */
-        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR";
+        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ALREADY_SUBSCRIBED" | "NOT_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
         /**
          * ErrorEnvelope
          * @description The body of every non-2xx response this service produces.
@@ -279,6 +445,20 @@ export interface components {
             worldId?: string | null;
         };
         /**
+         * PaymentRequest
+         * @description POST /api/subscribers/{id}/payment.
+         *
+         *     Minor units, like every amount the engine handles: 500 is $5.00. The provider is the panel and
+         *     is not a field — money recorded here did not come from a gateway, and offering the operator a
+         *     provider name would invite them to claim it did.
+         */
+        PaymentRequest: {
+            /** Amount */
+            amount: number;
+            /** Reference */
+            reference?: string | null;
+        };
+        /**
          * PlanSummary
          * @description The plan a subscription is on, as the card shows it.
          */
@@ -302,6 +482,14 @@ export interface components {
             trialDays: number;
         };
         /**
+         * RedeemRequest
+         * @description POST /api/subscribers/{id}/redeem.
+         */
+        RedeemRequest: {
+            /** Promocode */
+            promoCode: string;
+        };
+        /**
          * RoleSummary
          * @description A role as the panel displays it. `id` stays inside the process.
          */
@@ -310,6 +498,20 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /**
+         * SubscribeRequest
+         * @description POST /api/subscribers/{id}/subscribe.
+         *
+         *     No `referrerId`. Every subscriber this route can reach already exists, and the engine writes
+         *     the referrer once when the record is created and ignores the argument in silence ever after —
+         *     a control that can never take effect is a control that lies about what it does.
+         */
+        SubscribeRequest: {
+            /** Planid */
+            planId: string;
+            /** Promocode */
+            promoCode?: string | null;
         };
         /**
          * SubscriberDetail
@@ -323,16 +525,15 @@ export interface components {
             referralProgramId?: string | null;
             /** Referrerid */
             referrerId?: string | null;
+            /** Referrerprogramid */
+            referrerProgramId?: string | null;
             subscriber: components["schemas"]["SubscriberSummary"];
+            /** Trialstartedat */
+            trialStartedAt?: string | null;
         };
         /**
          * SubscriberEvent
-         * @description One entry of a subscriber's feed.
-         *
-         *     `payload` is whatever the event carried beyond the three columns that index it, and its keys
-         *     differ per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is
-         *     typed as an open object on purpose: naming a union of fourteen payload shapes in the schema
-         *     would make every new event in a later engine a breaking change to this API.
+         * @description One entry of a subscriber's feed: an event, plus the row it was written as.
          */
         SubscriberEvent: {
             /** Id */
@@ -364,6 +565,20 @@ export interface components {
             total: number;
         };
         /**
+         * SubscriberOperationResult
+         * @description What one operation did: the card as it now stands, and what the engine emitted doing it.
+         *
+         *     The events are in the answer because three of the payment outcomes are events rather than
+         *     refusals — duplicate, underpaid, unmatched — and all three are a 200 that changed nothing. An
+         *     answer carrying only the subscriber would leave the panel saying "Payment recorded" over a
+         *     card that did not move.
+         */
+        SubscriberOperationResult: {
+            /** Events */
+            events: components["schemas"]["EngineEvent"][];
+            subscriber: components["schemas"]["SubscriberDetail"];
+        };
+        /**
          * SubscriberPage
          * @description GET /api/subscribers. The shape the specification fixes: items, total, page, pageSize.
          */
@@ -393,6 +608,8 @@ export interface components {
         SubscriberSummary: {
             /** Accessuntil */
             accessUntil?: string | null;
+            /** Cancelledat */
+            cancelledAt?: string | null;
             /** Displayname */
             displayName: string;
             /** Expiresat */
@@ -401,6 +618,8 @@ export interface components {
             graceEndsAt?: string | null;
             /** Lastactiveat */
             lastActiveAt?: string | null;
+            /** Pendingplanid */
+            pendingPlanId?: string | null;
             /** Planid */
             planId: string;
             /** Promocode */
@@ -832,6 +1051,144 @@ export interface operations {
             };
         };
     };
+    cancel_api_subscribers__user_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    change_plan_api_subscribers__user_id__change_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_events_api_subscribers__user_id__events_get: {
         parameters: {
             query?: {
@@ -875,6 +1232,290 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    payment_api_subscribers__user_id__payment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    redeem_api_subscribers__user_id__redeem_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    assign_program_api_subscribers__user_id__referral_program_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignProgramRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    subscribe_api_subscribers__user_id__subscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriberOperationResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

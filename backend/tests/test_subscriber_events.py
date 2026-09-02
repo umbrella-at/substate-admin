@@ -8,7 +8,6 @@ does not exist is told so rather than shown an empty history.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -19,7 +18,7 @@ from substate import Event, Period, Plan, State, SubscriptionCreated
 from app.schemas import PageParams
 from app.subscribers.events import list_events
 from app.worlds.journal import flush_world, write_events
-from app.worlds.registry import BASE_WORLD_ID, World, get_registry, reset_registry
+from app.worlds.registry import World
 from support import Clock, bearer, create_account, envelope
 
 MONTHLY = Plan(
@@ -31,19 +30,11 @@ EVENTS = f"/api/subscribers/{SUBSCRIBER}/events"
 
 
 @pytest.fixture
-async def world() -> AsyncIterator[World]:
-    """A base world in the process registry, holding one subscriber.
-
-    The registry is process-wide and the routes read it by name, so it is put back afterwards:
-    a world left behind is the next test's world.
-    """
-    reset_registry()
-    built = get_registry().create(BASE_WORLD_ID)
-    built.engine.register_plan(MONTHLY)
-    await built.engine.subscribe(SUBSCRIBER, "monthly")
-    built.seeded = True
-    yield built
-    reset_registry()
+async def world(base_world: World) -> World:
+    """The suite's base world, holding one subscriber."""
+    base_world.engine.register_plan(MONTHLY)
+    await base_world.engine.subscribe(SUBSCRIBER, "monthly")
+    return base_world
 
 
 async def _history(connection: AsyncConnection, world: World, count: int) -> list[Event]:

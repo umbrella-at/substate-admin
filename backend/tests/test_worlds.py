@@ -12,6 +12,7 @@ what it holds, and who empties it.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from conftest import TEST_DATABASE_URL
@@ -22,7 +23,7 @@ from substate import Event, Period, Plan, State, SubscriptionCreated
 
 from app.worlds.bootstrap import build_base_world
 from app.worlds.journal import flush_world, purge_world
-from app.worlds.registry import BASE_WORLD_ID, EventSink, World, WorldRegistry
+from app.worlds.registry import BASE_WORLD_ID, EventSink, World, WorldRegistry, collecting
 from app.worlds.ticker import tick_once
 
 MONTHLY = Plan(
@@ -181,3 +182,40 @@ async def test_a_world_that_ticks_after_seeding_keeps_filling_the_journal() -> N
     await world.engine.tick()
 
     assert [type(event).name for event in world.sink.pending] == ["subscription.expired"]
+
+
+async def test_events_from_another_task_are_not_reported_as_this_call() -> None:
+    """The sink is one buffer per world and the ticker fills it too.
+
+    An operation that read the buffer would hand its caller another subscriber's expiry and
+    narrate it as something the operator had just done. The collector is a context variable, and
+    the ticker's task is created at start-up — outside any request — so its context carries none.
+    """
+    world = await _world_with_one_subscriber()
+    world.engine.register_plan(Plan(id="weekly", price=200, currency="USD", period=Period.days(7)))
+    await world.engine.subscribe("sub-0002", "weekly")
+    world.sink.drain()
+
+    running = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def elsewhere() -> None:
+        await running.wait()
+        await world.engine.cancel("sub-0002")
+        finished.set()
+
+    # Created BEFORE the block, which is the whole mechanism: a task copies the context it was
+    # created in, so this one carries no collector however long it runs inside the block.
+    task = asyncio.create_task(elsewhere())
+    try:
+        with collecting() as mine:
+            running.set()
+            await finished.wait()
+            await world.engine.cancel("sub-0001")
+    finally:
+        await task
+
+    assert [event.user_id for event in mine] == ["sub-0001"]
+    # Both are still in the journal's queue: the other task's event is somebody's row, it is only
+    # not this call's answer.
+    assert {event.user_id for event in world.sink.pending} == {"sub-0001", "sub-0002"}

@@ -41,7 +41,7 @@ class ProjectedSubscriber:
     last_active_at: datetime | None
 
 
-def _payload(event: Event) -> dict[str, object]:
+def payload_of(event: Event) -> dict[str, object]:
     """Whatever the event carried beyond the columns that index it.
 
     Read off the dataclass rather than enumerated per event type: a new event in a later version
@@ -112,7 +112,7 @@ async def write_events(connection: AsyncConnection, world_id: str, events: Itera
                     type(event).name,
                     event.user_id,
                     event.occurred_at,
-                    json.dumps(_payload(event)),
+                    json.dumps(payload_of(event)),
                 )
             )
             written += 1

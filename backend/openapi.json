@@ -1,6 +1,67 @@
 {
   "components": {
     "schemas": {
+      "AssignProgramRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/referral-program.",
+        "properties": {
+          "programId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Programid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "programId"
+        ],
+        "title": "AssignProgramRequest",
+        "type": "object"
+      },
+      "ChangePlanRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/change-plan. Naming the current plan cancels a pending change.",
+        "properties": {
+          "planId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Planid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "planId"
+        ],
+        "title": "ChangePlanRequest",
+        "type": "object"
+      },
+      "EngineEvent": {
+        "additionalProperties": false,
+        "description": "One thing `substate` emitted.\n\n`payload` is whatever the event carried beyond the two fields above it, and its keys differ\nper type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is typed\nas an open object on purpose: naming a union of thirteen payload shapes in the schema would\nmake every new event in a later engine a breaking change to this API.",
+        "properties": {
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "occurredAt",
+          "payload"
+        ],
+        "title": "EngineEvent",
+        "type": "object"
+      },
       "ErrorBody": {
         "description": "The contents of the envelope.",
         "properties": {
@@ -44,7 +105,14 @@
           "VALIDATION_ERROR",
           "NOT_FOUND",
           "METHOD_NOT_ALLOWED",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "ALREADY_SUBSCRIBED",
+          "NOT_SUBSCRIBED",
+          "UNKNOWN_PLAN",
+          "UNKNOWN_PROMO_CODE",
+          "PROMO_LIMIT_REACHED",
+          "PROMO_ALREADY_BOUND",
+          "UNKNOWN_REFERRAL_PROGRAM"
         ],
         "title": "ErrorCode",
         "type": "string"
@@ -170,6 +238,36 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "PaymentRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/payment.\n\nMinor units, like every amount the engine handles: 500 is $5.00. The provider is the panel and\nis not a field — money recorded here did not come from a gateway, and offering the operator a\nprovider name would invite them to claim it did.",
+        "properties": {
+          "amount": {
+            "maximum": 100000000.0,
+            "minimum": 1.0,
+            "title": "Amount",
+            "type": "integer"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "PaymentRequest",
+        "type": "object"
+      },
       "PlanSummary": {
         "additionalProperties": false,
         "description": "The plan a subscription is on, as the card shows it.",
@@ -219,6 +317,23 @@
         "title": "PlanSummary",
         "type": "object"
       },
+      "RedeemRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/redeem.",
+        "properties": {
+          "promoCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Promocode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "promoCode"
+        ],
+        "title": "RedeemRequest",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -237,6 +352,36 @@
           "name"
         ],
         "title": "RoleSummary",
+        "type": "object"
+      },
+      "SubscribeRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/subscribe.\n\nNo `referrerId`. Every subscriber this route can reach already exists, and the engine writes\nthe referrer once when the record is created and ignores the argument in silence ever after —\na control that can never take effect is a control that lies about what it does.",
+        "properties": {
+          "planId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Planid",
+            "type": "string"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          }
+        },
+        "required": [
+          "planId"
+        ],
+        "title": "SubscribeRequest",
         "type": "object"
       },
       "SubscriberDetail": {
@@ -279,8 +424,31 @@
             ],
             "title": "Referrerid"
           },
+          "referrerProgramId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerprogramid"
+          },
           "subscriber": {
             "$ref": "#/components/schemas/SubscriberSummary"
+          },
+          "trialStartedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trialstartedat"
           }
         },
         "required": [
@@ -292,7 +460,7 @@
       },
       "SubscriberEvent": {
         "additionalProperties": false,
-        "description": "One entry of a subscriber's feed.\n\n`payload` is whatever the event carried beyond the three columns that index it, and its keys\ndiffer per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is\ntyped as an open object on purpose: naming a union of fourteen payload shapes in the schema\nwould make every new event in a later engine a breaking change to this API.",
+        "description": "One entry of a subscriber's feed: an event, plus the row it was written as.",
         "properties": {
           "id": {
             "title": "Id",
@@ -314,10 +482,10 @@
           }
         },
         "required": [
-          "id",
           "type",
           "occurredAt",
-          "payload"
+          "payload",
+          "id"
         ],
         "title": "SubscriberEvent",
         "type": "object"
@@ -353,6 +521,28 @@
           "pageSize"
         ],
         "title": "SubscriberEventPage",
+        "type": "object"
+      },
+      "SubscriberOperationResult": {
+        "additionalProperties": false,
+        "description": "What one operation did: the card as it now stands, and what the engine emitted doing it.\n\nThe events are in the answer because three of the payment outcomes are events rather than\nrefusals — duplicate, underpaid, unmatched — and all three are a 200 that changed nothing. An\nanswer carrying only the subscriber would leave the panel saying \"Payment recorded\" over a\ncard that did not move.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EngineEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "subscriber": {
+            "$ref": "#/components/schemas/SubscriberDetail"
+          }
+        },
+        "required": [
+          "subscriber",
+          "events"
+        ],
+        "title": "SubscriberOperationResult",
         "type": "object"
       },
       "SubscriberPage": {
@@ -404,6 +594,18 @@
             ],
             "title": "Accessuntil"
           },
+          "cancelledAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelledat"
+          },
           "displayName": {
             "title": "Displayname",
             "type": "string"
@@ -443,6 +645,17 @@
               }
             ],
             "title": "Lastactiveat"
+          },
+          "pendingPlanId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pendingplanid"
           },
           "planId": {
             "title": "Planid",
@@ -1171,6 +1384,192 @@
         ]
       }
     },
+    "/api/subscribers/{user_id}/cancel": {
+      "post": {
+        "description": "No body: there is nothing to say beyond which subscription.",
+        "operationId": "cancel_api_subscribers__user_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop the renewals and keep access to the end of the paid period",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/change-plan": {
+      "post": {
+        "description": "Nothing moves now. Naming the plan the subscription is already on drops a pending change.",
+        "operationId": "change_plan_api_subscribers__user_id__change_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Schedule the plan the next payment will buy",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
     "/api/subscribers/{user_id}/events": {
       "get": {
         "operationId": "read_events_api_subscribers__user_id__events_get",
@@ -1267,6 +1666,398 @@
           }
         ],
         "summary": "One page of what has happened to this subscriber, newest first",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/payment": {
+      "post": {
+        "description": "Three of the outcomes here are events rather than refusals — duplicate, underpaid,\nunmatched — and every one of them is a 200 that moved nothing. The answer carries them.",
+        "operationId": "payment_api_subscribers__user_id__payment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record a payment against this subscription",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/redeem": {
+      "post": {
+        "description": "Spends one of the code's redemptions. There is no un-redeem, here or in the engine.",
+        "operationId": "redeem_api_subscribers__user_id__redeem_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Redeem a promo code against this subscription",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/referral-program": {
+      "post": {
+        "description": "Only future accruals move. What has already been paid out is history and is not recomputed.\n\nIt emits no event, so the answer carries an empty list — the card's programme row is the whole\nevidence, which is why the answer is the card rather than a bare 204.",
+        "operationId": "assign_program_api_subscribers__user_id__referral_program_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put this subscriber on a referral programme as a referrer",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/subscribe": {
+      "post": {
+        "description": "Begin a cycle in place. Refused with ALREADY_SUBSCRIBED unless the record has ended.\n\nThe one revival path there is from CANCELLED: a payment on a cancelled record is filed and\nchanges nothing, so without this the card for those subscribers offers no way to serve someone\nwho has called to come back.",
+        "operationId": "subscribe_api_subscribers__user_id__subscribe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start a new subscription for a subscriber whose last one has ended",
         "tags": [
           "subscribers"
         ]

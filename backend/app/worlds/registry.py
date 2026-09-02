@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +14,26 @@ from substate import Event, MemoryStorage, ReferralProgram, SubscriptionEngine
 from app.worlds.clock import OffsetClock
 
 BASE_WORLD_ID = "base"
+
+_collector: ContextVar[list[Event] | None] = ContextVar("world_event_collector", default=None)
+
+
+@contextmanager
+def collecting() -> Iterator[list[Event]]:
+    """Gather the events emitted inside this block, and only those.
+
+    A context variable rather than a field on the sink, because the sink belongs to the world and
+    the world is shared: the ticker runs as its own task and fills the same buffer, so a request
+    that read the buffer would report another subscriber's expiry as something it had just done.
+    asyncio copies the context per task, so the ticker's events land in the ticker's collector —
+    which is nobody's — and this one sees its own call.
+    """
+    gathered: list[Event] = []
+    token = _collector.set(gathered)
+    try:
+        yield gathered
+    finally:
+        _collector.reset(token)
 
 
 @dataclass(slots=True)
@@ -51,6 +73,9 @@ class EventSink:
     def __call__(self, event: Event) -> None:
         self.subscribers.add(event.user_id)
         self.pending.append(event)
+        collector = _collector.get()
+        if collector is not None:
+            collector.append(event)
         if self.then is not None:
             self.then(event)
 

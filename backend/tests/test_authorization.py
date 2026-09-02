@@ -41,6 +41,7 @@ from app.deps import (
 )
 from app.main import API_PREFIX, api_routes, app
 from app.permissions import ROLE_CODES, SYSTEM_ROLES, RoleCode, system_role
+from app.worlds.registry import World
 from support import Clock, bearer, create_account, envelope, role_id_for
 
 
@@ -129,6 +130,17 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # The feed is the card's other half and is read under the same permission: what happened
         # to a subscription is not a more private fact than what state it is in.
         ("GET", "/api/subscribers/{user_id}/events"): "subscribers.read",
+        # Five of the six operations change one subscription and ask for the permission named
+        # after that.
+        ("POST", "/api/subscribers/{user_id}/subscribe"): "subscribers.write",
+        ("POST", "/api/subscribers/{user_id}/cancel"): "subscribers.write",
+        ("POST", "/api/subscribers/{user_id}/change-plan"): "subscribers.write",
+        ("POST", "/api/subscribers/{user_id}/redeem"): "subscribers.write",
+        ("POST", "/api/subscribers/{user_id}/payment"): "subscribers.write",
+        # The sixth does not. Putting somebody on a referral programme decides who gets paid for
+        # bringing people in, which is a fact about the programme; support may serve a customer
+        # and may not change what a partner earns.
+        ("POST", "/api/subscribers/{user_id}/referral-program"): "referrals.write",
     }
 
 
@@ -137,6 +149,7 @@ async def test_the_permission_matrix(
     client: AsyncClient,
     session: AsyncSession,
     clock: Clock,
+    base_world: World,
     route: APIRoute,
     declaration: RouteDeclaration,
     role_code: RoleCode,
@@ -158,7 +171,10 @@ async def test_the_permission_matrix(
         or declaration.permission in SYSTEM_ROLES[role_code].permissions
     )
     if granted:
-        assert response.status_code != 403
+        # 503 as well as 403. A route that needs a world answers 503 when there is none, which is
+        # "not 403" and would let six endpoints wired to nothing pass this matrix — which is why
+        # `base_world` is a fixture here rather than only in the tests about operations.
+        assert response.status_code not in (403, 503)
     else:
         assert response.status_code == 403
         assert envelope(response)["code"] == "PERMISSION_DENIED"

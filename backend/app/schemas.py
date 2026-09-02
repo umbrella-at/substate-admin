@@ -179,6 +179,10 @@ class SubscriberSummary(ApiModel):
     expires_at: datetime | None = None
     trial_ends_at: datetime | None = None
     grace_ends_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    # Not state-filtered: it is null unless a change is waiting, and the card has to show the
+    # change it was just asked to schedule or the operation looks as though it did nothing.
+    pending_plan_id: str | None = None
     last_active_at: datetime | None = None
     promo_code: str | None = None
     referrer_id: str | None = None
@@ -211,23 +215,40 @@ class SubscriberDetail(ApiModel):
     subscriber: SubscriberSummary
     plan: PlanSummary
     promo_code: str | None = None
+
+    # Who brought this subscriber in, and on what terms that person is paid. Two facts about
+    # somebody else, and neither is what this subscriber earns.
     referrer_id: str | None = None
+    referrer_program_id: str | None = None
+
+    # What THIS subscriber earns when they bring somebody in. Null means nobody assigned them a
+    # programme, in which case the engine still attributes the referral and pays nothing for it.
     referral_program_id: str | None = None
 
+    # On the card and not on the table row, because only the card asks the question it answers:
+    # starting a new subscription grants a fresh trial when this is null and ends access today
+    # when it is not, and a confirmation that cannot tell the two apart has to guess.
+    trial_started_at: datetime | None = None
 
-class SubscriberEvent(ApiModel):
-    """One entry of a subscriber's feed.
 
-    `payload` is whatever the event carried beyond the three columns that index it, and its keys
-    differ per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is
-    typed as an open object on purpose: naming a union of fourteen payload shapes in the schema
-    would make every new event in a later engine a breaking change to this API.
+class EngineEvent(ApiModel):
+    """One thing `substate` emitted.
+
+    `payload` is whatever the event carried beyond the two fields above it, and its keys differ
+    per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is typed
+    as an open object on purpose: naming a union of thirteen payload shapes in the schema would
+    make every new event in a later engine a breaking change to this API.
     """
 
-    id: str
     type: str
     occurred_at: datetime
     payload: dict[str, Any]
+
+
+class SubscriberEvent(EngineEvent):
+    """One entry of a subscriber's feed: an event, plus the row it was written as."""
+
+    id: str
 
 
 class SubscriberEventPage(ApiModel):
@@ -237,6 +258,66 @@ class SubscriberEventPage(ApiModel):
     total: int
     page: int
     page_size: int
+
+
+class SubscribeRequest(ApiModel):
+    """POST /api/subscribers/{id}/subscribe.
+
+    No `referrerId`. Every subscriber this route can reach already exists, and the engine writes
+    the referrer once when the record is created and ignores the argument in silence ever after —
+    a control that can never take effect is a control that lies about what it does.
+    """
+
+    plan_id: str = Field(min_length=1, max_length=64)
+    promo_code: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ChangePlanRequest(ApiModel):
+    """POST /api/subscribers/{id}/change-plan. Naming the current plan cancels a pending change."""
+
+    plan_id: str = Field(min_length=1, max_length=64)
+
+
+class RedeemRequest(ApiModel):
+    """POST /api/subscribers/{id}/redeem."""
+
+    promo_code: str = Field(min_length=1, max_length=64)
+
+
+class PaymentRequest(ApiModel):
+    """POST /api/subscribers/{id}/payment.
+
+    Minor units, like every amount the engine handles: 500 is $5.00. The provider is the panel and
+    is not a field — money recorded here did not come from a gateway, and offering the operator a
+    provider name would invite them to claim it did.
+    """
+
+    amount: int = Field(ge=1, le=100_000_000)
+
+    # The engine is idempotent on (provider, externalId), so a reference typed twice records one
+    # payment. Optional, and a fresh one is minted when it is absent: without that, a double press
+    # is a second payment, and with it forced, a payment nobody has a reference for cannot be
+    # recorded at all.
+    reference: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class AssignProgramRequest(ApiModel):
+    """POST /api/subscribers/{id}/referral-program."""
+
+    program_id: str = Field(min_length=1, max_length=64)
+
+
+class SubscriberOperationResult(ApiModel):
+    """What one operation did: the card as it now stands, and what the engine emitted doing it.
+
+    The events are in the answer because three of the payment outcomes are events rather than
+    refusals — duplicate, underpaid, unmatched — and all three are a 200 that changed nothing. An
+    answer carrying only the subscriber would leave the panel saying "Payment recorded" over a
+    card that did not move.
+    """
+
+    subscriber: SubscriberDetail
+    events: list[EngineEvent]
 
 
 class SubscriberQueryParams(ApiModel):

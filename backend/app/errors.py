@@ -54,6 +54,17 @@ class ErrorCode(StrEnum):
     METHOD_NOT_ALLOWED = auto()
     INTERNAL_ERROR = auto()
 
+    # Refusals that came out of `substate`. Each name is the exception's own, mechanically
+    # respelled — `app.subscribers.operations` asserts that at import, so a code here and the
+    # class it stands for cannot drift into two different words for one refusal.
+    ALREADY_SUBSCRIBED = auto()
+    NOT_SUBSCRIBED = auto()
+    UNKNOWN_PLAN = auto()
+    UNKNOWN_PROMO_CODE = auto()
+    PROMO_LIMIT_REACHED = auto()
+    PROMO_ALREADY_BOUND = auto()
+    UNKNOWN_REFERRAL_PROGRAM = auto()
+
 
 # The status and the sentence that belong to each code, in one table. The three login failure
 # paths must be indistinguishable from outside, and the cheapest way to guarantee that is for
@@ -71,7 +82,44 @@ _DEFAULTS: Final[Mapping[ErrorCode, tuple[int, str]]] = MappingProxyType(
         ErrorCode.VALIDATION_ERROR: (422, "The submitted data is invalid."),
         ErrorCode.NOT_FOUND: (404, "The requested resource does not exist."),
         ErrorCode.METHOD_NOT_ALLOWED: (405, "That method is not allowed for this resource."),
-        ErrorCode.INTERNAL_ERROR: (500, "Something went wrong. Try again."),
+        # Not "something went wrong", which is the one sentence this API's own rules forbid and
+        # which is the fallback behind every operation button. It cannot name the cause without
+        # leaking one, so it names the thing that can be chased instead.
+        ErrorCode.INTERNAL_ERROR: (
+            500,
+            "The service failed to handle this request. Try again; the request id in the "
+            "response headers identifies it in the log.",
+        ),
+        # A refusal names what is true and what can be done about it. "Something went wrong" is
+        # the one sentence none of these may become: the engine knew exactly what was wrong.
+        #
+        # 409 for a refusal about the state of the world, 422 for one about a value that was
+        # submitted — and 422 carries `field`, which is what puts the sentence under the input
+        # that caused it rather than in a banner above the form.
+        ErrorCode.ALREADY_SUBSCRIBED: (
+            409,
+            "This subscriber already has a live subscription. Cancel it first, or change the plan.",
+        ),
+        ErrorCode.NOT_SUBSCRIBED: (
+            409,
+            "This subscriber has no subscription to act on.",
+        ),
+        ErrorCode.UNKNOWN_PLAN: (422, "No plan is registered under that id."),
+        ErrorCode.UNKNOWN_PROMO_CODE: (422, "No promo code is registered under that code."),
+        ErrorCode.PROMO_LIMIT_REACHED: (
+            409,
+            "That code cannot be redeemed again: either this subscriber has already used it, or "
+            "the code is used up. A different code can still be redeemed.",
+        ),
+        ErrorCode.PROMO_ALREADY_BOUND: (
+            409,
+            "A discount is already attached, and only one can apply at a time. "
+            "A code that grants days can still be redeemed.",
+        ),
+        ErrorCode.UNKNOWN_REFERRAL_PROGRAM: (
+            422,
+            "No referral programme is registered under that id.",
+        ),
     }
 )
 
