@@ -18,21 +18,28 @@ from datetime import timedelta
 
 import structlog
 
-from app.worlds.registry import WorldRegistry
+from app.worlds.registry import World, WorldRegistry
 
 _log = structlog.get_logger(__name__)
 
 TICK_INTERVAL = timedelta(seconds=30)
 
+Recorder = Callable[[World], Awaitable[None]]
+"""Writes down whatever a world has emitted. The ticker knows nothing about the database."""
+
 
 async def tick_once(
     registry: WorldRegistry,
-    publish: Callable[[str, list[object]], Awaitable[None]] | None = None,
+    record: Recorder | None = None,
 ) -> int:
     """Advance every live world once. Returns how many events the round produced.
 
     One world failing does not stop the others: a sandbox that has got itself into a state the
     engine refuses is a reason to lose that sandbox, not everybody's.
+
+    `record` is handed the world rather than the events the tick returned, because those are not
+    all of them: an operation performed through the API leaves its own events in the same sink,
+    and a recorder given only the tick's would write half a feed.
     """
     produced = 0
     for world in registry.live():
@@ -47,16 +54,15 @@ async def tick_once(
                 exc_info=True,
             )
             continue
-        if events:
-            produced += len(events)
-            if publish is not None:
-                await publish(world.id, list(events))
+        produced += len(events)
+        if record is not None and world.sink.pending:
+            await record(world)
     return produced
 
 
 async def run_ticker(
     registry: WorldRegistry,
-    publish: Callable[[str, list[object]], Awaitable[None]] | None = None,
+    record: Recorder | None = None,
     *,
     interval: timedelta = TICK_INTERVAL,
 ) -> None:
@@ -69,7 +75,7 @@ async def run_ticker(
     try:
         while True:
             await asyncio.sleep(interval.total_seconds())
-            produced = await tick_once(registry, publish)
+            produced = await tick_once(registry, record)
             if produced:
                 _log.info("worlds_ticked", events=produced, worlds=len(registry.live()))
     except asyncio.CancelledError:
@@ -80,7 +86,7 @@ async def run_ticker(
 @contextlib.asynccontextmanager
 async def ticking(
     registry: WorldRegistry,
-    publish: Callable[[str, list[object]], Awaitable[None]] | None = None,
+    record: Recorder | None = None,
     *,
     interval: timedelta = TICK_INTERVAL,
 ) -> AsyncIterator[asyncio.Task[None]]:
@@ -89,7 +95,7 @@ async def ticking(
     The await on cancellation is not ceremony: without it the task can outlive the loop it was
     started on, and the process holds a reference to a world that is being torn down.
     """
-    task = asyncio.create_task(run_ticker(registry, publish, interval=interval))
+    task = asyncio.create_task(run_ticker(registry, record, interval=interval))
     try:
         yield task
     finally:

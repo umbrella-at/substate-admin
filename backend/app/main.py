@@ -30,7 +30,8 @@ from app.errors import install_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
 from app.routers import auth, health, plans, subscribers, users
 from app.worlds.bootstrap import build_base_world, set_base_world_status
-from app.worlds.registry import get_registry
+from app.worlds.journal import flush_world
+from app.worlds.registry import World, get_registry
 from app.worlds.ticker import ticking
 
 _log = get_logger(__name__)
@@ -65,8 +66,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     registry = get_registry()
     _, status = await build_base_world(registry, get_engine())
     set_base_world_status(status)
+
+    async def record(world: World) -> None:
+        """Put what a tick produced into the journal.
+
+        Its own transaction per world and per round: a round that failed to record one sandbox
+        should not take the base world's events down with it.
+        """
+        async with get_engine().begin() as connection:
+            await flush_world(connection, world)
+
     try:
-        async with ticking(registry):
+        async with ticking(registry, record):
             yield
     finally:
         # Hands the pool's connections back rather than leaving Postgres to time out backends

@@ -15,19 +15,21 @@ BASE_WORLD_ID = "base"
 
 
 @dataclass(slots=True)
-class World:
-    """One isolated instance of the subscription engine: its own storage, its own clock.
+class EventSink:
+    """Everything a world emits, on its way to being written down.
 
-    `expires_at` is None for the base world and set for a sandbox, which is what the reaper reads.
+    The engine takes its sink once, at construction, and has exactly one — so this is the only
+    place a world can watch itself from, and it has to serve every reader rather than the one that
+    happened to be built first. Seeding drains it in a single COPY; afterwards the ticker and the
+    operation endpoints drain it per round and per request.
+
+    A sink that only collected would be a list that grows for as long as the process lives. That
+    is what this replaces: the seeder's closure stayed wired after the seed and every tick for the
+    life of the service appended to it, where nothing ever read it again.
     """
 
-    id: str
-    engine: SubscriptionEngine
-    clock: OffsetClock
-    storage: MemoryStorage
-    created_at: datetime
-    expires_at: datetime | None = None
-    seeded: bool = False
+    then: Callable[[Event], None] | None = None
+    """The seeder's tally, which folds counts into its report. None once the seeding is over."""
 
     subscribers: set[str] = field(default_factory=set)
     """Who exists in this world.
@@ -38,10 +40,51 @@ class World:
     `MemoryStorage._subscriptions`, which is a private field that would keep working right up
     until it silently did not.
 
-    Only identity lives here. The state of a subscription is asked of the engine every time, so
-    this index cannot drift into being a second, wrong answer to a question `substate` already
-    answers. When the SQLAlchemy storage arrives with a real query interface, this goes.
+    Identity only, and it is read off the events rather than guessed from their types: every event
+    names its subscriber. The state of a subscription is asked of the engine every time, so this
+    index cannot drift into being a second, wrong answer to a question `substate` already answers.
     """
+
+    pending: list[Event] = field(default_factory=list)
+    """Emitted, not yet in the journal. Drained by whoever is in an async context to write it."""
+
+    def __call__(self, event: Event) -> None:
+        self.subscribers.add(event.user_id)
+        self.pending.append(event)
+        if self.then is not None:
+            self.then(event)
+
+    def drain(self) -> list[Event]:
+        """Take everything pending and leave the sink empty.
+
+        Synchronous and complete, so two flushes racing each other take disjoint halves rather
+        than writing the same event twice.
+        """
+        taken = self.pending
+        self.pending = []
+        return taken
+
+
+@dataclass(slots=True)
+class World:
+    """One isolated instance of the subscription engine: its own storage, its own clock.
+
+    `expires_at` is None for the base world and set for a sandbox, which is what the reaper reads.
+    """
+
+    id: str
+    engine: SubscriptionEngine
+    clock: OffsetClock
+    storage: MemoryStorage
+    sink: EventSink
+    created_at: datetime
+    expires_at: datetime | None = None
+    seeded: bool = False
+
+    @property
+    def subscribers(self) -> set[str]:
+        """Who exists in this world, as the sink has seen them."""
+        return self.sink.subscribers
 
 
 @dataclass(slots=True)
@@ -69,18 +112,25 @@ class WorldRegistry:
         offset: timedelta = timedelta(),
         default_program: ReferralProgram | None = None,
     ) -> World:
-        """Build a world and put it in the registry, replacing any world of the same id."""
+        """Build a world and put it in the registry, replacing any world of the same id.
+
+        `on_event` is passed through the sink rather than to the engine: the engine accepts one
+        sink and accepts it once, so anything that wants to watch a world has to go through the
+        one object that already does.
+        """
         identifier = world_id if world_id is not None else str(uuid.uuid4())
         clock = OffsetClock(offset)
         storage = MemoryStorage()
+        sink = EventSink(then=on_event)
         now = datetime.now(UTC)
         world = World(
             id=identifier,
             engine=SubscriptionEngine(
-                storage, clock=clock, on_event=on_event, default_program=default_program
+                storage, clock=clock, on_event=sink, default_program=default_program
             ),
             clock=clock,
             storage=storage,
+            sink=sink,
             created_at=now,
             expires_at=None if ttl is None else now + ttl,
         )

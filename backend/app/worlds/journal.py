@@ -25,6 +25,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from substate import Event
 
+from app.worlds.registry import World
+
 # Spelled out rather than interpolated. The schema is fixed, the migrations hardcode it for
 # the same reason, and a table name built by an f-string is a table name a reader has to
 # reconstruct before they can be sure what it is.
@@ -115,6 +117,21 @@ async def write_events(connection: AsyncConnection, world_id: str, events: Itera
             )
             written += 1
     return written
+
+
+async def flush_world(connection: AsyncConnection, world: World) -> int:
+    """Write whatever a world has emitted since the last flush. Returns how many rows went.
+
+    Called after every operation and after every tick, so the feed on a subscriber's card shows
+    what just happened rather than what happened before the service last restarted. Draining
+    first and writing second means a failed write loses those rows; the alternative is a buffer
+    that grows for as long as the database is unreachable, and this journal is rebuilt from the
+    seeder at every start anyway.
+    """
+    events = world.sink.drain()
+    if not events:
+        return 0
+    return await write_events(connection, world.id, events)
 
 
 async def write_projection(
