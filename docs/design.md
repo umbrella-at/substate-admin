@@ -361,15 +361,21 @@ Sentence case throughout. No `ALL CAPS`, no Title Case except proper nouns.
 
 **A moment is absolute unless the question is "recently or not".**
 
-The event feed and the audit print the instant: `09 Sep 2026`, mono, UTC, the same form the
-boundaries on the card use. They are read against those boundaries — did the payment arrive before
-the period ended — and `3 months ago` next to `09 Sep 2026` makes the reader do the arithmetic to
-find out whether the two agree.
+The event feed and the audit print the instant: `09 Sep 2026 14:07`, mono, UTC. They are read
+against the boundaries on the card — did the payment arrive before the period ended — and
+`3 months ago` next to `09 Sep 2026` makes the reader do the arithmetic to find out whether the
+two agree.
 
-The activity column is the exception and keeps `9 days ago`, because its question is whether
-somebody has been seen lately and a date makes the reader do the subtraction instead. The rule is
-the question, not the column: relative where the answer is a duration, absolute where the answer
-is an instant that will be compared with another one.
+**They carry the time and a boundary does not**, which is the same rule applied twice: a feed and
+an audit are read for *when*, and two operations a minute apart are two rows somebody has to tell
+apart. A boundary at 14:07 is a fact about a clock rather than about the subscription, and
+printing it invites a comparison of minutes that mean nothing.
+
+Last activity is the exception and keeps `9 days ago` — in the table's column and on the card
+alike, because it is the same question in both places: has this person been seen lately. A date
+there makes the reader do the subtraction. The rule is the question, not the screen: relative
+where the answer is a duration, absolute where the answer is an instant that will be compared with
+another one.
 
 ## Spacing
 
