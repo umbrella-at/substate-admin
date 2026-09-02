@@ -9,7 +9,10 @@ WCAG 2.1 relative luminance and contrast ratio. Thresholds used here:
 
 from __future__ import annotations
 
+import re
 import sys
+from pathlib import Path
+from typing import Final
 
 
 def luminance(hex_colour: str) -> float:
@@ -25,34 +28,23 @@ def ratio(a: str, b: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
-T = {
-    "surface-0": "#111820",
-    "surface-1": "#18212B",
-    "surface-2": "#1F2A36",
-    "border": "#263241",
-    "border-strong": "#32414F",
-    "control-border": "#657787",
-    "text-primary": "#E3EAF2",
-    "text-secondary": "#A9B8C7",
-    "text-muted": "#8695A6",
-    "accent-fill": "#2C5F87",
-    "accent-fill-hover": "#34719F",
-    "on-accent": "#E8F1F8",
-    "accent-text": "#6B9EC7",
-    "accent-bg": "#1B3549",
-    "fill-disabled": "#1E2831",
-    "text-disabled": "#566472",
-    "skeleton-base": "#3A4757",
-    "skeleton-highlight": "#47566A",
-    "state-trial-bg": "#2C2550", "state-trial-text": "#C2B4F5",
-    "state-active-bg": "#123B2C", "state-active-text": "#6ED9A8",
-    "state-grace-bg": "#43300D", "state-grace-text": "#F3BE5E",
-    "state-expired-bg": "#242F3B", "state-expired-text": "#8C9BAB",
-    "state-cancelled-bg": "#43202D", "state-cancelled-text": "#F08FA8",
-    "success-bg": "#123B2C", "success-text": "#6ED9A8", "success-border": "#1D5B44",
-    "warning-bg": "#43300D", "warning-text": "#F3BE5E", "warning-border": "#6B4E15",
-    "danger-bg": "#47211F", "danger-text": "#F0837E", "danger-border": "#6E3330",
-}
+TOKENS: Final = Path(__file__).resolve().parent.parent / "frontend/src/styles/tokens.css"
+HEX: Final = re.compile(r"--color-([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\b")
+
+
+def palette() -> dict[str, str]:
+    """The colours as the stylesheet declares them, not a copy of them.
+
+    A hard-coded table is a second palette: it went on reporting the ratios of colours the panel
+    had stopped using, and a value edited in `tokens.css` alone was measured by nothing.
+    """
+    found = dict(HEX.findall(TOKENS.read_text(encoding="utf-8")))
+    if not found:
+        raise SystemExit(f"no --color-*: #rrggbb in {TOKENS}; there is nothing to measure")
+    return found
+
+
+T = palette()
 
 # --scrim is rgba(0,0,0,0.55) and cannot be measured as a hex, so what is measured is what a reader
 # actually sees: the surface with the scrim composited over it. Written out rather than computed
