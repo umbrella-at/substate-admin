@@ -49,7 +49,14 @@ function confirm(): void {
 </script>
 
 <template>
-  <AlertDialogRoot v-model:open="open">
+  <!-- Not `v-model:open`. While the request is out this dialog may not close by ANY route — the
+       dismissing button, Escape, a click outside — because each of them leaves the operation
+       running and the dialog gone, which is the promise `Keep subscription` makes and cannot keep.
+       Disabling the button closed one of the three; refusing the close closes all of them. -->
+  <AlertDialogRoot
+    :open="open"
+    @update:open="(next: boolean) => (next || busy !== true ? (open = next) : undefined)"
+  >
     <AlertDialogPortal>
       <AlertDialogOverlay class="fixed inset-0 z-40 bg-scrim" />
       <!-- Centred by transform rather than by a grid on the overlay: the overlay is the scrim and
