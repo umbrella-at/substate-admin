@@ -38,7 +38,11 @@ hits=''
 while IFS= read -r -d '' file; do
     [ "$file" != "$SELF" ] || continue
     [ -f "$file" ] || continue
-    match="$(grep -niE "$PATTERN" "$file" 2>/dev/null | grep -viE "$ALLOWED" || true)"
+    # -I skips a binary. The rule is about what a reader reads, and a PNG is not that: a
+    # screenshot whose compressed bytes happen to spell one of these words is not a sentence
+    # anybody can see, and reporting it names a line number in a file that has none. Found by a
+    # committed screenshot matching, which is the only way this could have been found.
+    match="$(grep -nIiE "$PATTERN" "$file" 2>/dev/null | grep -viE "$ALLOWED" || true)"
     [ -n "$match" ] || continue
     while IFS= read -r line; do
         hits="${hits}${file}:${line}"$'\n'
