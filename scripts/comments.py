@@ -633,6 +633,10 @@ def blocks_in(path: Path, text: str, verdicts: list[str]) -> Iterator[Block]:
 
     A docstring followed straight away by a `#` comment is six lines of prose to the person
     reading it, and splitting them by kind would report two blocks of three.
+
+    A blank line ends a run, and that is decided rather than overlooked: paragraphs are how a good
+    comment is written, and treating them as one wall would punish the formatting instead of the
+    length. A wall cut into three-line pieces gets past it, which takes intent and shows in a diff.
     """
     lines = lines_of(text)
     start = 0
@@ -683,6 +687,10 @@ an existing one merges with it and leaves the count at three; the line total is 
 
 It only shrinks. A file gaining prose is a refusal, and a file losing it is also a refusal, since a
 number left sitting above the truth stops meaning anything within a month. Both say what to run.
+
+Known limit: a wall swapped for another of the same length in the same file passes. Closing it
+needs a fingerprint per block, and a check is not what defends against somebody deciding to get
+past a check.
 """
 
 
