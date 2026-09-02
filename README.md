@@ -8,8 +8,12 @@ is deciding whether the library is worth building on.
 
 ![The subscriber table: state chips, server-side filters, and paging through 351 people](docs/subscribers.png)
 
-The picture is generated rather than taken. `npm --prefix frontend run capture` signs in to a
-running copy, frames the same window every time and overwrites the file above.
+![One subscriber in grace: the two boundaries that state has, the operations available on it, and the events behind them](docs/subscriber.png)
+
+Both pictures are generated rather than taken. `npm --prefix frontend run capture` signs in to a
+running copy, frames the same windows every time and overwrites the files above. The frames assert
+what they photographed — four states in the table, both boundaries and every operation on the card
+— so a shot that has quietly got worse is a failed run rather than a discovery in the README.
 
 ## Live
 
@@ -19,7 +23,7 @@ it:
 
 ```json
 { "status": "ok", "version": "0.1.0", "commit": "840edf8", "db": true,
-  "world": { "seeded": true, "subscribers": 351, "events": 3731 } }
+  "world": { "seeded": true, "subscribers": 351, "events": 3791 } }
 ```
 
 ## What it does
@@ -51,6 +55,39 @@ first kind into the second.
 back to it, and nothing keeps a second copy. So everybody in grace is a link that can be sent to a
 colleague rather than a route described over a call, the back button walks the filters somebody
 actually used, and a reload gives the same table back.
+
+**One subscriber's card, with the boundaries that state has.** A subscription has three of them —
+the end of a trial, the end of a paid period, the end of the courtesy after it — and no state has
+all three. The card draws the ones this state owns and no others, which is a type rather than a
+convention: the flat wire shape is narrowed once into a union whose grace arm is the only one that has a
+grace end, consumed by a switch with no default. A dash appears in exactly one place,
+and it is the place the table already uses one: a subscription that ended without a payment ever
+being made.
+
+**Six operations, and the rule that decides which of them ask first.** An operation is confirmed
+when a person cannot reverse its effect with another operation on the same card, and the
+consequence is not already stated by what they typed. That gives a dialog to cancelling, to
+starting a new subscription and to redeeming a code — none of which anything can undo — and none to
+recording a payment, changing a plan or assigning a referral programme, each of which is idempotent
+or reverses itself. It is a rule rather than six opinions: it decides the seventh operation without
+a meeting, and it corrects the intuition that redeeming a code is generous and changing a plan is
+grave.
+
+**What an operation says it did comes from the engine.** Three payment outcomes are a 200 and a
+subscription that did not move — a reference already on file, an amount short of the price, a
+payment against a cancelled record — so the notice is rendered from the events that came back
+rather than from the button that was pressed, in the colour those events earned. And a refusal
+arrives under the exception's own name: `PROMO_ALREADY_BOUND`, `UNKNOWN_PLAN`, `ALREADY_SUBSCRIBED`
+reach the browser as codes, and the ones about a value somebody typed name the field, so the
+sentence lands under the input rather than in a banner above it.
+
+**An audit of attempts, not successes.** Every operation that reached the engine is a row, refused
+ones included — because the engine catches a subscription up with the clock *before* it decides to
+refuse, so a refused call can be the cause of a state change the event journal does record, and
+because "who tried to cancel this and was told no" is the question an audit is opened for. It is
+deliberately narrow: signing in, signing out and changing a filter are authentication and
+navigation, and they belong in the structured log where they do not bury the handful of lines that
+say somebody changed something.
 
 **Roles and permissions out of the database.** The router and the navigation ask whether a
 permission is held, never which role holds it — roles are rows an administrator can edit, and

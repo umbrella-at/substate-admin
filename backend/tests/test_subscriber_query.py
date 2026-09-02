@@ -12,32 +12,32 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from substate import MemoryStorage, State, SubscriptionEngine
+from substate import State
 
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, seed_world
 from app.subscribers.query import Cohort, SubscriberQuery, list_subscribers, parse_sort
-from app.worlds.clock import OffsetClock
-from app.worlds.registry import World
+from app.worlds.registry import World, WorldRegistry
 
 
 @pytest.fixture
 async def world() -> tuple[World, dict[str, tuple[str, object]]]:
-    """A seeded world and its projection, the pair every query needs."""
-    clock = OffsetClock(timedelta(days=-HISTORY_DAYS))
+    """A seeded world and its projection, the pair every query needs.
+
+    Built through the registry rather than assembled here, so the index of who exists is filled
+    the way it is filled in production — off the events — rather than from the seeder's report.
+    """
     tally = EventTally()
-    storage = MemoryStorage()
-    engine = SubscriptionEngine(storage, clock=clock, on_event=tally, default_program=USERS_PROGRAM)
-    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
-    built = World(
-        id="test",
-        engine=engine,
-        clock=clock,
-        storage=storage,
-        created_at=clock.now(),
-        seeded=True,
-        subscribers={user_id for user_id, *_ in report.subscribers_projection},
+    built = WorldRegistry().create(
+        "test",
+        on_event=tally,
+        offset=timedelta(days=-HISTORY_DAYS),
+        default_program=USERS_PROGRAM,
     )
+    report = await seed_world(
+        built.engine, built.clock.advance, built.clock.now, tally=tally, days=HISTORY_DAYS
+    )
+    built.seeded = True
     projection = {
         user_id: (display_name, last_active_at)
         for user_id, display_name, last_active_at in report.subscribers_projection

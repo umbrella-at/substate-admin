@@ -76,7 +76,7 @@ function health(seeded: boolean) {
     version: '0.0.0',
     commit: 'test',
     db: true,
-    world: { seeded, subscribers: seeded ? 351 : 0, events: seeded ? 3749 : 0 },
+    world: { id: 'base', seeded, subscribers: seeded ? 351 : 0, events: seeded ? 3749 : 0 },
   }
 }
 

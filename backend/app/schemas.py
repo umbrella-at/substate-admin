@@ -11,12 +11,14 @@ column by accident.
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 from substate import State
 
+from app.audit import AuditAction
+from app.errors import ErrorCode
 from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
 
 
@@ -47,6 +49,10 @@ class WorldHealth(ApiModel):
     back over a cosmetic problem.
     """
 
+    # Which world the panel is showing. Named rather than left for a client to assume: the audit
+    # holds rows from worlds that no longer exist, and a screen deciding whether a row is about
+    # the world on screen was otherwise comparing against a constant it had copied.
+    id: str
     seeded: bool
     subscribers: int
     events: int
@@ -179,6 +185,10 @@ class SubscriberSummary(ApiModel):
     expires_at: datetime | None = None
     trial_ends_at: datetime | None = None
     grace_ends_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    # Not state-filtered: it is null unless a change is waiting, and the card has to show the
+    # change it was just asked to schedule or the operation looks as though it did nothing.
+    pending_plan_id: str | None = None
     last_active_at: datetime | None = None
     promo_code: str | None = None
     referrer_id: str | None = None
@@ -205,14 +215,188 @@ class PlanSummary(ApiModel):
     grace_days: int
 
 
+class ReferralProgramSummary(ApiModel):
+    """A referral programme, as the control that assigns one describes it.
+
+    `percent` and `accrual` are the two knobs the engine gives a programme, and they are here so
+    the choice reads as a choice — "30% on every payment" rather than an id somebody has to know.
+    """
+
+    id: str
+    percent: int
+    accrual: Literal["first_payment_only", "every_payment"]
+
+
 class SubscriberDetail(ApiModel):
     """GET /api/subscribers/{id}: the subscription, its plan, its promo code and its referrer."""
 
     subscriber: SubscriberSummary
     plan: PlanSummary
     promo_code: str | None = None
+
+    # Who brought this subscriber in, and on what terms that person is paid. Two facts about
+    # somebody else, and neither is what this subscriber earns.
     referrer_id: str | None = None
+    referrer_program_id: str | None = None
+
+    # What THIS subscriber earns when they bring somebody in. Null means nobody assigned them one,
+    # NOT that they are paid nothing: the engine falls back to the world's default programme, which
+    # in the base world pays ten per cent on a first payment.
     referral_program_id: str | None = None
+
+    # On the card and not on the table row, because only the card asks the question it answers:
+    # starting a new subscription grants a fresh trial when this is null and ends access today
+    # when it is not, and a confirmation that cannot tell the two apart has to guess.
+    trial_started_at: datetime | None = None
+
+
+class EngineEvent(ApiModel):
+    """One thing `substate` emitted.
+
+    `payload` is whatever the event carried beyond the two fields above it, and its keys differ
+    per type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is typed
+    as an open object on purpose: naming a union of thirteen payload shapes in the schema would
+    make every new event in a later engine a breaking change to this API.
+    """
+
+    type: str
+    occurred_at: datetime
+    payload: dict[str, Any]
+
+
+class SubscriberEvent(EngineEvent):
+    """One entry of a subscriber's feed: an event, plus the row it was written as."""
+
+    id: str
+
+
+class SubscriberEventPage(ApiModel):
+    """GET /api/subscribers/{id}/events, in the shape every collection here answers with."""
+
+    items: list[SubscriberEvent]
+    total: int
+    page: int
+    page_size: int
+
+
+class SubscribeRequest(ApiModel):
+    """POST /api/subscribers/{id}/subscribe.
+
+    No `referrerId`. Every subscriber this route can reach already exists, and the engine writes
+    the referrer once when the record is created and ignores the argument in silence ever after —
+    a control that can never take effect is a control that lies about what it does.
+    """
+
+    plan_id: str = Field(min_length=1, max_length=64)
+    promo_code: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ChangePlanRequest(ApiModel):
+    """POST /api/subscribers/{id}/change-plan. Naming the current plan cancels a pending change."""
+
+    plan_id: str = Field(min_length=1, max_length=64)
+
+
+class RedeemRequest(ApiModel):
+    """POST /api/subscribers/{id}/redeem."""
+
+    promo_code: str = Field(min_length=1, max_length=64)
+
+
+class PaymentRequest(ApiModel):
+    """POST /api/subscribers/{id}/payment.
+
+    Minor units, like every amount the engine handles: 500 is $5.00. The provider is the panel and
+    is not a field — money recorded here did not come from a gateway, and offering the operator a
+    provider name would invite them to claim it did.
+    """
+
+    amount: int = Field(ge=1, le=100_000_000)
+
+    # The engine is idempotent on (provider, externalId), so a reference typed twice records one
+    # payment. Optional, and a fresh one is minted when it is absent: without that, a double press
+    # is a second payment, and with it forced, a payment nobody has a reference for cannot be
+    # recorded at all.
+    reference: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class AssignProgramRequest(ApiModel):
+    """POST /api/subscribers/{id}/referral-program."""
+
+    program_id: str = Field(min_length=1, max_length=64)
+
+
+class SubscriberOperationResult(ApiModel):
+    """What one operation did: the card as it now stands, and what the engine emitted doing it.
+
+    The events are in the answer because three of the payment outcomes are events rather than
+    refusals — duplicate, underpaid, unmatched — and all three are a 200 that changed nothing. An
+    answer carrying only the subscriber would leave the panel saying "Payment recorded" over a
+    card that did not move.
+    """
+
+    subscriber: SubscriberDetail
+    events: list[EngineEvent]
+
+
+class AuditActor(ApiModel):
+    """Who did it. The email rather than the id alone: an audit nobody can read is a log."""
+
+    id: uuid.UUID
+    email: str
+
+
+class AuditEntry(ApiModel):
+    """One row of the audit.
+
+    `ipHash` is stored and never sent. A twelve-character HMAC on screen tells a reader nothing
+    and is evidence leaving the machine that holds the pepper; the column is there for the day an
+    investigation asks the database, not for a column on a table.
+    """
+
+    id: uuid.UUID
+    occurred_at: datetime
+    actor: AuditActor
+    action: AuditAction
+    target_type: str
+    target_id: str
+
+    # Which world it happened in. The base world is rebuilt at every restart, so a row older than
+    # the last one names a subscriber whose state has been reset — which is why the screen links
+    # the target only when this matches the world it is looking at.
+    world_id: str
+
+    outcome: Literal["ok", "refused"]
+    error_code: ErrorCode | None = None
+
+    # The arguments of the operation as they were submitted. Never its result.
+    payload: dict[str, Any]
+
+
+class AuditPage(ApiModel):
+    """GET /api/audit."""
+
+    items: list[AuditEntry]
+    total: int
+    page: int
+    page_size: int
+
+
+class AuditQueryParams(ApiModel):
+    """The query string of GET /api/audit.
+
+    No date range and no sort. An audit log has one order — newest first — and offering another
+    produces something that reads as a ranking of who did the most; and a date filter needs a date
+    control, which this interface does not have and `docs/design.md` has no recipe for. A filter
+    nobody can operate is not a filter.
+    """
+
+    page: int = Field(default=1, ge=1, le=1_000_000)
+    page_size: int = Field(default=25, ge=1, le=100)
+    actor_user_id: uuid.UUID | None = None
+    action: list[AuditAction] = Field(default_factory=list)
+    target_id: str | None = Field(default=None, max_length=200)
+    outcome: Literal["ok", "refused"] | None = None
 
 
 class SubscriberQueryParams(ApiModel):

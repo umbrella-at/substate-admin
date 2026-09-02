@@ -96,13 +96,36 @@ describe('the subscriber table', () => {
   // is one.
   it('offers an order only from the columns that have one', () => {
     const table = render()
-    const ordered = table.findAllComponents(RouterLinkStub)
+    // Scoped to the header. The body carries links of its own now — every subscriber's name goes
+    // to their card — and a count over the whole table would be counting two different things.
+    const ordered = table
+      .findAllComponents(RouterLinkStub)
+      .filter((link) => link.element.closest('thead') !== null)
     expect(ordered.length).toBe(3)
     expect(ordered.map((link) => link.text().replace(/\s+/gu, ' ').trim())).toEqual([
       'Subscriber',
       'Access until',
       'Last activity↓',
     ])
+  })
+
+  // The one way into a card, and it is the name rather than the row: a clickable row swallows
+  // selecting the text in it, has no keyboard equivalent that is not invented, and cannot be
+  // opened in a new tab without reimplementing what an anchor already does.
+  it('sends a name to that subscriber, and links nothing else in the row', () => {
+    const table = render({
+      rows: [subscriber({ userId: 'sub-0007', displayName: 'Ada Lovelace' })],
+    })
+    const links = table
+      .findAllComponents(RouterLinkStub)
+      .filter((link) => link.element.closest('tbody') !== null)
+
+    expect(links.length).toBe(1)
+    expect(links[0]?.text()).toBe('Ada Lovelace')
+    expect(links[0]?.props('to')).toEqual({
+      name: 'subscriber',
+      params: { userId: 'sub-0007' },
+    })
   })
 
   // Nothing to click, so nothing that looks clickable. These were briefly links to the filter

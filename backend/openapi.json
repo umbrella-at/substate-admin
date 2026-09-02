@@ -1,6 +1,200 @@
 {
   "components": {
     "schemas": {
+      "AssignProgramRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/referral-program.",
+        "properties": {
+          "programId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Programid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "programId"
+        ],
+        "title": "AssignProgramRequest",
+        "type": "object"
+      },
+      "AuditActor": {
+        "additionalProperties": false,
+        "description": "Who did it. The email rather than the id alone: an audit nobody can read is a log.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "AuditActor",
+        "type": "object"
+      },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "description": "One row of the audit.\n\n`ipHash` is stored and never sent. A twelve-character HMAC on screen tells a reader nothing\nand is evidence leaving the machine that holds the pepper; the column is there for the day an\ninvestigation asks the database, not for a column on a table.",
+        "properties": {
+          "action": {
+            "enum": [
+              "subscription.subscribe",
+              "subscription.cancel",
+              "subscription.change_plan",
+              "subscription.redeem",
+              "subscription.payment",
+              "subscription.assign_program"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "refused"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "targetId": {
+            "title": "Targetid",
+            "type": "string"
+          },
+          "targetType": {
+            "title": "Targettype",
+            "type": "string"
+          },
+          "worldId": {
+            "title": "Worldid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "occurredAt",
+          "actor",
+          "action",
+          "targetType",
+          "targetId",
+          "worldId",
+          "outcome",
+          "payload"
+        ],
+        "title": "AuditEntry",
+        "type": "object"
+      },
+      "AuditPage": {
+        "additionalProperties": false,
+        "description": "GET /api/audit.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
+      "ChangePlanRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/change-plan. Naming the current plan cancels a pending change.",
+        "properties": {
+          "planId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Planid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "planId"
+        ],
+        "title": "ChangePlanRequest",
+        "type": "object"
+      },
+      "EngineEvent": {
+        "additionalProperties": false,
+        "description": "One thing `substate` emitted.\n\n`payload` is whatever the event carried beyond the two fields above it, and its keys differ\nper type — `payment.recorded` has an amount, `subscription.expired` has a reason. It is typed\nas an open object on purpose: naming a union of thirteen payload shapes in the schema would\nmake every new event in a later engine a breaking change to this API.",
+        "properties": {
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "occurredAt",
+          "payload"
+        ],
+        "title": "EngineEvent",
+        "type": "object"
+      },
       "ErrorBody": {
         "description": "The contents of the envelope.",
         "properties": {
@@ -44,7 +238,13 @@
           "VALIDATION_ERROR",
           "NOT_FOUND",
           "METHOD_NOT_ALLOWED",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "ALREADY_SUBSCRIBED",
+          "UNKNOWN_PLAN",
+          "UNKNOWN_PROMO_CODE",
+          "PROMO_LIMIT_REACHED",
+          "PROMO_ALREADY_BOUND",
+          "UNKNOWN_REFERRAL_PROGRAM"
         ],
         "title": "ErrorCode",
         "type": "string"
@@ -60,6 +260,19 @@
           "error"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "HealthResponse": {
@@ -170,6 +383,36 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "PaymentRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/payment.\n\nMinor units, like every amount the engine handles: 500 is $5.00. The provider is the panel and\nis not a field — money recorded here did not come from a gateway, and offering the operator a\nprovider name would invite them to claim it did.",
+        "properties": {
+          "amount": {
+            "maximum": 100000000.0,
+            "minimum": 1.0,
+            "title": "Amount",
+            "type": "integer"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "PaymentRequest",
+        "type": "object"
+      },
       "PlanSummary": {
         "additionalProperties": false,
         "description": "The plan a subscription is on, as the card shows it.",
@@ -219,6 +462,52 @@
         "title": "PlanSummary",
         "type": "object"
       },
+      "RedeemRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/redeem.",
+        "properties": {
+          "promoCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Promocode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "promoCode"
+        ],
+        "title": "RedeemRequest",
+        "type": "object"
+      },
+      "ReferralProgramSummary": {
+        "additionalProperties": false,
+        "description": "A referral programme, as the control that assigns one describes it.\n\n`percent` and `accrual` are the two knobs the engine gives a programme, and they are here so\nthe choice reads as a choice — \"30% on every payment\" rather than an id somebody has to know.",
+        "properties": {
+          "accrual": {
+            "enum": [
+              "first_payment_only",
+              "every_payment"
+            ],
+            "title": "Accrual",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "percent": {
+            "title": "Percent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "percent",
+          "accrual"
+        ],
+        "title": "ReferralProgramSummary",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -237,6 +526,36 @@
           "name"
         ],
         "title": "RoleSummary",
+        "type": "object"
+      },
+      "SubscribeRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/subscribers/{id}/subscribe.\n\nNo `referrerId`. Every subscriber this route can reach already exists, and the engine writes\nthe referrer once when the record is created and ignores the argument in silence ever after —\na control that can never take effect is a control that lies about what it does.",
+        "properties": {
+          "planId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Planid",
+            "type": "string"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
+          }
+        },
+        "required": [
+          "planId"
+        ],
+        "title": "SubscribeRequest",
         "type": "object"
       },
       "SubscriberDetail": {
@@ -279,8 +598,31 @@
             ],
             "title": "Referrerid"
           },
+          "referrerProgramId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrerprogramid"
+          },
           "subscriber": {
             "$ref": "#/components/schemas/SubscriberSummary"
+          },
+          "trialStartedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trialstartedat"
           }
         },
         "required": [
@@ -288,6 +630,93 @@
           "plan"
         ],
         "title": "SubscriberDetail",
+        "type": "object"
+      },
+      "SubscriberEvent": {
+        "additionalProperties": false,
+        "description": "One entry of a subscriber's feed: an event, plus the row it was written as.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "occurredAt",
+          "payload",
+          "id"
+        ],
+        "title": "SubscriberEvent",
+        "type": "object"
+      },
+      "SubscriberEventPage": {
+        "additionalProperties": false,
+        "description": "GET /api/subscribers/{id}/events, in the shape every collection here answers with.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriberEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "title": "SubscriberEventPage",
+        "type": "object"
+      },
+      "SubscriberOperationResult": {
+        "additionalProperties": false,
+        "description": "What one operation did: the card as it now stands, and what the engine emitted doing it.\n\nThe events are in the answer because three of the payment outcomes are events rather than\nrefusals — duplicate, underpaid, unmatched — and all three are a 200 that changed nothing. An\nanswer carrying only the subscriber would leave the panel saying \"Payment recorded\" over a\ncard that did not move.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EngineEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "subscriber": {
+            "$ref": "#/components/schemas/SubscriberDetail"
+          }
+        },
+        "required": [
+          "subscriber",
+          "events"
+        ],
+        "title": "SubscriberOperationResult",
         "type": "object"
       },
       "SubscriberPage": {
@@ -339,6 +768,18 @@
             ],
             "title": "Accessuntil"
           },
+          "cancelledAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelledat"
+          },
           "displayName": {
             "title": "Displayname",
             "type": "string"
@@ -378,6 +819,17 @@
               }
             ],
             "title": "Lastactiveat"
+          },
+          "pendingPlanId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pendingplanid"
           },
           "planId": {
             "title": "Planid",
@@ -589,6 +1041,46 @@
         "title": "UserSummary",
         "type": "object"
       },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
       "WorldHealth": {
         "additionalProperties": false,
         "description": "Whether the demonstration has a world behind it.\n\nReported beside the database rather than folded into `status`, because the two failures are\nnot the same kind. A database that does not answer means the panel cannot serve; a world that\nfailed to seed means the shop window is empty while signing in, permissions and every\noperator screen keep working. Answering 503 for the second would make a deploy roll itself\nback over a cosmetic problem.",
@@ -596,6 +1088,10 @@
           "events": {
             "title": "Events",
             "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
           },
           "seeded": {
             "title": "Seeded",
@@ -607,6 +1103,7 @@
           }
         },
         "required": [
+          "id",
           "seeded",
           "subscribers",
           "events"
@@ -629,6 +1126,162 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/audit": {
+      "get": {
+        "operationId": "list_page_api_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorUserId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actoruserid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "subscription.subscribe",
+                  "subscription.cancel",
+                  "subscription.change_plan",
+                  "subscription.redeem",
+                  "subscription.payment",
+                  "subscription.assign_program"
+                ],
+                "type": "string"
+              },
+              "title": "Action",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "refused"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One page of what operators did, newest first",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "description": "Authenticate a person and start a refresh-token family for the device they used.",
@@ -868,6 +1521,57 @@
         ]
       }
     },
+    "/api/referral-programs": {
+      "get": {
+        "description": "Every referral programme, so putting a subscriber on one is a choice from a list.\n\nWithout it the control is a text field for an identifier nobody can discover, and the only way\nto learn the right value is to be refused with the wrong one.",
+        "operationId": "list_programs_api_referral_programs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReferralProgramSummary"
+                  },
+                  "title": "Response List Programs Api Referral Programs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Programs",
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
     "/api/subscribers": {
       "get": {
         "operationId": "list_page_api_subscribers_get",
@@ -1101,6 +1805,645 @@
           }
         ],
         "summary": "One subscriber: the subscription, its plan, its promo code and its referrer",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/cancel": {
+      "post": {
+        "description": "No body: there is nothing to say beyond which subscription.",
+        "operationId": "cancel_api_subscribers__user_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop the renewals and keep access to the end of the paid period",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/change-plan": {
+      "post": {
+        "description": "Nothing moves now. Naming the plan the subscription is already on drops a pending change.",
+        "operationId": "change_plan_api_subscribers__user_id__change_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Schedule the plan the next payment will buy",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/events": {
+      "get": {
+        "operationId": "read_events_api_subscribers__user_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One page of what has happened to this subscriber, newest first",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/payment": {
+      "post": {
+        "description": "Three of the outcomes here are events rather than refusals — duplicate, underpaid,\nunmatched — and every one of them is a 200 that moved nothing. The answer carries them.",
+        "operationId": "payment_api_subscribers__user_id__payment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record a payment against this subscription",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/redeem": {
+      "post": {
+        "description": "Spends one of the code's redemptions. There is no un-redeem, here or in the engine.",
+        "operationId": "redeem_api_subscribers__user_id__redeem_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Redeem a promo code against this subscription",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/referral-program": {
+      "post": {
+        "description": "Only future accruals move. What has already been paid out is history and is not recomputed.\n\nIt emits no event, so the answer carries an empty list — the card's programme row is the whole\nevidence, which is why the answer is the card rather than a bare 204.",
+        "operationId": "assign_program_api_subscribers__user_id__referral_program_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put this subscriber on a referral programme as a referrer",
+        "tags": [
+          "subscribers"
+        ]
+      }
+    },
+    "/api/subscribers/{user_id}/subscribe": {
+      "post": {
+        "description": "Begin a cycle in place. Refused with ALREADY_SUBSCRIBED unless the record has ended.\n\nThe one revival path there is from CANCELLED: a payment on a cancelled record is filed and\nchanges nothing, so without this the card for those subscribers offers no way to serve someone\nwho has called to come back.",
+        "operationId": "subscribe_api_subscribers__user_id__subscribe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriberOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start a new subscription for a subscriber whose last one has ended",
         "tags": [
           "subscribers"
         ]

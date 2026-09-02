@@ -11,7 +11,24 @@
 
 import AppButton from '@/components/AppButton.vue'
 
-const props = defineProps<{ page: number; pageCount: number; total: number; busy: boolean }>()
+const {
+  page,
+  pageCount,
+  total,
+  busy,
+  noun = 'subscriber',
+  plural,
+} = defineProps<{
+  page: number
+  pageCount: number
+  total: number
+  busy: boolean
+  /** What is being counted. The pager states the count in the things somebody came for, so it has
+   *  to be told what they are — a feed under a card counts events, not subscribers. */
+  noun?: string
+  /** Only when adding an `s` is wrong. */
+  plural?: string | undefined
+}>()
 const emit = defineEmits<{ go: [number] }>()
 </script>
 
@@ -20,24 +37,20 @@ const emit = defineEmits<{ go: [number] }>()
     <!-- Announced politely: paging is the visitor's own action, so the new count should reach a
          screen reader without interrupting whatever it is reading. -->
     <p aria-live="polite">
-      {{ props.total }} {{ props.total === 1 ? 'subscriber' : 'subscribers' }}
-      <span v-if="props.pageCount > 1" class="text-text-muted">
-        · page {{ props.page }} of {{ props.pageCount }}
+      {{ total }} {{ total === 1 ? noun : (plural ?? `${noun}s`) }}
+      <span v-if="pageCount > 1" class="text-text-muted">
+        · page {{ page }} of {{ pageCount }}
       </span>
     </p>
 
-    <div v-if="props.pageCount > 1" class="flex gap-2">
-      <AppButton
-        variant="outlined"
-        :disabled="props.page <= 1 || props.busy"
-        @click="emit('go', props.page - 1)"
-      >
+    <div v-if="pageCount > 1" class="flex gap-2">
+      <AppButton variant="outlined" :disabled="page <= 1 || busy" @click="emit('go', page - 1)">
         Previous
       </AppButton>
       <AppButton
         variant="outlined"
-        :disabled="props.page >= props.pageCount || props.busy"
-        @click="emit('go', props.page + 1)"
+        :disabled="page >= pageCount || busy"
+        @click="emit('go', page + 1)"
       >
         Next
       </AppButton>

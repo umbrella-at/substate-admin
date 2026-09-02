@@ -1,19 +1,21 @@
-"""The plan catalogue.
+"""The catalogues: what is sold, and what a referrer is paid on.
 
-Its own module and its own router rather than a route on the subscriber one: the catalogue is not
-a fact about any subscriber, and hanging it off `/subscribers` would have made the path say
-otherwise.
+Their own module and their own routers rather than routes on the subscriber one: neither is a fact
+about any subscriber, and hanging them off `/subscribers` would have made the paths say otherwise.
+Both are lists a control chooses from, which is why they exist at all — a control over an
+identifier nobody can discover is a control you learn by being refused.
 """
 
 from fastapi import APIRouter, status
-from substate import PeriodUnit, Plan
+from substate import Accrual, PeriodUnit, Plan
 
 from app.deps import RequirePermission
 from app.routers import error_responses
-from app.schemas import PlanSummary
-from app.seed.catalogue import PLANS
+from app.schemas import PlanSummary, ReferralProgramSummary
+from app.seed.catalogue import PLANS, REFERRAL_PROGRAMS
 
 router = APIRouter(prefix="/plans", tags=["plans"])
+programs_router = APIRouter(prefix="/referral-programs", tags=["referrals"])
 
 
 def plan_summary(plan: Plan) -> PlanSummary:
@@ -48,3 +50,27 @@ async def list_plans() -> list[PlanSummary]:
     longest rather than alphabetically.
     """
     return [plan_summary(plan) for plan in PLANS]
+
+
+@programs_router.get(
+    "",
+    response_model=list[ReferralProgramSummary],
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+    dependencies=[RequirePermission("referrals.read")],
+)
+async def list_programs() -> list[ReferralProgramSummary]:
+    """Every referral programme, so putting a subscriber on one is a choice from a list.
+
+    Without it the control is a text field for an identifier nobody can discover, and the only way
+    to learn the right value is to be refused with the wrong one.
+    """
+    return [
+        ReferralProgramSummary(
+            id=program.id,
+            percent=program.percent,
+            accrual="first_payment_only"
+            if program.accrual is Accrual.FIRST_PAYMENT_ONLY
+            else "every_payment",
+        )
+        for program in REFERRAL_PROGRAMS
+    ]

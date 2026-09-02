@@ -55,6 +55,7 @@ from app.db import make_sessionmaker, utc_now
 from app.deps import invalidate_permission_cache
 from app.main import app
 from app.security.ratelimit import get_limiter
+from app.worlds.registry import BASE_WORLD_ID, World, get_registry, reset_registry
 from support import Clock, api_client
 
 _BACKEND: Final = Path(__file__).resolve().parent.parent
@@ -119,6 +120,21 @@ async def session(connection: AsyncConnection) -> AsyncIterator[AsyncSession]:
     """
     async with make_sessionmaker(connection)() as open_session:
         yield open_session
+
+
+@pytest.fixture
+def base_world() -> Iterator[World]:
+    """An empty base world in the process registry, put back when the test ends.
+
+    The routes read the registry by name, and `httpx.ASGITransport` never runs the lifespan that
+    builds it — so without this every route that touches a world answers 503, and a suite asserting
+    only "not 403" would pass over six endpoints wired to nothing.
+    """
+    reset_registry()
+    world = get_registry().create(BASE_WORLD_ID)
+    world.seeded = True
+    yield world
+    reset_registry()
 
 
 @pytest.fixture

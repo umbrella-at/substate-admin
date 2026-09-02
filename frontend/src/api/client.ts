@@ -15,7 +15,13 @@ export type TokenResponse = components['schemas']['TokenResponse']
 export type MeResponse = components['schemas']['MeResponse']
 export type SubscriberPage = components['schemas']['SubscriberPage']
 export type SubscriberDetail = components['schemas']['SubscriberDetail']
+export type SubscriberEventPage = components['schemas']['SubscriberEventPage']
+export type SubscriberOperationResult = components['schemas']['SubscriberOperationResult']
+export type AuditPage = components['schemas']['AuditPage']
+export type AuditEntry = components['schemas']['AuditEntry']
+export type AuditAction = AuditEntry['action']
 export type PlanSummary = components['schemas']['PlanSummary']
+export type ReferralProgramSummary = components['schemas']['ReferralProgramSummary']
 export type HealthResponse = components['schemas']['HealthResponse']
 /** The three things asking for a new access token can mean, and they must stay three. Collapsing
  *  the last two into one boolean is what turns a two-second deploy restart into every open tab
@@ -53,6 +59,16 @@ const BASE = '/api'
  *  is wrong, and `refresh` answers 401 when the session is over; retrying either through a refresh
  *  would be a loop whose base case is the thing that just failed. */
 const NO_REFRESH = new Set([`${BASE}/auth/login`, `${BASE}/auth/refresh`, `${BASE}/auth/logout`])
+
+/** The six paths under a subscriber that change something. A union rather than a string, so a
+ *  typo is a build failure instead of a 404 nobody sees until the button is pressed. */
+export type OperationPath =
+  | 'subscribe'
+  | 'cancel'
+  | 'change-plan'
+  | 'redeem'
+  | 'payment'
+  | 'referral-program'
 
 export interface ClientHooks {
   /** Called once when the session is definitively over. The app clears its state and navigates. */
@@ -201,12 +217,38 @@ export function createClient(hooks: ClientHooks) {
 
     plans: (signal?: AbortSignal) => request<PlanSummary[]>(`${BASE}/plans`, { signal }),
 
+    referralPrograms: (signal?: AbortSignal) =>
+      request<ReferralProgramSummary[]>(`${BASE}/referral-programs`, { signal }),
+
     // Public, and deliberately not behind the session: it is the one endpoint that can be asked
     // whether the demonstration has anything to show before anybody has signed in.
     health: (signal?: AbortSignal) => request<HealthResponse>(`${BASE}/health`, { signal }),
 
     subscriber: (userId: string, signal: AbortSignal) =>
       request<SubscriberDetail>(`${BASE}/subscribers/${encodeURIComponent(userId)}`, { signal }),
+
+    subscriberEvents: (userId: string, params: URLSearchParams, signal: AbortSignal) =>
+      request<SubscriberEventPage>(
+        `${BASE}/subscribers/${encodeURIComponent(userId)}/events?${params.toString()}`,
+        { signal },
+      ),
+
+    audit: (params: URLSearchParams, signal: AbortSignal) =>
+      request<AuditPage>(`${BASE}/audit?${params.toString()}`, { signal }),
+
+    // The six operations, one signature. They differ by their path and their body and by nothing
+    // else, which is what the uniform `{subscriber, events}` answer bought — the alternative was
+    // six methods with six response types and six call sites that all had to be right.
+    //
+    // No AbortSignal, and that is the difference from every read above. Cancelling a read discards
+    // an answer; cancelling a write discards the ANSWER, not the write — the engine has already
+    // moved and the audit row is already committed. A caller who thinks it undid something would
+    // be wrong, so the option is not offered.
+    operate: (userId: string, operation: OperationPath, body: unknown) =>
+      request<SubscriberOperationResult>(
+        `${BASE}/subscribers/${encodeURIComponent(userId)}/${operation}`,
+        { method: 'POST', body: body ?? {} },
+      ),
   }
 }
 

@@ -119,6 +119,13 @@ class SubscriberRow:
     expires_at: datetime | None
     trial_ends_at: datetime | None
     grace_ends_at: datetime | None
+    cancelled_at: datetime | None
+    """When somebody stopped the renewals. Filtered to CANCELLED like the two boundaries above:
+    the engine keeps it after a restart, and a cancellation date on an ACTIVE row is history
+    presented as a fact about now."""
+    pending_plan_id: str | None
+    """The plan the next payment will buy, if a change is waiting. Not filtered by state — it is
+    None unless a change was scheduled, and `_begin_cycle` wipes it when a cycle restarts."""
     last_active_at: datetime | None
     promo_code: str | None
     referrer_id: str | None
@@ -170,6 +177,8 @@ def build_row(
         # decide what is in it — exactly the type that lies.
         trial_ends_at=(subscription.trial_ends_at if subscription.state is State.TRIAL else None),
         grace_ends_at=(subscription.grace_ends_at if subscription.state is State.GRACE else None),
+        cancelled_at=(subscription.cancelled_at if subscription.state is State.CANCELLED else None),
+        pending_plan_id=subscription.pending_plan_id,
         last_active_at=last_active_at,
         promo_code=subscription.promo_code,
         referrer_id=subscription.referrer_id,

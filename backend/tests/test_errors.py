@@ -21,7 +21,16 @@ from app.errors import field_from_loc
 from app.main import create_app
 from support import LOGIN, USERS, Clock, api_client, bearer, create_account, envelope
 
-_GENERIC_500: Final = "Something went wrong. Try again."
+_GENERIC_500: Final = (
+    "The service failed to handle this request. Try again; the request id in the "
+    "response headers identifies it in the log."
+)
+"""Written out rather than imported from the catalogue it is asserting.
+
+A test that reads its expectation from the code under test passes on any sentence that code
+happens to hold, including the one the rules forbid. This one is here so that changing the
+sentence is a decision somebody makes twice.
+"""
 
 
 @pytest.fixture

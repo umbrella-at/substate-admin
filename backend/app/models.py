@@ -1,4 +1,7 @@
-"""The five tables behind authentication.
+"""Every table this panel owns.
+
+Five of them are authentication, and the rest are what the panel knows that `substate` does not:
+a world's events, the projection beside them, and the record of what operators did.
 
 Every table lives in the `admin` schema; nothing is ever created in `public`. There are no soft
 deletes: a row that is gone is gone, and a user that must stop working is `is_active = false`.
@@ -9,10 +12,12 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     MetaData,
     Text,
@@ -220,11 +225,23 @@ class EventJournal(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # The order the rows were written in, which is the order the engine produced them in. One call
+    # reads the clock once, so every event it emits shares an `occurred_at` — and a feed tie-broken
+    # by the random primary key showed a renewal above the payment that caused it.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=False))
+
     __table_args__ = (
-        # The panel reads one world's events newest first, which is the only access pattern this
-        # table has and the only index it gets.
+        # Two access patterns, and both are ordered. The general feed reads one world newest
+        # first; a subscriber's card reads one subscriber, and its index carries the ordering as
+        # well as the predicate so the sort is the index rather than a step after it.
         Index("ix_event_journal_world_id_occurred_at", "world_id", occurred_at.desc()),
-        Index("ix_event_journal_world_id_user_id", "world_id", "user_id"),
+        Index(
+            "ix_event_journal_world_id_user_id_occurred_at_seq",
+            "world_id",
+            "user_id",
+            occurred_at.desc(),
+            seq.desc(),
+        ),
         {"schema": SCHEMA},
     )
 
@@ -252,5 +269,71 @@ class SubscriberView(Base):
         # The quiet cohort is "active subscription, last_active_at older than the threshold", and
         # it is answered per world.
         Index("ix_subscriber_view_world_id_last_active_at", "world_id", "last_active_at"),
+        {"schema": SCHEMA},
+    )
+
+
+class AuditLog(Base):
+    """What an operator did, and how it went.
+
+    Narrow on purpose: operations over subscriptions and, later, edits to roles. Signing in,
+    signing out and changing a filter are not here — those are authentication and navigation, and
+    they belong in the structured log, where they do not bury the handful of rows that say
+    somebody changed something.
+
+    It records ATTEMPTS, not successes. A refusal is the row an investigation is most likely to be
+    looking for — somebody tried to cancel this subscription and was told no — and a log that kept
+    only what worked could not answer that question. It is also the only way the two journals stay
+    consistent: the engine catches a subscription up with the clock BEFORE it decides to refuse, so
+    a refused operation can be the cause of a state change the event journal does record.
+
+    Not purged with the world, unlike the event journal. That journal is a record of a world and
+    dies with it; this is a record of people, and the base world being rebuilt at every restart is
+    no reason to forget who did what.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    # RESTRICT: an operator with a history cannot be deleted out from under it.
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(f"{SCHEMA}.users.id", ondelete="RESTRICT")
+    )
+    action: Mapped[str] = mapped_column(Text)
+    target_type: Mapped[str] = mapped_column(Text)
+    target_id: Mapped[str] = mapped_column(Text)
+
+    # "ok" or "refused", with the ErrorCode beside it. Two columns rather than one holding both,
+    # so the screen's filter is a two-value question and not a string comparison against "ok".
+    outcome: Mapped[str] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text, default=None)
+
+    # The arguments of the operation. Never its result: what happened is in the event journal, and
+    # a copy here would be a second answer to a question `substate` already answers.
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    world_id: Mapped[str] = mapped_column(Text)
+    # HMAC, never the address. The pepper is what stops the whole IPv4 space being a lookup table,
+    # and no response carries this column: a truncated HMAC on a screen is not evidence.
+    ip_hash: Mapped[str] = mapped_column(Text)
+    # `now()` is the transaction's timestamp, not the statement's, and each operation is its own
+    # request — so rows written together are simultaneous by construction, which is what the id
+    # tie-break in the reader's ORDER BY exists for.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        # A refusal with no code says only that something failed, which is the one thing an audit
+        # row must never say.
+        CheckConstraint(
+            "(outcome = 'refused') = (error_code IS NOT NULL)",
+            name="error_code_set_when_refused",
+        ),
+        # The screen reads one world newest first; a subscriber's own trail reads one target.
+        Index("ix_audit_log_world_id_occurred_at", "world_id", occurred_at.desc()),
+        Index("ix_audit_log_target_id_occurred_at", "target_id", occurred_at.desc()),
         {"schema": SCHEMA},
     )

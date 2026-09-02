@@ -54,6 +54,12 @@ T = {
     "danger-bg": "#47211F", "danger-text": "#F0837E", "danger-border": "#6E3330",
 }
 
+# --scrim is rgba(0,0,0,0.55) and cannot be measured as a hex, so what is measured is what a reader
+# actually sees: the surface with the scrim composited over it. Written out rather than computed
+# from an alpha here, because these two values are what docs/design.md quotes.
+T["scrim-over-surface-0"] = "#080B0E"
+T["scrim-over-surface-1"] = "#0B0F13"
+
 # (foreground, background, threshold, applies, what it is)
 #
 # `applies` is the honest half. WCAG 1.4.11 covers what is REQUIRED TO IDENTIFY a component or its
@@ -110,6 +116,11 @@ for role in ("success", "warning", "danger"):
     PAIRS.append((f"{role}-border", f"{role}-bg", 3.0, False, f"{role} notice border — edging, not the notice"))
 
 PAIRS += [
+    # A dialog. Its edge is the outline and not the fill, because no scrim on this palette can
+    # buy the fill a 3:1 edge — measured below, and the reason is in docs/design.md.
+    ("control-border", "scrim-over-surface-0", 3.0, True, "dialog outline against the scrimmed page"),
+    ("control-border", "scrim-over-surface-1", 3.0, True, "dialog outline against a scrimmed panel"),
+    ("surface-2", "scrim-over-surface-0", 3.0, False, "dialog fill — the outline identifies it"),
     ("text-secondary", "surface-2", 4.5, True, "permission chip text"),
     ("surface-2", "surface-1", 3.0, False, "permission chip fill — the text identifies it"),
 ]

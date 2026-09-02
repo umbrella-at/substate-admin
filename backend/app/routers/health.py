@@ -19,6 +19,7 @@ from app.db import check_database
 from app.deps import Public
 from app.schemas import HealthResponse, WorldHealth
 from app.worlds.bootstrap import base_world_status
+from app.worlds.registry import BASE_WORLD_ID
 
 router = APIRouter(tags=["health"])
 
@@ -53,5 +54,10 @@ async def health(response: Response) -> HealthResponse:
         db=reachable,
         # Beside the database, not folded into `status`: an empty world is a bad shop window and
         # not an outage, and a smoke check that treated it as one would roll a deploy back over it.
-        world=WorldHealth(seeded=world.seeded, subscribers=world.subscribers, events=world.events),
+        world=WorldHealth(
+            id=BASE_WORLD_ID,
+            seeded=world.seeded,
+            subscribers=world.subscribers,
+            events=world.events,
+        ),
     )

@@ -50,6 +50,10 @@
   --color-border: #263241;
   --color-border-strong: #32414f;
 
+  /* Behind a dialog. Not what makes its edge visible — this palette lives in a narrow band, so no
+   * scrim on it reaches 3:1 and the outline does that job. This says the page is not operable. */
+  --color-scrim: rgba(0, 0, 0, 0.55);
+
   /* --- Text. Never dimmed with opacity: opacity multiplies against whatever is behind it and
          drifts between surfaces, while these three hold their contrast everywhere. --- */
   --color-text-primary: #e3eaf2;

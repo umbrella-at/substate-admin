@@ -87,9 +87,10 @@ function describe(cause: unknown): { refusal: Refusal; message: string } {
     return { refusal: 'credentials', message: 'Email or password is incorrect.' }
   }
 
-  // A 5xx, or anything else the catalogue does not cover. The API's own 500 text is "Something
-  // went wrong. Try again.", which is exactly the sentence docs/design.md forbids, so it is not
-  // repeated: this says what happened and what to do about it.
+  // A 5xx, or anything else the catalogue does not cover. The API's own 500 text names the request
+  // id, which is the most it can say without leaking a cause — and it is the wrong sentence on the
+  // one page a stranger reaches, where the useful thing to say is that the service is not
+  // answering rather than how to find the failure in a journal they cannot read.
   return { refusal: 'unreachable', message: UNREACHABLE }
 }
 

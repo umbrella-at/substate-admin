@@ -16,6 +16,7 @@ One theme, dark. A light theme is not v0.1.
 | `--surface-2` | `#1F2A36` | dialogs, popovers, dropdown menus |
 | `--border` | `#263241` | default hairline, `0.5px` |
 | `--border-strong` | `#32414F` | control outlines, hover |
+| `--scrim` | `rgba(0,0,0,0.55)` | behind a dialog |
 
 Three surfaces and no more. A fourth level means the layout is nested too deep,
 not that the palette is short.
@@ -30,6 +31,15 @@ not that the palette is short.
 
 Never dim text with `opacity`. Opacity multiplies against whatever is behind it
 and drifts between surfaces; these three tokens hold their contrast everywhere.
+
+**One exception, and it is not about text.** A region waiting for a newer answer to the question
+already on screen — a table between two pages, a feed between two filters — is drawn at `opacity:
+0.6` as a whole. What that says is "these rows are real and one question out of date", which is a
+statement about the region rather than about any word in it; there is no token for it because a
+token would be a colour, and the rows are not being made secondary, they are being made
+provisional. It lasts as long as the request and is never a resting state, so nothing is read at
+the reduced ratio for longer than a request takes — and the alternative, emptying a table that has
+correct rows in it to show a placeholder, is the worse trade this file has already refused once.
 
 ## Accent
 
@@ -99,6 +109,167 @@ waiting on a request keeps its colours and changes its label: `Sign in` becomes 
 carries `aria-busy`, and refuses a second submit in its handler. A two-hundred-millisecond request
 that greys a button and un-greys it reads as a flinch, and it decides with colour something the
 text already says.
+
+## Cards
+
+A card is a `--surface-1` panel with a `12px` radius. It is what a detail screen is made of, the
+way a list screen is made of one table.
+
+| Part | Value |
+|---|---|
+| fill | `--surface-1` |
+| radius | `12px` |
+| padding | `16px` |
+| between rows inside a card | `12px` |
+| between cards | `16px` |
+
+`16px` inside against `24px` page padding, deliberately: a panel whose padding matches the page's
+stops reading as a panel and starts reading as a region of the page. The `12px` between rows is
+one step below both, so the rows group inside the card before the cards group on the page.
+
+**A card has no maximum width.** It is not a form and not prose — it carries the event feed, and
+the feed is a table, and tables here have no maximum. `--width-form` still governs the forms
+inside it.
+
+### A label and its value
+
+The one shape for "here is a fact about this subscriber". Stacked, never side by side: a column of
+labels down the left is a second grid to keep aligned, and the values are the thing being read.
+
+| Part | Value |
+|---|---|
+| label | `12px`, `--text-muted` |
+| value | `14px`, `--text-primary` |
+| between them | `4px` |
+
+The label takes the size and colour Typography already assigns to "column headers, timestamps,
+hints", because that is what it is. The value takes the mono cut when it is something compared
+down a column or against another value on the same screen — a date, an amount, an id, a plan id, a
+promo code — which is the rule Typography already states, applied here.
+
+### A value that is not there
+
+Two different absences, two different marks, and the difference is the whole reason this section
+exists:
+
+- **A row the state does not have is not drawn.** A subscription in `ACTIVE` has no grace end —
+  not an unknown one, none — so there is no row for it. Drawing `Grace ends —` would render a
+  field the state does not have and teach the reader that active subscriptions have a grace end
+  nobody filled in.
+- **A row the state does have, with no value, shows `—`.** That is the mark the subscriber table
+  already uses in `Access until`, for exactly one case: a subscription that expired without a
+  payment ever having been made. The card and the table say the same thing about the same person.
+
+One glyph, one meaning. A third convention — the word `None`, an empty cell — would make a reader
+work out whether the difference is information.
+
+**The card names each boundary for what it is** rather than collapsing them into one row. The
+table has one date column and has to pick; the card has room and asks all three separately, which
+is what the tagged union underneath it is for.
+
+| State | Rows |
+|---|---|
+| `TRIAL` | Trial ends |
+| `ACTIVE` | Expires |
+| `GRACE` | Paid period ended · Grace ends |
+| `CANCELLED` | Cancelled · Access ends |
+| `EXPIRED` | Access ended (`—` when no payment was ever made) |
+
+The label changes with the state on purpose. A fixed label over a date that means "paid until" in
+one state and "missed on" in another is a stable position holding an unstable meaning, which is
+the worse of the two trades.
+
+### The one filled element on a subscriber card
+
+Accent says at most one filled element per screen, and on this screen the filled one is **the
+operation that would actually change something in the state the subscriber is in**:
+
+| State | Filled |
+|---|---|
+| `TRIAL`, `ACTIVE`, `GRACE`, `EXPIRED` | Record a payment |
+| `CANCELLED` | Start a subscription |
+
+`CANCELLED` is not a preference. A payment against a cancelled subscription is filed and changes
+nothing, so a filled `Record a payment` there would be the loudest control on the screen pointing
+at the one thing that does nothing.
+
+## Forms
+
+| Part | Value |
+|---|---|
+| label | `12px`, `--text-secondary` |
+| label to control | `8px` |
+| control to the next field | `16px` |
+| help text | `12px`, `--text-muted`, `4px` under the control |
+| error text | `12px`, the `danger` role's text, `4px` under the control |
+
+Help and error occupy the same place and never both at once: the error replaces the help while it
+is on screen, so the control below never moves.
+
+**Optional fields are marked `(optional)`; required ones carry nothing.** These forms are mostly
+one required field, so marking the exception is fewer marks than marking the rule — and an
+asterisk on nearly everything is a mark that stops being read.
+
+Field faces follow Typography: the payment amount and a payment reference take the mono cut,
+because both are compared against a value already on the card. A plan or a programme is chosen
+from a list and is not compared to anything, so it takes the UI face.
+
+## Dialogs
+
+A dialog is for an action a person cannot undo from this screen. Everything else answers on the
+press, and what it will do is said in the form, above the button, where the decision is being made
+— a dialog asks after the decision has been taken.
+
+| Part | Value |
+|---|---|
+| fill | `--surface-2` |
+| radius | `12px` |
+| padding | `24px` |
+| width | `--width-form`, `400px` |
+| title | `16px`, `--text-primary` |
+| title to body | `12px` |
+| body to actions | `24px` |
+| actions | right-aligned, the confirming action last |
+| edge | `1px` `--control-border` |
+| behind it | `--scrim` |
+| initial focus | the dismissing action |
+
+**The scrim is not what makes the edge visible, and the arithmetic says so.** This palette lives
+in a narrow band near the bottom of the scale, so darkening what is behind a dialog buys almost
+nothing: `--surface-2` against the page reads 1.23:1 unscrimmed and 1.35:1 under this scrim,
+and 1.39:1 even at 70% black. No scrim on this palette reaches 3:1. What separates a dialog is its outline, and the
+outline is therefore `--control-border` — the token already reserved for "the boundary of anything
+a person operates" — measured at 4.27:1 against the scrimmed page and 3.15:1 against the dialog's
+own fill, visible from both sides for the reason a field's border is.
+
+The scrim's job is the other one: it says the page behind is not operable. That claim needs no
+ratio, which is why it is stated here rather than measured.
+
+This is a correction to Layout's "a layer that floats is separated by `--surface-2` and a
+`--border-strong` outline, and that is the whole mechanism". That holds for a select's list and a
+menu, which sit inside the flow and are read against the control that opened them. It does not
+hold for a modal over a full-width table, and `--border-strong` at 1.88:1 against a scrimmed page
+is the number that says so.
+
+**A destructive confirm takes `--accent-fill`, not a red fill.** There is no bright red surface in
+this file, and `--danger-text` as a fill would put pale text on `#F0837E`. The danger role appears
+in a dialog the way it appears everywhere else — as an inline notice above the action row, saying
+what will happen with the real date in it. A sentence that reads *Access runs to 09 Sep 2026 and
+then stops* is more specific than any colour, and inventing a red fill for one control would be a
+value this file does not have.
+
+**The dismissing action is never labelled `Cancel`** on a dialog that cancels a subscription. Both
+buttons would name the same word for opposite actions. It is `Keep subscription`, and the pattern
+generalises: the dismissing action names what stays true.
+
+## Links
+
+A link is `--accent-text`, no underline at rest, underlined on hover and on focus. It is the only
+accent-coloured text in a table row, which is what makes it findable without a decoration.
+
+Table furniture that happens to be clickable is not a link: a sortable column header stays
+`--text-secondary` and shows its affordance by changing to `--text-primary` on hover. A header
+that turned blue would claim to navigate somewhere.
 
 ## Subscription states
 
@@ -195,6 +366,26 @@ Table cells also carry `font-variant-numeric: tabular-nums`.
 
 Sentence case throughout. No `ALL CAPS`, no Title Case except proper nouns.
 
+### Time
+
+**A moment is absolute unless the question is "recently or not".**
+
+The event feed and the audit print the instant: `09 Sep 2026 14:07`, mono, UTC. They are read
+against the boundaries on the card — did the payment arrive before the period ended — and
+`3 months ago` next to `09 Sep 2026` makes the reader do the arithmetic to find out whether the
+two agree.
+
+**They carry the time and a boundary does not**, which is the same rule applied twice: a feed and
+an audit are read for *when*, and two operations a minute apart are two rows somebody has to tell
+apart. A boundary at 14:07 is a fact about a clock rather than about the subscription, and
+printing it invites a comparison of minutes that mean nothing.
+
+Last activity is the exception and keeps `9 days ago` — in the table's column and on the card
+alike, because it is the same question in both places: has this person been seen lately. A date
+there makes the reader do the subtraction. The rule is the question, not the screen: relative
+where the answer is a duration, absolute where the answer is an instant that will be compared with
+another one.
+
 ## Spacing
 
 Base 4. The whole scale: `4 · 8 · 12 · 16 · 24 · 32 · 48`. No value off this
@@ -225,6 +416,23 @@ A block that is waiting for data shows its own shape, not a spinner in the middl
 The pulse runs `1.6s ease-in-out alternate` **between the two fills**, never through `opacity` —
 for the reason the text section already gives: opacity multiplies against whatever is behind it
 and drifts between surfaces.
+
+**A skeleton is the shape of what is coming, per block.** Three shapes exist, and each is the
+outline of the thing it stands in for rather than a rectangle:
+
+| Block | Skeleton |
+|---|---|
+| a card | the card's frame, with one bar per row it will have at the row's height |
+| a feed | four rows at the feed row's height, inside the feed's own frame |
+| a table | five rows at the table row's height, inside the table's frame |
+
+The count is fixed and deliberately short of a full page: a skeleton the height of twenty-five
+rows is a page that shortens when the data arrives, which is the jump the skeleton exists to
+prevent in the other direction.
+
+An **empty** feed and an empty audit say what would put something there, not that there is
+nothing — the same rule the subscriber table follows. An **error** names what failed and offers
+the retry beside it, because the usual cause is the network and the usual fix is asking again.
 
 Under `prefers-reduced-motion` the skeleton does not pulse. It stays flat on `--skeleton-base`
 **and gains a `1px` outline in `--control-border`**, which is what makes it visible rather than
@@ -286,6 +494,20 @@ default and they read as such:
 
 Judge new screens against this list before adding anything decorative.
 
+**Three things this interface decided not to have.** An absence is a decision like any other, and
+an unrecorded one gets re-decided by whoever needs it next:
+
+- **No toast.** A result appears where the action was taken — an inline notice inside the panel
+  that owns the button — and stays until the next action. A toast needs a dwell time this file
+  does not have, and it disappears while the person is reading the thing it changed.
+- **No colour on an event type.** The thirteen types in the feed are neutral fact labels. Green
+  and amber already mean `ACTIVE` and `GRACE`; a `payment.recorded` row tinted green would spend
+  a subscription state's colour on something that is not a state.
+- **No date control.** Nothing here filters by a date range, because there is no date input in
+  this interface and no recipe for one in this file. A filter nobody can operate is not a filter,
+  and inventing the control at the first screen that wants it is how a design file stops being
+  where values come from.
+
 ## What the build enforces
 
 A design document that does not say which of its rules a machine checks is followed halfway within
@@ -305,6 +527,7 @@ a month, and nobody can tell which half. So:
 | nothing loads from another origin | `scripts/assets.py` reads every `url()` and `@import` in the built CSS |
 | every utility resolves to something | `scripts/utilities.py` fails on a class name that produced no CSS |
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
+| a dialog's edge is measured against what is behind it | `scripts/contrast.py` composites `--scrim` over both surfaces and measures the outline on the result |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
 
@@ -375,6 +598,9 @@ Not features, not announced anywhere, simply true:
   | `--control-border` on `--surface-0` | 3.86 | 3.0 |
   | `--control-border` on `--surface-1` | 3.52 | 3.0 |
   | `--control-border` on `--surface-2` | 3.15 | 3.0 |
+  | a dialog's outline on the scrimmed page | 4.27 | 3.0 |
+  | a dialog's outline on a scrimmed panel | 4.16 | 3.0 |
+  | `--surface-2` on the scrimmed page | 1.36 | exempt: the outline identifies the dialog, not the fill |
   | `--skeleton-base` on `--surface-1` | 1.72 | carried by motion, or by the outline |
   | the reduced-motion outline on `--surface-1` | 3.52 | 3.0 |
   | state chip text on its own fill | 4.78 – 7.49 | 4.5 |

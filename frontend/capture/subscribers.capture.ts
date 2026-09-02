@@ -29,8 +29,14 @@ const SHOT = fileURLToPath(new URL('../../docs/subscribers.png', import.meta.url
  *
  *  The order is the table's own, and the page is not the first one. Sorted by last activity, page
  *  one is everybody who turned up today — trials and actives, two colours for a column that has
- *  five. Six pages in, the same order holds four of them, and both pager buttons are live. */
-const QUERY = '?page=6&pageSize=12'
+ *  five. Further in, the same order holds four of them, and both pager buttons are live.
+ *
+ *  THE PAGE NUMBER IS RE-CHOSEN WHEN THE CALENDAR MOVES IT, and that is the arrangement rather
+ *  than a maintenance cost. The seed fixes the population; the world is nine months of history
+ *  ending now, so which people sit on which page of an activity-ordered table moves as the days
+ *  do. It was page six; the assertion below is what said so rather than letting the picture
+ *  quietly become a column of one colour. */
+const QUERY = '?page=28&pageSize=12'
 const PAGE_SIZE = 12
 
 test('the subscriber table', async ({ page }) => {

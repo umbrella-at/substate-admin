@@ -14,7 +14,6 @@ from datetime import timedelta
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine
-from substate import Event
 
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, SeedReport, seed_world
@@ -56,16 +55,7 @@ async def build_base_world(
     reading the journal.
     """
     status = BaseWorldStatus()
-    collected: list[Event] = []
-    known: set[str] = set()
-
-    def observe(event: Event) -> None:
-        # Identity only. Every event names its subscriber, so the index is complete without the
-        # panel having to guess which event types create one.
-        known.add(event.user_id)
-        collected.append(event)
-
-    tally = EventTally(then=observe)
+    tally = EventTally()
 
     # Nine months behind, stepping forward to exactly zero. A negative starting offset is not a
     # backwards move — see OffsetClock — which is why the seeder needs no clock of its own and the
@@ -89,7 +79,7 @@ async def build_base_world(
             # restart.
             await purge_world(connection, BASE_WORLD_ID)
             await purge_orphans(connection, [w.id for w in registry.live()])
-            written = await write_events(connection, BASE_WORLD_ID, collected)
+            written = await write_events(connection, BASE_WORLD_ID, world.sink.drain())
             await write_projection(
                 connection,
                 BASE_WORLD_ID,
@@ -99,7 +89,9 @@ async def build_base_world(
                 ],
             )
 
-        world.subscribers = known
+        # The tally has counted what it was built to count. Left attached it would go on counting
+        # every tick and every operation into a report nobody asks for again.
+        world.sink.then = None
         world.seeded = True
         status = BaseWorldStatus(
             seeded=True,
