@@ -49,6 +49,10 @@ class WorldHealth(ApiModel):
     back over a cosmetic problem.
     """
 
+    # Which world the panel is showing. Named rather than left for a client to assume: the audit
+    # holds rows from worlds that no longer exist, and a screen deciding whether a row is about
+    # the world on screen was otherwise comparing against a constant it had copied.
+    id: str
     seeded: bool
     subscribers: int
     events: int

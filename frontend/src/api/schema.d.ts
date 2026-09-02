@@ -848,6 +848,8 @@ export interface components {
         WorldHealth: {
             /** Events */
             events: number;
+            /** Id */
+            id: string;
             /** Seeded */
             seeded: boolean;
             /** Subscribers */

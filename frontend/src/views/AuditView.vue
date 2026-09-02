@@ -58,10 +58,12 @@ const total = computed(() => result.data.value?.total ?? 0)
 const pageSize = computed(() => result.data.value?.pageSize ?? 25)
 const pageCount = computed(() => (total.value === 0 ? 0 : Math.ceil(total.value / pageSize.value)))
 
-/** Which world the panel is looking at. A row from another one names a subscriber who was reset
- *  away, so its target is text rather than a link. */
+/** Which world the panel is looking at, as the service names it. A row from another one points at
+ *  a subscriber who was reset away, so its target is text rather than a link — and the id is asked
+ *  for rather than assumed, because a copy of a backend constant is a copy that goes stale on the
+ *  day sandboxes make it wrong. */
 const { data: health } = useWorld()
-const liveWorld = computed(() => (health.value?.world.seeded === true ? 'base' : null))
+const liveWorld = computed(() => health.value?.world.id ?? null)
 
 function go(next: AuditQuery): void {
   void router.push({ query: auditQueryToRoute(next) })

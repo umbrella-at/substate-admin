@@ -1037,6 +1037,10 @@
             "title": "Events",
             "type": "integer"
           },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
           "seeded": {
             "title": "Seeded",
             "type": "boolean"
@@ -1047,6 +1051,7 @@
           }
         },
         "required": [
+          "id",
           "seeded",
           "subscribers",
           "events"

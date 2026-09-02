@@ -54,7 +54,7 @@ async def test_health_reports_the_release_and_a_database_that_answers(client: As
         # Beside `db`, not folded into `status`. A world that failed to seed is an empty shop
         # window while the panel keeps serving, and a smoke check that read it as an outage would
         # roll a good deploy back over it.
-        "world": {"seeded": False, "subscribers": 0, "events": 0},
+        "world": {"id": "base", "seeded": False, "subscribers": 0, "events": 0},
     }
 
 
