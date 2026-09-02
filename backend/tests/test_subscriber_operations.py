@@ -373,6 +373,12 @@ async def test_a_reference_belongs_to_the_subscriber_it_was_typed_on(
     assert "payment.duplicate" not in _types(other)
     assert "payment.recorded" in _types(other)
 
+    # And the reference the feed prints back is the one that was typed. The namespacing is on the
+    # provider for exactly this reason: the other field is the one a person reads.
+    again = await client.post(_path(LIVE, "payment"), headers=operator, json=body)
+    duplicate = next(e for e in again.json()["events"] if e["type"] == "payment.duplicate")
+    assert duplicate["payload"]["externalId"] == "inv-1"
+
 
 async def test_an_operation_answers_with_the_payload_in_this_api_s_spelling(
     client: AsyncClient, world: World, operator: dict[str, str]

@@ -416,11 +416,16 @@ async def payment(
 ) -> SubscriberOperationResult:
     """Three of the outcomes here are events rather than refusals — duplicate, underpaid,
     unmatched — and every one of them is a 200 that moved nothing. The answer carries them."""
-    # Namespaced by the subscriber. The engine's duplicate guard is `(provider, external_id)` and
-    # nothing else, so two operators typing `inv-1` on two different people would have the second
-    # payment refused as a repeat of the first.
+    # Namespaced by the subscriber, because the engine's duplicate guard is `(provider,
+    # external_id)` and nothing else: two operators typing `inv-1` on two different people would
+    # have the second payment refused as a repeat of the first.
+    #
+    # The PROVIDER carries the subscriber and the reference stays as it was typed. Composing the
+    # external id instead also works and is what this did first — but that field is the one the
+    # duplicate event carries and the feed prints, so the panel told an operator about
+    # `sub-0350:look-1` when they had typed `look-1`.
     reference = body.reference if body.reference is not None else str(uuid.uuid4())
-    external_id = f"{user_id}:{reference}"
+    provider = f"{PANEL_PROVIDER}:{user_id}"
     return await _operate(
         session=session,
         request=request,
@@ -432,8 +437,8 @@ async def payment(
         payload={"amount": body.amount, "provider": PANEL_PROVIDER, "reference": reference},
         run=lambda world: world.engine.apply_payment(
             Payment(
-                provider=PANEL_PROVIDER,
-                external_id=external_id,
+                provider=provider,
+                external_id=reference,
                 user_id=user_id,
                 amount=body.amount,
             )
