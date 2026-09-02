@@ -29,6 +29,8 @@ import {
 const props = defineProps<{
   /** The verb, as the trigger said it. `Cancel subscription`, not `Confirm`. */
   action: string
+  /** The same verb while the request is out. `Cancelling the subscription…` */
+  busyAction: string
   /** What stays true if they stop here. `Keep subscription`. */
   dismiss: string
   /** The consequence, with this subscriber's own dates in it. */
@@ -67,11 +69,19 @@ function confirm(): void {
 
         <div class="mt-6 flex justify-end gap-3">
           <!-- Focus starts on the way out. Someone who opened this by mistake presses the key they
-               were already pressing and nothing happens. -->
-          <AlertDialogCancel as-child>
+               were already pressing and nothing happens.
+               Unavailable once the confirm is out, and that is not decoration: it closed the
+               dialog while the POST completed, so `Keep subscription` kept nothing. -->
+          <AlertDialogCancel as-child :disabled="busy === true">
             <button
               type="button"
-              class="inline-flex items-center justify-center rounded-control border border-border-strong px-4 py-2 text-ui text-text-secondary transition-colors duration-200 hover:border-accent-text hover:text-text-primary motion-reduce:transition-none"
+              :disabled="busy === true"
+              class="inline-flex items-center justify-center rounded-control border px-4 py-2 text-ui transition-colors duration-200 motion-reduce:transition-none"
+              :class="
+                busy === true
+                  ? 'cursor-not-allowed border-border bg-fill-disabled text-text-disabled'
+                  : 'border-border-strong text-text-secondary hover:border-accent-text hover:text-text-primary'
+              "
             >
               {{ dismiss }}
             </button>
@@ -84,7 +94,7 @@ function confirm(): void {
             :aria-busy="busy === true ? 'true' : undefined"
             @click="confirm"
           >
-            {{ busy === true ? `${action}…` : action }}
+            {{ busy === true ? busyAction : action }}
           </button>
         </div>
       </AlertDialogContent>

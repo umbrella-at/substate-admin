@@ -49,7 +49,10 @@ const messageId = `${id}-message`
         :disabled="disabled"
         @update:model-value="(value) => (model = typeof value === 'string' ? value : undefined)"
       >
-        <SelectTrigger :aria-labelledby="id" :aria-describedby="messageId">
+        <SelectTrigger
+          :aria-labelledby="id"
+          :aria-describedby="error !== undefined || help !== undefined ? messageId : undefined"
+        >
           <SelectValue :placeholder="placeholder ?? 'Choose one'" />
         </SelectTrigger>
         <SelectContent>

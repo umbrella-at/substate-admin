@@ -61,7 +61,11 @@ const pageCount = computed(() => (total.value === 0 ? 0 : Math.ceil(total.value 
 /** Which world the panel is looking at, as the service names it. A row from another one points at
  *  a subscriber who was reset away, so its target is text rather than a link — and the id is asked
  *  for rather than assumed, because a copy of a backend constant is a copy that goes stale on the
- *  day sandboxes make it wrong. */
+ *  day sandboxes make it wrong.
+ *
+ *  Null while the answer has not arrived, which the table reads as "do not link". That is the
+ *  right way round: an unlinked id is readable, and a link built on a guess is a 404 for whoever
+ *  follows it. */
 const { data: health } = useWorld()
 const liveWorld = computed(() => health.value?.world.id ?? null)
 
@@ -131,14 +135,20 @@ const failure = computed(() => {
         </AppButton>
       </fieldset>
 
-      <p
-        v-if="query.targetId !== null || query.actorUserId !== null"
-        class="text-dense text-text-muted"
+      <!-- The two narrowings that have no control of their own: both are set by clicking a cell
+           in the table, so both need a way back that does not depend on the result being empty.
+           They were only clearable from the empty state, which is the one place a person who had
+           found what they were looking for never reaches. -->
+      <div
+        v-if="hasAuditFilters(query)"
+        class="flex flex-wrap items-center gap-x-4 gap-y-2 text-dense text-text-muted"
       >
-        Narrowed to
-        <span v-if="query.targetId !== null" class="font-numeric">{{ query.targetId }}</span>
-        <span v-if="query.actorUserId !== null" class="font-numeric"> one operator </span>
-      </p>
+        <span v-if="query.targetId !== null">
+          Narrowed to <span class="font-numeric">{{ query.targetId }}</span>
+        </span>
+        <span v-if="query.actorUserId !== null">Narrowed to one operator</span>
+        <AppButton variant="outlined" @click="go(EMPTY_AUDIT_QUERY)">Clear filters</AppButton>
+      </div>
     </div>
 
     <div v-if="result.isPending.value" class="flex flex-col gap-4" aria-busy="true">
@@ -157,6 +167,7 @@ const failure = computed(() => {
       <AuditTable
         :rows="rows"
         :live-world="liveWorld"
+        :busy="result.isFetching.value"
         @filter-actor="(id: string) => go({ ...query, page: 1, actorUserId: id })"
         @filter-target="(id: string) => go({ ...query, page: 1, targetId: id })"
       />

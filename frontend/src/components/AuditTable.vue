@@ -22,8 +22,12 @@ import { instant } from '@/domain/events'
 
 defineProps<{
   rows: AuditEntry[]
-  /** The world this panel is looking at, or null when there is none. A row from another world
-   *  names a subscriber who no longer exists, so its target does not offer a link. */
+  /** A newer page is on its way. The rows below are real and one question out of date, which is
+   *  what the other two tables in this application also say rather than emptying themselves. */
+  busy?: boolean
+  /** The world this panel is looking at, or null while the service has not said. A row from
+   *  another world names a subscriber who no longer exists, and a row whose world is not yet known
+   *  is not known to be either — so both get the id as text and neither gets a link. */
   liveWorld: string | null
 }>()
 
@@ -32,7 +36,7 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
 
 <template>
   <div class="overflow-x-auto rounded-panel border border-border">
-    <table class="w-full border-collapse text-ui">
+    <table class="w-full border-collapse text-ui" :aria-busy="busy === true">
       <thead>
         <tr class="border-b border-border bg-surface-2">
           <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
@@ -62,9 +66,11 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
             {{ instant(row.occurredAt) }}
           </td>
           <td class="px-4 py-3 align-top">
+            <!-- Not accent-coloured: accent is what a link looks like, and this narrows the page
+                 rather than navigating. The underline on hover and on focus is the affordance. -->
             <button
               type="button"
-              class="rounded-control text-accent-text hover:underline"
+              class="rounded-control text-text-primary hover:underline focus-visible:underline"
               @click="$emit('filterActor', row.actor.id)"
             >
               {{ row.actor.email }}
@@ -83,7 +89,7 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
             <RouterLink
               v-if="row.worldId === liveWorld"
               :to="{ name: 'subscriber', params: { userId: row.targetId } }"
-              class="rounded-control text-accent-text hover:underline"
+              class="rounded-control text-accent-text hover:underline focus-visible:underline"
             >
               {{ row.targetId }}
             </RouterLink>
@@ -91,7 +97,11 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
               v-else
               type="button"
               class="rounded-control text-text-secondary hover:text-text-primary"
-              :title="`Recorded in world ${row.worldId}, which is not the one on screen`"
+              :title="
+                liveWorld === null
+                  ? 'Which world this panel is showing is not known yet'
+                  : `Recorded in world ${row.worldId}, which is not the one on screen`
+              "
               @click="$emit('filterTarget', row.targetId)"
             >
               {{ row.targetId }}

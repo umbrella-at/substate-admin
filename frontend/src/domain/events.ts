@@ -157,8 +157,11 @@ export const EVENT_SENTENCE: Record<EventType, (payload: Payload) => string> = {
       ? `Subscribed to ${plan}. Started as a trial.`
       : `Subscribed to ${plan}. Waiting for a first payment.`
   },
+  // Not "Paid.": `_grant_days` emits this one too, when a code granting days pushes a subscription
+  // in grace back past today — a path with no payment anywhere in it. Whatever caused it is the
+  // row directly beside this one.
   'subscription.activated': (p) =>
-    `Paid. ${text(p, 'planId') ?? 'The plan'} runs to ${moment(text(p, 'expiresAt'))}.`,
+    `Now active. ${text(p, 'planId') ?? 'The plan'} runs to ${moment(text(p, 'expiresAt'))}.`,
   'subscription.renewed': (p) =>
     `Renewed. ${text(p, 'planId') ?? 'The plan'} runs to ${moment(text(p, 'expiresAt'))}.`,
   'subscription.entering_grace': (p) =>

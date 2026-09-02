@@ -115,13 +115,15 @@ function reason(failure: unknown): string {
 
         <!-- Empty. Every subscriber in a seeded world has at least the event that created them, so
              this is what a subscriber created through this panel looks like for the first moment,
-             and what a world nobody has ticked looks like. It says what would fill it. -->
+             and what a world nobody has ticked looks like. It says what would fill it, and names
+             no direction: the operations panel is above this on a wide screen, below it on a
+             narrow one, and absent entirely for somebody who may only read. -->
         <p
           v-else-if="feed.rows.value.length === 0"
           class="max-w-reading text-ui text-text-secondary"
         >
-          Nothing has happened to this subscription yet. An operation below, or the next time the
-          world moves, will appear here.
+          Nothing has happened to this subscription yet. An operation on this card, or the next time
+          the world moves, will appear here.
         </p>
 
         <template v-else>

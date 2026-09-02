@@ -54,15 +54,13 @@ function clientFor(me: MeResponse | null, delayMs = 0): ApiClient {
   } as Partial<ApiClient> as ApiClient
 }
 
-// Two routes the application does not have yet, and both exist to test a rule rather than a page.
-// `reports` deliberately declares no `meta` whatsoever — that is the whole point of it.
+// One route the application does not have, and it exists to test a rule rather than a page:
+// `reports` deliberately declares no `meta` whatsoever, which is the whole point of it.
+//
+// `/audit` used to be added here too and is not any more. It is a real route now, and re-adding it
+// replaced the application's own declaration with this file's copy — so the spec would have gone
+// on passing if the real route lost its permission.
 router.addRoute({ path: '/reports', name: 'reports', component: Blank })
-router.addRoute({
-  path: '/audit',
-  name: 'audit',
-  meta: { permission: 'audit.read' },
-  component: Blank,
-})
 
 let nonce = 0
 

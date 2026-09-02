@@ -40,19 +40,64 @@ const PAYLOADS: Record<EventType, Record<string, unknown>> = {
 }
 
 describe('the sentence map', () => {
-  // The key set, stated here as well as in the type. A record that lost a key would be a compile
-  // error; a record that gained one the engine does not emit would not, and that is a sentence
-  // nobody will ever read sitting in a file everybody has to.
-  it('covers the thirteen the engine emits, and nothing else', () => {
-    expect(Object.keys(EVENT_SENTENCE).sort()).toEqual([...EVENT_TYPES].sort())
+  // Not `Object.keys(EVENT_SENTENCE)` against `EVENT_TYPES`: the record is declared
+  // `Record<EventType, ...>` where `EventType` is derived from that same list, so the relation is
+  // forced by the compiler and the assertion cannot fail. What can drift is the list against the
+  // engine, so the list itself is written out here.
+  it('is the thirteen concrete events `substate` emits', () => {
+    expect([...EVENT_TYPES].sort()).toEqual([
+      'payment.duplicate',
+      'payment.recorded',
+      'payment.underpaid',
+      'payment.unmatched',
+      'promo.redeemed',
+      'referral.accrued',
+      'subscription.activated',
+      'subscription.cancelled',
+      'subscription.created',
+      'subscription.entering_grace',
+      'subscription.expired',
+      'subscription.plan_changed',
+      'subscription.renewed',
+    ])
   })
 
-  it.each(EVENT_TYPES)('says something complete about %s', (type) => {
+  /** What each type reads as, for the payload the engine actually writes.
+   *
+   *  Written out rather than asserted by shape. "No `undefined` and ends with a full stop" passes
+   *  on every fallback in the map — `text(...) ?? 'a plan'`, `moment(null)` -> '—' — so a payload
+   *  key renamed upstream produced a sentence that was complete, grammatical and wrong. These are
+   *  what the screen says, and a rename now changes one of them. */
+  const READS_AS: Record<EventType, string> = {
+    'subscription.created': 'Subscribed to monthly. Started as a trial.',
+    'subscription.activated': 'Now active. monthly runs to 16 Oct 2026.',
+    'subscription.renewed': 'Renewed. annual runs to 01 Jan 2027.',
+    'subscription.entering_grace': 'A payment did not arrive. Access is extended to 14 Sep 2026.',
+    'subscription.expired': 'The grace period ran out. Access has ended.',
+    'subscription.cancelled': 'Cancelled. Access runs to 16 Oct 2026.',
+    'subscription.plan_changed': 'monthly becomes annual at the next payment.',
+    'payment.recorded': 'A payment of 5.00 was recorded.',
+    'payment.duplicate': 'A payment under reference ref-1 was already on file. Nothing changed.',
+    'payment.underpaid': '4.99 paid against 5.00 due. The period did not renew.',
+    'payment.unmatched': '5.00 was filed with no subscription to apply it to.',
+    'promo.redeemed': 'Redeemed LAUNCH20, a percentage discount.',
+    'referral.accrued': "0.50 was earned from sub-0123's payment.",
+  }
+
+  it.each(EVENT_TYPES)('reads %s as the sentence the screen shows', (type) => {
     const said = sentence({ type, occurredAt: '2026-09-02T05:09:00Z', payload: PAYLOADS[type] })
+
+    expect(said).toBe(READS_AS[type])
+  })
+
+  // The other half: a payload missing the key a sentence reads must not produce a sentence that
+  // looks finished. Each of these is what a rename upstream would arrive as.
+  it.each(EVENT_TYPES)('falls back visibly when %s arrives with nothing in it', (type) => {
+    const said = sentence({ type, occurredAt: '2026-09-02T05:09:00Z', payload: {} })
 
     expect(said).not.toContain('undefined')
     expect(said).not.toContain('NaN')
-    expect(said.endsWith('.')).toBe(true)
+    expect(said).not.toBe(READS_AS[type])
   })
 
   // The four reasons an expiry can have, each its own sentence. `grace_ended` and

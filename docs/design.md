@@ -32,6 +32,15 @@ not that the palette is short.
 Never dim text with `opacity`. Opacity multiplies against whatever is behind it
 and drifts between surfaces; these three tokens hold their contrast everywhere.
 
+**One exception, and it is not about text.** A region waiting for a newer answer to the question
+already on screen — a table between two pages, a feed between two filters — is drawn at `opacity:
+0.6` as a whole. What that says is "these rows are real and one question out of date", which is a
+statement about the region rather than about any word in it; there is no token for it because a
+token would be a colour, and the rows are not being made secondary, they are being made
+provisional. It lasts as long as the request and is never a resting state, so nothing is read at
+the reduced ratio for longer than a request takes — and the alternative, emptying a table that has
+correct rows in it to show a placeholder, is the worse trade this file has already refused once.
+
 ## Accent
 
 One accent, blue, and it is quiet on purpose.

@@ -120,7 +120,7 @@ const columns = columnHelper.columns([
           RouterLink,
           {
             to: { name: 'subscriber', params: { userId: context.row.original.userId } },
-            class: 'rounded-control text-accent-text hover:underline',
+            class: 'rounded-control text-accent-text hover:underline focus-visible:underline',
           },
           () => context.getValue(),
         ),

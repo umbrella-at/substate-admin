@@ -144,6 +144,19 @@ function form(wrapper: ReturnType<typeof mount>, heading: string) {
  *  resolves through the query client's scheduler, and the notice renders. One flush leaves the
  *  call in flight and lands it inside the NEXT test, where it reads as the wrong operation having
  *  been called — which is what this helper exists to stop. */
+/** Press the confirming button inside the open dialog.
+ *
+ *  Scoped to the dialog: the trigger keeps the same name and sits under the scrim, so an unscoped
+ *  search finds the button nobody can press. */
+async function confirmIn(action: string): Promise<void> {
+  const dialog = document.querySelector('[role="alertdialog"]')
+  const button = [...(dialog?.querySelectorAll('button') ?? [])].find(
+    (each) => each.textContent?.trim() === action,
+  )
+  button?.click()
+  await settle()
+}
+
 async function settle(): Promise<void> {
   for (let round = 0; round < 4; round += 1) {
     await flushPromises()
@@ -312,6 +325,66 @@ describe('which controls ask first', () => {
     expect(wrapper.text()).toContain('Choose a programme.')
   })
 
+  // The consequence is per state, and GRACE is where getting it wrong was worst: `accessUntil`
+  // there is the end of the courtesy, and cancelling does not keep it — the paid boundary has
+  // already passed, so the press ends access today. The dialog used to promise the week it takes.
+  it('tells a grace period that cancelling stops access today', async () => {
+    const wrapper = await render({ state: 'grace' })
+
+    await button(wrapper, 'Cancel subscription')?.trigger('click')
+    await settle()
+
+    const shown = wrapper.html() + document.body.innerHTML
+    expect(shown).toContain('access stops today rather than at the end of the grace period')
+  })
+
+  it('sends a cancellation only after the dialog is confirmed', async () => {
+    operate.mockResolvedValue({ subscriber: detail(), events: [] })
+    const wrapper = await render({ state: 'active' })
+
+    await button(wrapper, 'Cancel subscription')?.trigger('click')
+    await settle()
+    expect(operate).not.toHaveBeenCalled()
+
+    await confirmIn('Cancel subscription')
+
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+    expect(operate.mock.calls[0]?.[1]).toBe('cancel')
+  })
+
+  it('sends a new subscription only after the dialog is confirmed', async () => {
+    operate.mockResolvedValue({ subscriber: detail(), events: [] })
+    const wrapper = await render({ state: 'cancelled' })
+
+    await form(wrapper, 'Start a subscription')?.trigger('submit')
+    await settle()
+    expect(operate).not.toHaveBeenCalled()
+    expect(document.body.innerHTML).toContain('Leave it as it is')
+
+    await confirmIn('Start a subscription')
+
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+    expect(operate.mock.calls[0]?.[1]).toBe('subscribe')
+  })
+
+  it('sends a redemption only after the dialog is confirmed, and trims what it sends', async () => {
+    operate.mockResolvedValue({ subscriber: detail(), events: [] })
+    const wrapper = await render()
+
+    const redeem = form(wrapper, 'Redeem a promo code')
+    await redeem?.find('input').setValue('  LAUNCH20  ')
+    await redeem?.trigger('submit')
+    await settle()
+    expect(operate).not.toHaveBeenCalled()
+
+    await confirmIn('Redeem code')
+
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+    // Trimmed. Zod shapes what `handleSubmit` hands over, and this path reads the raw model, so
+    // the spaces would have travelled and come back as an unknown code.
+    expect(operate.mock.calls[0]?.[2]).toEqual({ promoCode: 'LAUNCH20' })
+  })
+
   // No un-cancel, and the consequence is a date the operator never typed.
   it('asks before cancelling, and names the date', async () => {
     const wrapper = await render()
@@ -345,7 +418,7 @@ describe('what the answer says', () => {
     await form(wrapper, 'Record a payment')?.trigger('submit')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('A payment of 5.00 was recorded.'))
-    expect(wrapper.text()).toContain('Paid. monthly runs to 16 Oct 2026.')
+    expect(wrapper.text()).toContain('Now active. monthly runs to 16 Oct 2026.')
     expect(wrapper.find('[role="status"]').classes()).toContain('bg-success-bg')
   })
 
