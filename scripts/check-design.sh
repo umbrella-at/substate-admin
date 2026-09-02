@@ -13,6 +13,15 @@ failures=0
 fail() { echo "::error file=$1::$2"; failures=$((failures + 1)); }
 ok() { printf '    ok    %s\n' "$1"; }
 
+echo "comment blocks:"
+# Decision 166 put a ceiling on a comment and nothing made it hold, so the code written after it
+# does not. `comments.py` parses rather than matches, because a `#` in a URL is not a comment.
+if python3 scripts/comments.py; then
+    :
+else
+    failures=$((failures + 1))
+fi
+
 echo "the round shape:"
 # `rounded-full` survives a cleared --radius-* namespace, because Tailwind ships it as a static
 # utility rather than deriving it from the theme. design.md reserves the 999px shape for the five
