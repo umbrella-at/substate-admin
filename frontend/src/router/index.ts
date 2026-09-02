@@ -82,6 +82,12 @@ export const router = createRouter({
       component: () => import('@/views/SubscriberView.vue'),
     },
     {
+      path: '/audit',
+      name: 'audit',
+      meta: { permission: 'audit.read' },
+      component: () => import('@/views/AuditView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       meta: { requiresAuth: false },

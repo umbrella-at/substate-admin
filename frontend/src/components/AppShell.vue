@@ -38,6 +38,7 @@ const DESTINATIONS: Destination[] = [
     permission: 'subscribers.read',
     covers: ['subscriber'],
   },
+  { name: 'audit', label: 'Audit', permission: 'audit.read' },
 ]
 
 function isHere(destination: Destination): boolean {
