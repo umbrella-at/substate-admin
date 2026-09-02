@@ -44,7 +44,7 @@ async def _write(
                 payload={"note": target},
             ),
             world_id=BASE_WORLD_ID,
-            refusal=ErrorCode.NOT_SUBSCRIBED if refused else None,
+            refusal=ErrorCode.PROMO_ALREADY_BOUND if refused else None,
         )
     await session.commit()
 
@@ -199,7 +199,7 @@ async def test_filtering_by_outcome_separates_what_worked_from_what_did_not(
     only_refused = await client.get(f"{AUDIT}?outcome={REFUSED}", headers=headers)
 
     assert [row["targetId"] for row in only_refused.json()["items"]] == ["refused"]
-    assert only_refused.json()["items"][0]["errorCode"] == "NOT_SUBSCRIBED"
+    assert only_refused.json()["items"][0]["errorCode"] == "PROMO_ALREADY_BOUND"
 
 
 async def test_filtering_by_action_accepts_more_than_one(

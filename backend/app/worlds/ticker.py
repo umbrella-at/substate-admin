@@ -45,6 +45,13 @@ async def tick_once(
     for world in registry.live():
         try:
             events = await world.engine.tick()
+            produced += len(events)
+            # Inside the guard, not after it. The recorder writes to Postgres, which is the most
+            # likely thing here to fail — and an exception escaping this loop escapes `run_ticker`
+            # too, whose only handler is for cancellation, so one unreachable database would stop
+            # every world moving for the life of the process.
+            if record is not None and world.sink.pending:
+                await record(world)
         except Exception as failure:  # deliberately total: one world must not stop the rest
             _log.error(
                 "world_tick_failed",
@@ -53,10 +60,6 @@ async def tick_once(
                 detail=str(failure),
                 exc_info=True,
             )
-            continue
-        produced += len(events)
-        if record is not None and world.sink.pending:
-            await record(world)
     return produced
 
 

@@ -9,6 +9,7 @@ would only prove the mapping agrees with itself.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -357,6 +358,58 @@ async def test_a_refused_operation_is_audited_with_the_code_the_caller_got(
     assert rows[0].outcome == "refused"
     assert rows[0].error_code == "UNKNOWN_PROMO_CODE"
     assert rows[0].payload_json == {"promoCode": "NOPE"}
+
+
+async def test_a_reference_belongs_to_the_subscriber_it_was_typed_on(
+    client: AsyncClient, world: World, operator: dict[str, str]
+) -> None:
+    """The engine's duplicate guard is (provider, externalId) and nothing else, so the same word
+    typed on two people would have the second payment refused as a repeat of the first."""
+    body = {"amount": 500, "reference": "inv-1"}
+    await client.post(_path(LIVE, "payment"), headers=operator, json=body)
+
+    other = await client.post(_path(ENDED, "payment"), headers=operator, json=body)
+
+    assert "payment.duplicate" not in _types(other)
+    assert "payment.recorded" in _types(other)
+
+
+async def test_an_operation_answers_with_the_payload_in_this_api_s_spelling(
+    client: AsyncClient, world: World, operator: dict[str, str]
+) -> None:
+    """The engine writes `external_id`; every other key this API sends is camelCase, and a payload
+    carrying Python's spelling would make the frontend hold two conventions."""
+    response = await client.post(
+        _path(LIVE, "payment"), headers=operator, json={"amount": 500, "reference": "inv-2"}
+    )
+
+    recorded = response.json()["events"][0]["payload"]
+    assert set(recorded) == {"amount", "provider", "externalId"}
+
+
+async def test_a_refusal_keeps_the_events_the_engine_emitted_on_its_way_to_refusing(
+    client: AsyncClient, session: AsyncSession, world: World, operator: dict[str, str]
+) -> None:
+    """The reason a refusal flushes at all.
+
+    A spent code, not an unknown one, and the difference is the point: an unknown code is refused
+    by `_promo_code` before the engine looks at the subscription, while a spent one is refused by
+    `_claim` after `_load_and_advance` has already caught the record up and saved it. Here the
+    trial has run out under the subscriber's feet, so the refused redemption is itself the cause of
+    an expiry — a row the journal must keep even though the caller was told no.
+    """
+    world.clock.advance(timedelta(days=400))
+
+    response = await client.post(
+        _path(LIVE, "redeem"), headers=operator, json={"promoCode": "GONE"}
+    )
+
+    assert response.status_code == 409
+    feed = await client.get(f"/api/subscribers/{LIVE}/events", headers=operator)
+    assert "subscription.expired" in [event["type"] for event in feed.json()["items"]]
+    # And the attempt is on file with the code the caller was given.
+    rows = await _audit(session)
+    assert [(row.outcome, row.error_code) for row in rows] == [("refused", "PROMO_LIMIT_REACHED")]
 
 
 async def test_the_audit_records_the_reference_a_payment_was_filed_under(

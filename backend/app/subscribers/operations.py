@@ -21,7 +21,6 @@ from typing import Final
 
 from substate import (
     AlreadySubscribed,
-    NotSubscribed,
     PromoAlreadyBound,
     PromoLimitReached,
     SubstateError,
@@ -34,7 +33,6 @@ from app.errors import ApiError, ErrorCode
 
 HANDLED: Final[tuple[type[SubstateError], ...]] = (
     AlreadySubscribed,
-    NotSubscribed,
     UnknownPlan,
     UnknownPromoCode,
     PromoLimitReached,
@@ -47,6 +45,12 @@ Deliberately not `SubstateError` itself. The rest of that tree — `DuplicatePla
 `AdapterError` — means this service is configured wrongly rather than that the caller asked for
 something impossible, and answering those with a tidy 409 would hide a deployment fault behind a
 sentence about promo codes.
+
+`NotSubscribed` is absent for the opposite reason: every route requires the subscription before it
+touches the engine, so the exception cannot arrive and a code for it would be a member of a closed
+catalogue that no request can produce — a dead arm in the frontend's switch and a lie in the
+published schema. If it ever does arrive, the panel and the engine disagree about who exists, and a
+500 with a traceback is the truthful answer to that.
 """
 
 

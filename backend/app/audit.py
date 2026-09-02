@@ -98,11 +98,12 @@ async def perform(
     the attempt goes to the audit, in one transaction, so a card cannot show a cancellation whose
     audit row was lost.
 
-    THE FLUSH HAPPENS ON THE REFUSAL PATH TOO. Every one of these calls catches the subscription up
-    with the clock before it decides, and publishes that catch-up even when it then refuses — so a
-    refused operation can still have moved the world, and skipping the flush would drop those
-    events on the floor. It is also why a refusal is audited: without the row, the journal records
-    a state change with nothing to explain it.
+    THE FLUSH HAPPENS ON THE REFUSAL PATH TOO, because some refusals come after the world has
+    already moved. A code the engine has never heard of is refused before it looks at the
+    subscription; a code with no redemptions left is refused after `_load_and_advance` has caught
+    the record up and saved it. The second kind can therefore be the cause of an expiry, and
+    skipping the flush would drop that event on the floor. It is also why a refusal is audited:
+    without the row, the journal records a state change with nothing to explain it.
 
     Returns what the engine emitted, so the answer can say what happened. Three of the payment
     outcomes are events rather than exceptions — duplicate, underpaid, unmatched — and a 200 with
@@ -120,8 +121,11 @@ async def perform(
             refused = ApiError(code, field=FIELD_FOR.get(code))
             refused.__cause__ = failure
 
-    # Everything pending, not only this call's: whatever the ticker left behind is a row that
-    # belongs in the journal, and writing it here costs nothing.
+    # Everything pending, not only this call's. Two consequences, and the second is the price of
+    # the first: a row the ticker left behind reaches the journal sooner, and if this request's
+    # transaction rolls back that row is lost with it. The alternative — writing only this call's
+    # events — would leave the rest for the ticker to write and there is no way to take a subset
+    # out of the sink without racing it.
     pending = world.sink.drain()
     if pending:
         await write_events(await session.connection(), world.id, pending)

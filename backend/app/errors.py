@@ -58,7 +58,6 @@ class ErrorCode(StrEnum):
     # respelled — `app.subscribers.operations` asserts that at import, so a code here and the
     # class it stands for cannot drift into two different words for one refusal.
     ALREADY_SUBSCRIBED = auto()
-    NOT_SUBSCRIBED = auto()
     UNKNOWN_PLAN = auto()
     UNKNOWN_PROMO_CODE = auto()
     PROMO_LIMIT_REACHED = auto()
@@ -99,10 +98,6 @@ _DEFAULTS: Final[Mapping[ErrorCode, tuple[int, str]]] = MappingProxyType(
         ErrorCode.ALREADY_SUBSCRIBED: (
             409,
             "This subscriber already has a live subscription. Cancel it first, or change the plan.",
-        ),
-        ErrorCode.NOT_SUBSCRIBED: (
-            409,
-            "This subscriber has no subscription to act on.",
         ),
         ErrorCode.UNKNOWN_PLAN: (422, "No plan is registered under that id."),
         ErrorCode.UNKNOWN_PROMO_CODE: (422, "No promo code is registered under that code."),

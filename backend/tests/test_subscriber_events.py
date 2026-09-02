@@ -13,7 +13,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
-from substate import Event, Period, Plan, State, SubscriptionCreated
+from substate import (
+    Event,
+    PaymentRecorded,
+    Period,
+    Plan,
+    State,
+    SubscriptionActivated,
+    SubscriptionCreated,
+)
 
 from app.schemas import PageParams
 from app.subscribers.events import list_events
@@ -53,6 +61,31 @@ async def _history(connection: AsyncConnection, world: World, count: int) -> lis
 async def _headers(session: AsyncSession, clock: Clock, email: str) -> dict[str, str]:
     account = await create_account(session, email=email, role_code="admin")
     return bearer(account, now=clock.now)
+
+
+async def test_events_from_one_call_keep_the_order_the_engine_made_them_in(
+    connection: AsyncConnection, session: AsyncSession, world: World
+) -> None:
+    """One call reads the clock once, so its events share an instant to the microsecond.
+
+    Tie-broken by the primary key — a random uuid — the feed showed a renewal above the payment
+    that caused it about half the time. The write sequence is the order the engine produced them
+    in, and this is the assertion that says so.
+    """
+    at = datetime.now(UTC)
+    await write_events(
+        connection,
+        world.id,
+        [
+            PaymentRecorded(SUBSCRIBER, at, provider="panel", external_id="ref", amount=500),
+            SubscriptionActivated(SUBSCRIBER, at, plan_id="monthly", expires_at=at),
+        ],
+    )
+
+    page = await list_events(session, world.id, SUBSCRIBER)
+
+    # Newest first, and within one instant the last one written is the newest.
+    assert [entry.type for entry in page.items] == ["subscription.activated", "payment.recorded"]
 
 
 async def test_the_feed_is_newest_first(

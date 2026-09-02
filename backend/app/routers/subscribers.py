@@ -92,6 +92,25 @@ async def _require(world: World, user_id: str) -> Subscription:
     return subscription
 
 
+async def _projected(
+    session: AsyncSession, world_id: str, user_id: str
+) -> tuple[str, datetime | None]:
+    """One subscriber's projected row, or the id itself when there is none.
+
+    The table loads the whole projection because it draws the whole page; a card draws one person,
+    and reading three hundred rows to use one of them is the shape of query this file already
+    argues against in the other direction.
+    """
+    found = (
+        await session.execute(
+            select(SubscriberView.display_name, SubscriberView.last_active_at).where(
+                SubscriberView.world_id == world_id, SubscriberView.user_id == user_id
+            )
+        )
+    ).first()
+    return (user_id, None) if found is None else (found.display_name, found.last_active_at)
+
+
 async def _projection(
     session: AsyncSession, world_id: str
 ) -> dict[str, tuple[str, datetime | None]]:
@@ -126,8 +145,7 @@ async def _detail(session: AsyncSession, world: World, user_id: str) -> Subscrib
     """The card, rebuilt from the engine. Every operation answers with it, so what is on screen
     after a press is what the engine holds rather than what the panel guessed it would hold."""
     subscription = await _require(world, user_id)
-    projection = await _projection(session, world.id)
-    display_name, last_active_at = projection.get(user_id, (user_id, None))
+    display_name, last_active_at = await _projected(session, world.id, user_id)
     row = build_row(subscription, display_name, last_active_at)
     return SubscriberDetail(
         subscriber=_summary(row),
@@ -273,13 +291,19 @@ async def read_events(
 # The write half. Each route is the one line that differs, plus what the audit needs to write
 # down; everything else — the 404, the journal, the audit row, the refusal — is `_operate`.
 _WRITE = "subscribers.write"
-_OPERATION_FAILURES = error_responses(401, 403, 404, 409, 422)
+
+# 409 for the refusals about the state of a subscription, 422 for the ones about a value that was
+# submitted. Not every operation can produce both: `cancel` takes no value and refuses nothing,
+# and a route that documents a status it cannot return is a schema a client writes dead code for.
+_STATE_OR_VALUE = error_responses(401, 403, 404, 409, 422)
+_VALUE_ONLY = error_responses(401, 403, 404, 422)
+_NOTHING_TO_REFUSE = error_responses(401, 403, 404)
 
 
 @router.post(
     "/{user_id}/subscribe",
     summary="Start a new subscription for a subscriber whose last one has ended",
-    responses=_OPERATION_FAILURES,
+    responses=_STATE_OR_VALUE,
 )
 async def subscribe(
     user_id: str,
@@ -308,7 +332,7 @@ async def subscribe(
 @router.post(
     "/{user_id}/cancel",
     summary="Stop the renewals and keep access to the end of the paid period",
-    responses=_OPERATION_FAILURES,
+    responses=_NOTHING_TO_REFUSE,
 )
 async def cancel(
     user_id: str,
@@ -331,7 +355,7 @@ async def cancel(
 @router.post(
     "/{user_id}/change-plan",
     summary="Schedule the plan the next payment will buy",
-    responses=_OPERATION_FAILURES,
+    responses=_VALUE_ONLY,
 )
 async def change_plan(
     user_id: str,
@@ -355,7 +379,7 @@ async def change_plan(
 @router.post(
     "/{user_id}/redeem",
     summary="Redeem a promo code against this subscription",
-    responses=_OPERATION_FAILURES,
+    responses=_STATE_OR_VALUE,
 )
 async def redeem(
     user_id: str,
@@ -379,7 +403,7 @@ async def redeem(
 @router.post(
     "/{user_id}/payment",
     summary="Record a payment against this subscription",
-    responses=_OPERATION_FAILURES,
+    responses=_VALUE_ONLY,
 )
 async def payment(
     user_id: str,
@@ -390,7 +414,11 @@ async def payment(
 ) -> SubscriberOperationResult:
     """Three of the outcomes here are events rather than refusals — duplicate, underpaid,
     unmatched — and every one of them is a 200 that moved nothing. The answer carries them."""
+    # Namespaced by the subscriber. The engine's duplicate guard is `(provider, external_id)` and
+    # nothing else, so two operators typing `inv-1` on two different people would have the second
+    # payment refused as a repeat of the first.
     reference = body.reference if body.reference is not None else str(uuid.uuid4())
+    external_id = f"{user_id}:{reference}"
     return await _operate(
         session=session,
         request=request,
@@ -403,7 +431,7 @@ async def payment(
         run=lambda world: world.engine.apply_payment(
             Payment(
                 provider=PANEL_PROVIDER,
-                external_id=reference,
+                external_id=external_id,
                 user_id=user_id,
                 amount=body.amount,
             )
@@ -416,7 +444,7 @@ async def payment(
     summary="Put this subscriber on a referral programme as a referrer",
     # Its own permission, and the reason is what the endpoint does: it changes who is paid for
     # bringing people in, which is a fact about the programme rather than about this subscription.
-    responses=_OPERATION_FAILURES,
+    responses=_VALUE_ONLY,
 )
 async def assign_program(
     user_id: str,

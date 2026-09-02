@@ -12,10 +12,12 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     MetaData,
     Text,
@@ -223,14 +225,23 @@ class EventJournal(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # The order the rows were written in, which is the order the engine produced them in. One call
+    # reads the clock once, so every event it emits shares an `occurred_at` — and a feed tie-broken
+    # by the random primary key showed a renewal above the payment that caused it.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=False))
+
     __table_args__ = (
-        # Two access patterns. The general feed reads one world newest first, so the ordering is
-        # in the index; a subscriber's card reads one subscriber, and `occurred_at` is deliberately
-        # NOT in that second index — at a mean of eleven events per subscriber the sort is a few
-        # dozen rows in memory, and an index widened for a cost nobody can measure is an index
-        # somebody has to maintain.
+        # Two access patterns, and both are ordered. The general feed reads one world newest
+        # first; a subscriber's card reads one subscriber, and its index carries the ordering as
+        # well as the predicate so the sort is the index rather than a step after it.
         Index("ix_event_journal_world_id_occurred_at", "world_id", occurred_at.desc()),
-        Index("ix_event_journal_world_id_user_id", "world_id", "user_id"),
+        Index(
+            "ix_event_journal_world_id_user_id_occurred_at_seq",
+            "world_id",
+            "user_id",
+            occurred_at.desc(),
+            seq.desc(),
+        ),
         {"schema": SCHEMA},
     )
 

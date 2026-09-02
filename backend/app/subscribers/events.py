@@ -6,10 +6,11 @@ snapshots, and a tick landing between them is a pager whose last page is empty. 
 promise the table already makes — a feed that issued a query per event would not be noticed on a
 subscriber with ten of them and would be the first thing anybody notices while paging.
 
-The predicate is `(world_id, user_id)`, which is the index `ix_event_journal_world_id_user_id`
-exists for. The ordering is newest first, tie-broken by id: many events share an instant — one
-tick crosses a period and a grace in the same statement — and an order with no tiebreaker lets a
-row appear on two pages and on neither.
+The predicate and the ordering are one index. Newest first, tie-broken by the write sequence
+rather than by the primary key: one engine call reads the clock once, so every event it emits
+shares an instant, and a random uuid put "Renewed" above the payment that caused it about half the
+time. A tiebreaker is needed at all because an order with none lets a row appear on two pages and
+on neither.
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ async def list_events(
                 func.count().over().label("total"),
             )
             .where(EventJournal.world_id == world_id, EventJournal.user_id == user_id)
-            .order_by(EventJournal.occurred_at.desc(), EventJournal.id.desc())
+            .order_by(EventJournal.occurred_at.desc(), EventJournal.seq.desc())
             .limit(size)
             .offset(offset)
         )

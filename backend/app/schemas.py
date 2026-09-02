@@ -239,8 +239,9 @@ class SubscriberDetail(ApiModel):
     referrer_id: str | None = None
     referrer_program_id: str | None = None
 
-    # What THIS subscriber earns when they bring somebody in. Null means nobody assigned them a
-    # programme, in which case the engine still attributes the referral and pays nothing for it.
+    # What THIS subscriber earns when they bring somebody in. Null means nobody assigned them one,
+    # NOT that they are paid nothing: the engine falls back to the world's default programme, which
+    # in the base world pays ten per cent on a first payment.
     referral_program_id: str | None = None
 
     # On the card and not on the table row, because only the card asks the question it answers:

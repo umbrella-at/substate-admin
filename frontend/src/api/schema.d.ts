@@ -498,7 +498,7 @@ export interface components {
          *     call site is a code that falls through it.
          * @enum {string}
          */
-        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ALREADY_SUBSCRIBED" | "NOT_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
+        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ALREADY_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
         /**
          * ErrorEnvelope
          * @description The body of every non-2xx response this service produces.
@@ -507,6 +507,11 @@ export interface components {
          */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
         };
         /**
          * HealthResponse
@@ -834,6 +839,19 @@ export interface components {
             /** Lastloginat */
             lastLoginAt: string | null;
             role: components["schemas"]["RoleSummary"];
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
         };
         /**
          * WorldHealth
@@ -1319,22 +1337,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Unprocessable Content */
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1383,15 +1392,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1515,15 +1515,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1657,15 +1648,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
