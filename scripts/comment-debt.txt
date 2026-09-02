@@ -33,7 +33,6 @@
 12 77 backend/app/seed/run.py
 2 10 backend/app/subscribers/events.py
 4 17 backend/app/subscribers/operations.py
-7 40 backend/app/subscribers/query.py
 1 5 backend/app/worlds/bootstrap.py
 4 20 backend/app/worlds/clock.py
 3 14 backend/app/worlds/journal.py
