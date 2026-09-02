@@ -15,7 +15,7 @@
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type PlanSummary, type SubscriberDetail } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
@@ -81,9 +81,9 @@ function detail(
 
 const operate = vi.fn()
 
-function client() {
+function client(plans: PlanSummary[] = PLANS) {
   return {
-    plans: vi.fn(async () => PLANS),
+    plans: vi.fn(async () => plans),
     referralPrograms: vi.fn(async () => PROGRAMS),
     operate,
   }
@@ -94,6 +94,8 @@ async function render(
     state?: SubscriptionState
     permissions?: string[]
     detail?: Partial<SubscriberDetail>
+    /** The catalogue the panel gets back. Empty stands for a request that failed. */
+    plans?: PlanSummary[]
   } = {},
 ): Promise<ReturnType<typeof mount>> {
   const auth = useAuthStore()
@@ -118,10 +120,11 @@ async function render(
     attachTo: document.body,
     global: {
       plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
-      provide: { [apiClientKey as symbol]: client() },
+      provide: { [apiClientKey as symbol]: client(options.plans ?? PLANS) },
     },
   })
   await flushPromises()
+  mounted = wrapper
   return wrapper
 }
 
@@ -140,10 +143,22 @@ function form(wrapper: ReturnType<typeof mount>, heading: string) {
   return wrapper.findAll('form').find((each) => each.find('h3').text() === heading)
 }
 
-/** A submit here is several promises and a task deep: VeeValidate validates, the mutation
- *  resolves through the query client's scheduler, and the notice renders. One flush leaves the
- *  call in flight and lands it inside the NEXT test, where it reads as the wrong operation having
- *  been called — which is what this helper exists to stop. */
+/**
+ * Wait for something to appear, then assert what did not.
+ *
+ * AN ABSENCE CANNOT BE WAITED FOR, which is what made the first version of this file flaky — one
+ * run in five, on a different test each time. A submit here is several promises and a task deep:
+ * VeeValidate validates, the mutation resolves through the query client's own scheduler, and the
+ * notice renders. A fixed number of flushes sometimes landed before the end of that chain, and an
+ * assertion that nothing had happened yet passed for the wrong reason — or the call arrived inside
+ * the NEXT test and read there as the wrong operation having been called.
+ *
+ * So every test waits for the thing it expects and only then asserts the absence beside it.
+ */
+async function shown(text: string): Promise<void> {
+  await vi.waitFor(() => expect(document.body.textContent ?? '').toContain(text))
+}
+
 /** Press the confirming button inside the open dialog.
  *
  *  Scoped to the dialog: the trigger keeps the same name and sits under the scrim, so an unscoped
@@ -153,20 +168,25 @@ async function confirmIn(action: string): Promise<void> {
   const button = [...(dialog?.querySelectorAll('button') ?? [])].find(
     (each) => each.textContent?.trim() === action,
   )
+  expect(button).toBeDefined()
   button?.click()
-  await settle()
+  await flushPromises()
 }
 
-async function settle(): Promise<void> {
-  for (let round = 0; round < 4; round += 1) {
-    await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-}
+let mounted: ReturnType<typeof mount> | null = null
 
 beforeEach(() => {
   setActivePinia(createPinia())
   operate.mockReset()
+})
+
+// Unmounted, not erased. `attachTo: document.body` puts the component's container in the body, and
+// clearing the body between tests took that node away from a Vue instance still holding it — every
+// later render then failed inside `insertBefore`, which is the second half of why this file was
+// flaky. Vue is asked to leave instead.
+afterEach(() => {
+  mounted?.unmount()
+  mounted = null
   document.body.innerHTML = ''
 })
 
@@ -319,10 +339,9 @@ describe('which controls ask first', () => {
     const wrapper = await render()
 
     await form(wrapper, 'Assign a referral programme')?.trigger('submit')
-    await settle()
 
+    await shown('Choose a programme.')
     expect(operate).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Choose a programme.')
   })
 
   // The consequence is per state, and GRACE is where getting it wrong was worst: `accessUntil`
@@ -332,10 +351,8 @@ describe('which controls ask first', () => {
     const wrapper = await render({ state: 'grace' })
 
     await button(wrapper, 'Cancel subscription')?.trigger('click')
-    await settle()
 
-    const shown = wrapper.html() + document.body.innerHTML
-    expect(shown).toContain('access stops today rather than at the end of the grace period')
+    await shown('access stops today rather than at the end of the grace period')
   })
 
   it('sends a cancellation only after the dialog is confirmed', async () => {
@@ -343,7 +360,7 @@ describe('which controls ask first', () => {
     const wrapper = await render({ state: 'active' })
 
     await button(wrapper, 'Cancel subscription')?.trigger('click')
-    await settle()
+    await shown('Keep subscription')
     expect(operate).not.toHaveBeenCalled()
 
     await confirmIn('Cancel subscription')
@@ -357,9 +374,8 @@ describe('which controls ask first', () => {
     const wrapper = await render({ state: 'cancelled' })
 
     await form(wrapper, 'Start a subscription')?.trigger('submit')
-    await settle()
+    await shown('Leave it as it is')
     expect(operate).not.toHaveBeenCalled()
-    expect(document.body.innerHTML).toContain('Leave it as it is')
 
     await confirmIn('Start a subscription')
 
@@ -374,7 +390,7 @@ describe('which controls ask first', () => {
     const redeem = form(wrapper, 'Redeem a promo code')
     await redeem?.find('input').setValue('  LAUNCH20  ')
     await redeem?.trigger('submit')
-    await settle()
+    await shown('can be redeemed once')
     expect(operate).not.toHaveBeenCalled()
 
     await confirmIn('Redeem code')
@@ -390,17 +406,139 @@ describe('which controls ask first', () => {
     const wrapper = await render()
 
     await button(wrapper, 'Cancel subscription')?.trigger('click')
-    await settle()
 
-    expect(operate).not.toHaveBeenCalled()
-    const shown = wrapper.html() + document.body.innerHTML
-    expect(shown).toContain('Access runs to 16 Oct 2026 and then stops.')
+    await shown('Access runs to 16 Oct 2026 and then stops.')
     // Never a button labelled `Cancel` on a dialog that cancels: one word for two opposite actions.
-    expect(shown).toContain('Keep subscription')
+    expect(document.body.textContent).toContain('Keep subscription')
+    expect(operate).not.toHaveBeenCalled()
+  })
+})
+
+describe('what the form offers before it is pressed', () => {
+  // A description that points at nothing is worse than none: a screen reader follows the id,
+  // finds no element and says nothing, so the field reads as having no help at all.
+  it('never describes a control by an element that is not there', async () => {
+    // On a restartable card, because that is where the only control with neither help nor error
+    // is drawn — the plan select on `Start a subscription`. Rendering the default state left the
+    // one field that could dangle off the screen, and the first version of this test passed
+    // against the defect it was written for.
+    const wrapper = await render({ state: 'cancelled' })
+
+    const dangling = wrapper
+      .findAll('[aria-describedby]')
+      .map((each) => each.attributes('aria-describedby'))
+      .filter((id) => id !== undefined && document.getElementById(id) === null)
+
+    expect(dangling).toEqual([])
+  })
+
+  // The engine charges `pending_plan_id or plan_id`, so a subscription with a change waiting is
+  // priced on the plan it is moving TO. Prefilling the current one made a scheduled upgrade
+  // underpay by default — the one mistake this prefill exists to prevent.
+  it('prices a scheduled plan change against the plan the engine will charge', async () => {
+    const wrapper = await render({
+      detail: { subscriber: { ...detail().subscriber, pendingPlanId: 'annual' } },
+    })
+
+    const amount = form(wrapper, 'Record a payment')?.find('input')
+    expect((amount?.element as HTMLInputElement).value).toBe('42.00')
+    expect(form(wrapper, 'Record a payment')?.text()).toContain('42.00 USD (annual, scheduled)')
+  })
+
+  it('prices the current plan when no change is waiting', async () => {
+    const wrapper = await render()
+
+    const amount = form(wrapper, 'Record a payment')?.find('input')
+    expect((amount?.element as HTMLInputElement).value).toBe('5.00')
+    expect(form(wrapper, 'Record a payment')?.text()).toContain('The plan costs 5.00 USD.')
+  })
+
+  // `chosen === undefined` used to be read as "this plan has no trial", so a catalogue that had
+  // not arrived made the dialog assert the opposite of what the press would do for somebody who
+  // has never had one.
+  it('promises no trial it cannot know about', async () => {
+    const wrapper = await render({ state: 'cancelled', plans: [] })
+
+    await form(wrapper, 'Start a subscription')?.trigger('submit')
+    await shown('This clears the promo code')
+
+    expect(document.body.textContent).not.toContain('starts unpaid')
+    expect(document.body.textContent).not.toContain('free days')
+  })
+
+  // Not an empty select that refuses every submit: that blames the operator for a request that
+  // failed somewhere else.
+  it('disables a choice whose catalogue could not be read, and says so', async () => {
+    const wrapper = await render({ plans: [] })
+
+    expect(button(wrapper, 'Change plan')?.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('The plan catalogue could not be read.')
   })
 })
 
 describe('what the answer says', () => {
+  // Neither `handleSubmit` nor the mutation refuses a second submit, and for the one operation
+  // that is not idempotent a double press is two redemptions of one code.
+  it('sends one request however many times the button is pressed', async () => {
+    let release = (_: unknown) => {}
+    operate.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const wrapper = await render()
+
+    await form(wrapper, 'Record a payment')?.trigger('submit')
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+    await form(wrapper, 'Record a payment')?.trigger('submit')
+    await form(wrapper, 'Record a payment')?.trigger('submit')
+    // Long enough for a second call to have arrived if one were coming: the first is already in
+    // flight, so the thing being waited on is the absence of a second, and that has to be waited
+    // out rather than waited for.
+    for (let round = 0; round < 6; round += 1) {
+      await flushPromises()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    expect(operate).toHaveBeenCalledTimes(1)
+    release({ subscriber: detail(), events: [] })
+  })
+
+  // Disabled means the action is unavailable, and while a cancellation is out `Keep subscription`
+  // is exactly that: pressing it closed the dialog while the POST completed, so the name kept
+  // nothing.
+  it('refuses to dismiss a confirmation while its request is out', async () => {
+    let release = (_: unknown) => {}
+    operate.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const wrapper = await render()
+
+    await button(wrapper, 'Cancel subscription')?.trigger('click')
+    await shown('Keep subscription')
+    await confirmIn('Cancel subscription')
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+
+    const dismiss = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+      (each) => each.textContent?.trim() === 'Keep subscription',
+    )
+    expect(dismiss?.hasAttribute('disabled')).toBe(true)
+    release({ subscriber: detail(), events: [] })
+  })
+
+  // The envelope names an input this form does not have — a payment refused for a pending plan
+  // the engine no longer knows. Setting an error on a path that is not there loses the sentence.
+  it('shows a refusal naming a field this form does not have', async () => {
+    operate.mockRejectedValue(
+      new ApiError(422, {
+        code: 'UNKNOWN_PLAN',
+        message: 'No plan is registered under that id.',
+        field: 'planId',
+      }),
+    )
+    const wrapper = await render()
+
+    await form(wrapper, 'Record a payment')?.trigger('submit')
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('[role="alert"]').text()).toContain('No plan is registered'),
+    )
+  })
+
   it('renders the notice from the events the engine emitted', async () => {
     operate.mockResolvedValue({
       subscriber: detail(),
@@ -421,6 +559,37 @@ describe('what the answer says', () => {
     expect(wrapper.text()).toContain('Now active. monthly runs to 16 Oct 2026.')
     expect(wrapper.find('[role="status"]').classes()).toContain('bg-success-bg')
   })
+
+  // The outcome this rule was written for, and the one the first version of it got wrong: an
+  // underpayment arrives BESIDE a `payment.recorded`, so asking whether any event moved something
+  // answered yes and painted the whole thing green. Asking whether any event moved nothing is the
+  // question that has the right answer for all three.
+  it.each([
+    ['a short payment', 'payment.underpaid', { amount: 499, expected: 500 }],
+    ['a payment nothing matched', 'payment.unmatched', { amount: 500 }],
+  ])(
+    'says %s in the colour of a warning, beside the payment it was recorded as',
+    async (_name, type, payload) => {
+      operate.mockResolvedValue({
+        subscriber: detail(),
+        events: [
+          {
+            type: 'payment.recorded',
+            occurredAt: '2026-09-02T05:09:00Z',
+            payload: { amount: 500 },
+          },
+          { type, occurredAt: '2026-09-02T05:09:00Z', payload },
+        ],
+      })
+      const wrapper = await render()
+
+      await form(wrapper, 'Record a payment')?.trigger('submit')
+
+      await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(true))
+      expect(wrapper.find('[role="status"]').classes()).toContain('bg-warning-bg')
+      expect(wrapper.find('[role="status"]').classes()).not.toContain('bg-success-bg')
+    },
+  )
 
   // A 200 that changed nothing is not a success, and green over "Nothing changed" is a
   // contradiction the eye reads before the words.

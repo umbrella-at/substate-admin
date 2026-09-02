@@ -21,6 +21,8 @@ from substate import (
     State,
     SubscriptionActivated,
     SubscriptionCreated,
+    SubscriptionEnteringGrace,
+    SubscriptionRenewed,
 )
 
 from app.schemas import PageParams
@@ -68,24 +70,24 @@ async def test_events_from_one_call_keep_the_order_the_engine_made_them_in(
 ) -> None:
     """One call reads the clock once, so its events share an instant to the microsecond.
 
-    Tie-broken by the primary key — a random uuid — the feed showed a renewal above the payment
-    that caused it about half the time. The write sequence is the order the engine produced them
-    in, and this is the assertion that says so.
+    FOUR EVENTS, NOT TWO, AND THE COUNT IS THE TEST. Tie-broken by the primary key — a random uuid
+    — two events came out in the written order 101 times in 200, which is a test that passes half
+    the time and proves nothing. Four is one permutation in twenty-four: measured against the old
+    ordering it was right 4 times in 200, so this fails on it rather than merely sometimes failing.
     """
     at = datetime.now(UTC)
-    await write_events(
-        connection,
-        world.id,
-        [
-            PaymentRecorded(SUBSCRIBER, at, provider="panel", external_id="ref", amount=500),
-            SubscriptionActivated(SUBSCRIBER, at, plan_id="monthly", expires_at=at),
-        ],
-    )
+    written = [
+        PaymentRecorded(SUBSCRIBER, at, provider="panel", external_id="ref", amount=500),
+        SubscriptionActivated(SUBSCRIBER, at, plan_id="monthly", expires_at=at),
+        SubscriptionRenewed(SUBSCRIBER, at, plan_id="monthly", expires_at=at),
+        SubscriptionEnteringGrace(SUBSCRIBER, at, grace_ends_at=at),
+    ]
+    await write_events(connection, world.id, written)
 
     page = await list_events(session, world.id, SUBSCRIBER)
 
     # Newest first, and within one instant the last one written is the newest.
-    assert [entry.type for entry in page.items] == ["subscription.activated", "payment.recorded"]
+    assert [entry.type for entry in page.items] == [type(event).name for event in reversed(written)]
 
 
 async def test_the_feed_is_newest_first(
