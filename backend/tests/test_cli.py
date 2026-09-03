@@ -35,6 +35,7 @@ from app.cli import (
     RoleSync,
     SyncReport,
     build_parser,
+    create_role,
     create_user,
     main,
     normalized_email,
@@ -705,3 +706,71 @@ async def _hashes_of(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
         select(RefreshToken.token_hash).where(RefreshToken.user_id == user_id)
     )
     return set(result.scalars())
+
+
+async def test_create_role_writes_a_role_of_the_panels_own(session: AsyncSession) -> None:
+    """A deploy ships the four system roles, and the first custom one has to exist before anybody
+    can be put on it — the same reason `create-user` exists."""
+    result = await create_role(
+        session, code="analysts", name="Analysts", permissions=["analytics.read", "audit.read"]
+    )
+
+    assert result.created is True
+    assert result.permissions == ["analytics.read", "audit.read"]
+
+    role = (await session.execute(select(Role).where(Role.code == "analysts"))).scalar_one()
+    assert role.is_system is False
+    granted = (
+        (
+            await session.execute(
+                select(RolePermission.permission_code).where(RolePermission.role_id == role.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert sorted(granted) == ["analytics.read", "audit.read"]
+
+
+async def test_create_role_run_twice_replaces_what_it_grants(session: AsyncSession) -> None:
+    """Idempotent on the code, so provisioning can be re-run. The grants are a replacement rather
+    than an addition, for the reason the API's PUT is one: the caller sends the whole set."""
+    first = await create_role(session, code="analysts", name="Analysts", permissions=["audit.read"])
+    again = await create_role(
+        session, code="analysts", name="Auditors", permissions=["analytics.read"]
+    )
+
+    assert again.created is False
+    assert again.id == first.id
+    assert again.permissions == ["analytics.read"]
+    role = (await session.execute(select(Role).where(Role.code == "analysts"))).scalar_one()
+    assert role.name == "Auditors"
+
+
+@pytest.mark.parametrize("code", ROLE_CODES)
+async def test_create_role_refuses_a_role_the_deploy_would_restore(
+    session: AsyncSession, code: str
+) -> None:
+    """The same refusal the API makes, and for the same reason: `sync-permissions` runs on every
+    deploy, so an accepted edit here would be undone at the next push."""
+    with pytest.raises(CommandError, match="restores on every deploy"):
+        await create_role(session, code=code, name="Mine now", permissions=[])
+
+
+async def test_create_role_refuses_a_permission_this_application_does_not_have(
+    session: AsyncSession,
+) -> None:
+    """Named, so a typo is a sentence rather than a foreign key error."""
+    with pytest.raises(CommandError, match=r"no such permission: users\.raed"):
+        await create_role(session, code="wrong", name="Wrong", permissions=["users.raed"])
+
+    assert (
+        await session.execute(select(Role).where(Role.code == "wrong"))
+    ).scalar_one_or_none() is None
+
+
+async def test_create_role_grants_nothing_when_told_nothing(session: AsyncSession) -> None:
+    """A role that grants nothing is an ordinary row: its holder can sign in and see the dashboard
+    and nothing else, which is what the dashboard's empty state is written for."""
+    result = await create_role(session, code="newcomers", name="Newcomers", permissions=[])
+    assert result.permissions == []

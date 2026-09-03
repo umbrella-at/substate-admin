@@ -195,6 +195,19 @@ npm --prefix frontend ci
 `COOKIE_SECURE=false` is the one that catches people: Safari refuses a `Secure` cookie over
 `http://localhost` without saying so, and the panel logs in and then cannot refresh.
 
+The browser tests need two more accounts and a role of the panel's own — the permission scenario
+signs in as somebody who is refused, and a role the deploy defines hides its own controls from
+everybody:
+
+```sh
+uv run --directory backend substate-admin create-role \
+  --code e2e-analysts --name Analysts --grant analytics.read
+printf 'playwright-local-password\n' | uv run --directory backend \
+  substate-admin create-user --email e2e-viewer@substate-admin.test --role viewer
+printf 'playwright-local-password\n' | uv run --directory backend \
+  substate-admin create-user --email e2e-support@substate-admin.test --role support
+```
+
 Everything CI checks, in one command:
 
 ```sh
