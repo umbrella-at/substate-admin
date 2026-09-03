@@ -82,6 +82,12 @@ export const router = createRouter({
       component: () => import('@/views/SubscriberView.vue'),
     },
     {
+      path: '/analytics',
+      name: 'analytics',
+      meta: { permission: 'analytics.read' },
+      component: () => import('@/views/AnalyticsView.vue'),
+    },
+    {
       path: '/audit',
       name: 'audit',
       meta: { permission: 'audit.read' },

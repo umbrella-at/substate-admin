@@ -38,6 +38,7 @@ const DESTINATIONS: Destination[] = [
     permission: 'subscribers.read',
     covers: ['subscriber'],
   },
+  { name: 'analytics', label: 'Analytics', permission: 'analytics.read' },
   { name: 'audit', label: 'Audit', permission: 'audit.read' },
 ]
 
