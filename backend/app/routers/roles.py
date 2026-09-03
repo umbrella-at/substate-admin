@@ -4,8 +4,9 @@ THE REFUSAL IS IN THE APPLICATION, NOT IN A HIDDEN BUTTON. A system role is rest
 catalogue on every deploy, so an accepted edit is undone at the next push and looks, until then,
 like a change that took. Not drawing the control is the other half of the same rule.
 
-Every write invalidates the role snapshot. It is cached for thirty seconds, and a role editor
-whose changes take half a minute to appear is a role editor nobody trusts.
+Every write drops the role snapshot, and drops it AFTER its commit. It is cached for thirty
+seconds: dropped before the commit, a reader racing the write re-reads the rows as they still are
+and installs the pre-edit grants for another thirty.
 """
 
 import uuid
@@ -158,8 +159,8 @@ async def create_role(
     await _write_down(
         session, identity, request, "role.create", role, {"name": body.name, **_granted(body)}
     )
-    invalidate_permission_cache()
     await session.commit()
+    invalidate_permission_cache()
     return await _detail(session, role)
 
 
@@ -183,8 +184,8 @@ async def replace_role(
     await _write_down(
         session, identity, request, "role.update", role, {"name": body.name, **_granted(body)}
     )
-    invalidate_permission_cache()
     await session.commit()
+    invalidate_permission_cache()
     return await _detail(session, role)
 
 
@@ -213,8 +214,8 @@ async def delete_role(
 
     await _write_down(session, identity, request, "role.delete", role, {"name": role.name})
     await session.delete(role)
-    invalidate_permission_cache()
     await session.commit()
+    invalidate_permission_cache()
 
 
 def _granted(body: RoleWriteRequest) -> dict[str, object]:
