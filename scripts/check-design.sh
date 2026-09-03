@@ -119,6 +119,15 @@ if [ -z "$strays" ] && [ -z "$literals" ]; then
     ok "every colour a utility can reach is defined in $TOKENS"
 fi
 
+echo "colours a canvas is handed:"
+# A chart library takes colours as JavaScript values, so a hex in a chart config is not a utility,
+# not a cleared namespace and not a `--color-*` definition — it passes every check above.
+if python3 scripts/colours.py; then
+    :
+else
+    failures=$((failures + 1))
+fi
+
 echo "the palette:"
 python3 scripts/contrast.py > /tmp/contrast.txt 2>&1 && contrast_ok=1 || contrast_ok=0
 if [ "$contrast_ok" = 1 ]; then

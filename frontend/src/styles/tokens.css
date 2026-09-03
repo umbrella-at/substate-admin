@@ -158,6 +158,11 @@
      inside a chip is set optically from its 12px line rather than from the layout grid. */
   --spacing-chip-x: 9px;
   --spacing-chip-y: 3px;
+
+  /* A plot's height is a value, where a control's is not: a control follows its type and its
+     padding, and a plot has no type to follow. docs/design.md derives the number from the
+     sparsest of the five figures rather than picking it. */
+  --spacing-chart-plot: 224px;
 }
 
 /* The loading pulse. Between two fills rather than through opacity, and slower than the 200ms

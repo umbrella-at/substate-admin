@@ -339,6 +339,135 @@ Danger does not share with `CANCELLED`. Danger is red-orange, `CANCELLED` is
 rose. A destructive confirm dialog and a cancelled subscription must not look
 like the same thing.
 
+## Charts
+
+Five figures, one question each. Every number on one of them has an event `substate` actually
+emitted behind it, which is the rule that decides what may be drawn at all.
+
+**A figure is a panel, not a picture.** It carries the question as its heading and the answer as
+one number, and the plot is the working underneath both. A reader who takes only the heading and
+the number has got the point.
+
+| Part | Value |
+|---|---|
+| fill | `--surface-1` |
+| radius | `8px`, the step Radius already assigns to a chart frame |
+| padding | `16px` |
+| heading | `16px`, `--text-primary` — the question, not the metric's name |
+| the answer | `20px`, mono, `--text-primary` |
+| caption under the heading | `12px`, `--text-muted` |
+| heading block to plot | `12px` |
+| plot | `--chart-plot`, `224px` |
+| between figures | `16px`, as between cards |
+
+`224px` is derived rather than chosen, from the busiest of the five. The states snapshot has five
+bars; five at the table's own `40px` row height come to `200px`, and the remaining `24px` is
+`4px` of gap in each of the six places there is one — between each pair and above and below.
+
+**A bar is never thicker than a table row.** A figure with three marks does not grow its bars to
+fill the plot: three slabs are a different chart from five bars, and the reader would be told that
+the two figures are measuring different things when they are not.
+
+Layout says a control's height is not a number, and this does not contradict it. A control's
+height follows its type and its padding; a plot has no type to follow, so the height is a value,
+and a value belongs in this file rather than in a component.
+
+### Colour
+
+**A series takes a colour from this file or it is not drawn.** Chart.js paints to a canvas, so it
+takes colours as JavaScript values rather than as utilities — which is why neither the one-palette
+grep nor `scripts/utilities.py` can see them. That gap is closed by a check of its own: a hex,
+`rgb()`, `hsl()` or `oklch()` literal anywhere in the chart sources fails the build, and every
+token the chart palette names has to exist in `tokens.css`.
+
+| Figure | Series | Colour |
+|---|---|---|
+| Funnel | one, three stages | `--accent-text` |
+| Inflow and outflow | joined | `--success-text` |
+| | left | `--danger-text`, dashed |
+| States now | five, one per state | the five state chips' **text** colours |
+| Revenue | one | `--accent-text` |
+| Quiet, by how long | one, three buckets | `--accent-text` |
+
+**A single-series figure is accent, and a screen carrying one has no filled accent control.**
+Accent's one-filled-element rule is about actions: it makes the important action findable, and it
+stops working when there are two. A bar is not an action, so it spends nothing — as long as the
+screen it is on has no filled button to compete with. Analytics has none, which is correct for a
+screen with nothing to press.
+
+**The states figure takes the chips' text colours, not their fills.** A chip's fill is a tint
+drawn behind `12px` of text; as a bar on a panel it reads 1.15:1 to 1.31:1 and is not there. The
+text colours are the ones a reader of the table has already learnt, and each is measured against
+the frame: `TRIAL` 8.63, `ACTIVE` 9.41, `GRACE` 9.55, `EXPIRED` 5.72, `CANCELLED` 7.12 — all past
+the 3:1 that 1.4.11 asks of anything you have to see to read the figure.
+
+**The two lines differ by more than hue.** `--success-text` and `--danger-text` are 1.47:1 apart,
+which is a difference of hue and of nothing else, so the outflow line is dashed as well as red.
+A reader who cannot separate the two hues still has two lines.
+
+**Outflow is danger, not the `CANCELLED` rose.** A line here is a direction, not a state, and the
+semantic roles are the tokens this file keeps for direction — the same reason success and warning
+share their colours with `ACTIVE` and `GRACE`. The rose stays where it means one state.
+
+**The states figure is ordered by urgency, not by lifecycle**, because the backend already fixed
+that order for the table and a second order invented here would be the second dictionary this
+project has twice refused: `GRACE`, `TRIAL`, `ACTIVE`, `CANCELLED`, `EXPIRED`.
+
+### Furniture
+
+| Part | Value |
+|---|---|
+| grid lines along the value axis | `--border`, `1px` |
+| grid lines along the category axis | none |
+| axis rule | none; the grid line at zero is the axis |
+| tick labels | `12px`, mono, `--text-muted` |
+| legend | `12px`, `--text-secondary`, above the plot, left, only where there are two series |
+| bar and line fill | the series colour at full strength; no gradient |
+
+Ticks are mono for the reason Typography gives: they are numbers compared down a column, and
+proportional digits make two of the same length look different lengths.
+
+**A tooltip is a floating layer** and takes what Layout gives one — `--surface-2` with a
+`--border-strong` outline, `6px` radius, `13px`, `--text-primary`. No shadow, here as everywhere.
+
+**A figure animates once and then holds still.** `200ms` on first paint, the ceiling Floor sets
+for a transition, and nothing on an update: a figure that replayed itself whenever its data
+arrived would tell the whole story again every time a poll came back. Under
+`prefers-reduced-motion` the duration is `0` and the figure is simply there.
+
+### The caption names where the number came from
+
+Two sources sit behind these five figures and they answer different questions. The engine holds
+what is true now; the journal holds what happened. A reader who takes "expired" off one figure and
+off the subscriber table gets `46` from one and `360` from the other, and both are correct.
+
+So **every figure's caption names its source in the reader's words**, under the heading, at
+`12px` in `--text-muted`: *standing now* against *movements in the period*. It is one line, it is
+where the number is being read, and it is the only place that difference can honestly be put —
+a reader comparing two screens is not holding a document open beside them.
+
+The one figure that must agree with the table exactly is the states snapshot, because it asks the
+table's own question of the table's own source.
+
+### The four states of a figure
+
+Loading is the frame with a skeleton in the plot's place at `--chart-plot`, and a bar where the
+heading will be — the shape of what is coming, per Loading. Empty says what would put something
+there. Error names what failed and offers the retry beside it.
+
+**A world that has not been built says so once, for the screen, not five times.** Every figure
+reads the same world and would meet the same emptiness, so the refusal replaces the figures rather
+than appearing inside each of them. That is the component the subscriber table already uses.
+
+### What a figure never does
+
+- **No second value axis.** Two scales on one plot let any two lines cross wherever the author
+  would like them to.
+- **No pie.** The snapshot is the one figure that invites it, and five angles are harder to
+  compare than five lengths — which is the entire job of that figure.
+- **No axis that does not start at zero.** A truncated one exaggerates every difference drawn
+  against it, and does so silently.
+
 ## Typography
 
 IBM Plex Sans and IBM Plex Mono. One family, two cuts, self-hosted so nothing
@@ -528,6 +657,7 @@ a month, and nobody can tell which half. So:
 | every utility resolves to something | `scripts/utilities.py` fails on a class name that produced no CSS |
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
 | a dialog's edge is measured against what is behind it | `scripts/contrast.py` composites `--scrim` over both surfaces and measures the outline on the result |
+| a colour reaches a canvas from this file | `scripts/colours.py` fails on a colour literal in the frontend sources, and on a token name the stylesheet does not declare |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
 
@@ -537,6 +667,7 @@ a month, and nobody can tell which half. So:
 - buttons named for what happens, sentence case throughout
 - text dimmed with a token, never with `opacity`
 - a skeleton in the shape of what is coming, not a spinner
+- a figure's caption names whether its number is standing now or a movement in the period
 
 `rounded-full` deserves a note: it survives even a cleared `--radius-*`, because Tailwind ships it
 as a static utility rather than deriving it from the theme. The grep is the only thing standing
@@ -559,6 +690,15 @@ That is what `scripts/utilities.py` is for. It reads the class names the markup 
 — `class` attributes and string literals, comments removed — and fails on any that produced no
 CSS. A closed namespace means a foreign vocabulary silently yields nothing; this is the thing that
 notices, rather than an eye on a screenshot.
+
+**A canvas is outside all of it, which is why there is a check of its own.** A chart library is
+handed colours as JavaScript values, so a hex written into a chart config is not a utility, does
+not touch a cleared namespace, and is not a `--color-*` definition in a stylesheet — it passes
+every guard above while being exactly the second palette they exist to prevent. `scripts/colours.py`
+reads the sources instead, with comments removed for the reason `utilities.py` gives, and asks two
+questions: is there a colour literal here, and does every token named here exist. The second is
+the one that matters — a token that does not exist resolves to the empty string, which draws
+nothing and says nothing, and the source still reads correctly.
 
 The same shape of silence is why `scripts/assets.py` exists. A generator that writes
 `@import url('https://fonts.googleapis.com/…')` into this stylesheet costs nothing visible: the
