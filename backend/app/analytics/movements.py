@@ -99,8 +99,12 @@ def next_bucket(start: datetime, granularity: Grain) -> datetime:
 
 
 LAST_BUCKET: Final = datetime.max.replace(tzinfo=UTC) - timedelta(days=62)
-"""Where the walk stops rather than stepping off the calendar. `PeriodParams` bounds the span, so
-a route cannot reach this; a caller inside the process asking about the year 9999 can."""
+"""Where the walk stops rather than stepping off the calendar, which used to be an OverflowError.
+
+It truncates the series, and what is lost is provably zeros: no row can have occurred at an
+instant later than this one. `PeriodParams` bounds the span, so reaching it needs a `to` inside
+two months of the end of the calendar.
+"""
 
 
 def buckets(since: datetime, until: datetime, granularity: Grain) -> tuple[datetime, ...]:
