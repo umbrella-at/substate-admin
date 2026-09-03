@@ -80,6 +80,8 @@ type Answers = {
   users?: () => Promise<unknown>
   roles?: () => Promise<unknown>
   holds?: string[]
+  /** What `/auth/me` answers from now on. The operator may have just edited the role they hold. */
+  holdsAfterWrite?: string[]
 }
 
 function render(over: Answers = {}) {
@@ -90,6 +92,9 @@ function render(over: Answers = {}) {
     replaceRole: vi.fn(() => Promise.resolve(ROLES.items[1]!)),
     deleteRole: vi.fn(() => Promise.resolve(null)),
     createRole: vi.fn(() => Promise.resolve(ROLES.items[1]!)),
+    me: vi.fn(() =>
+      Promise.resolve(me(over.holdsAfterWrite ?? over.holds ?? ['users.read', 'users.write'])),
+    ),
   }
   return mount(TooltipProvider, {
     slots: { default: () => h(UsersView) },
@@ -108,6 +113,15 @@ function render(over: Answers = {}) {
 beforeEach(() => {
   setActivePinia(createPinia())
 })
+
+/** The custom role. The first in the list is a system role, whose Save and Delete are hidden from
+ *  everybody — so an assertion about a permission has to be made somewhere they could appear. */
+async function selectAnalysts(view: ReturnType<typeof render>): Promise<void> {
+  await view
+    .findAll('button')
+    .find((each) => each.text() === 'Analysts')!
+    .trigger('click')
+}
 
 describe('the screen', () => {
   it('lists the operators and the roles side by side', async () => {
@@ -143,9 +157,12 @@ describe('the screen', () => {
 describe('an operator who may read but not write', () => {
   const READ_ONLY = { holds: ['users.read'] }
 
+  // ON THE CUSTOM ROLE, because a system role hides Save and Delete from everybody. Asserted on
+  // the system role instead, this passes with the permission check deleted.
   it('is offered no control that would be refused', async () => {
     const view = render(READ_ONLY)
     await flushPromises()
+    await selectAnalysts(view)
 
     for (const control of ['New role', 'Save role', 'Delete role', 'Create role']) {
       expect(view.text(), control).not.toContain(control)
@@ -163,12 +180,8 @@ describe('an operator who may read but not write', () => {
   it('is offered them once the permission is held', async () => {
     const view = render()
     await flushPromises()
+    await selectAnalysts(view)
 
-    // Selecting the custom role, because the first one is a system role nobody may edit.
-    await view
-      .findAll('button')
-      .find((each) => each.text() === 'Analysts')!
-      .trigger('click')
     expect(view.text()).toContain('Save role')
     expect(view.text()).toContain('New role')
   })
@@ -200,5 +213,31 @@ describe('the four states of the roles panel', () => {
     await flushPromises()
     expect(view.find('.skeleton').exists()).toBe(false)
     expect(view.text()).toContain('Analysts')
+  })
+})
+
+/**
+ * An operator may edit the role they hold, and the store is what the nav, the guard and every
+ * write control decide from. Invalidating a cache entry nothing on this screen observes refetched
+ * nothing, so the panel went on drawing controls the server had just started refusing.
+ */
+describe('editing the role you hold yourself', () => {
+  it('takes the new permissions from the server rather than keeping the old ones', async () => {
+    const view = render({ holdsAfterWrite: ['users.read'] })
+    await flushPromises()
+    await selectAnalysts(view)
+    expect(view.text()).toContain('Save role')
+
+    await view.findAll('input[type="checkbox"], button[role="checkbox"]').at(0)!.trigger('click')
+    await view
+      .findAll('button')
+      .find((each) => each.text().startsWith('Save role'))!
+      .trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect([...useAuthStore().permissions]).toEqual(['users.read'])
+    expect(view.text()).not.toContain('Save role')
+    expect(view.text()).not.toContain('New role')
   })
 })

@@ -76,9 +76,10 @@ function failure(error: unknown): string {
 
 async function reload(): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ['roles'] })
-  // The signed-in operator may have just edited their own role, and every control on every screen
-  // reads what `/auth/me` last said.
-  await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+  // ADOPTED, not invalidated. The operator may have just edited the role they hold, and the store
+  // is what the nav, the guard and every write control decide from — and nothing on this screen
+  // observes that cache entry, so invalidating it refetched nothing.
+  auth.adopt(await queryClient.fetchQuery({ queryKey: ['auth', 'me'], queryFn: () => client.me() }))
 }
 
 const save = useMutation({

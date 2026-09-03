@@ -94,12 +94,17 @@ test.describe('support, who may read the roles and not write them', () => {
     await page.getByRole('link', { name: 'Users and roles' }).click()
     await expect(page.getByRole('heading', { name: 'Roles', exact: true })).toBeVisible()
 
+    // A CUSTOM role. Save and Delete are hidden on a system role whoever is looking, so asserting
+    // their absence there would pass with the permission check deleted.
     const body = (await (
       await page.request.get(ROLES, {
         headers: { authorization: `Bearer ${token}` },
       })
-    ).json()) as { items: { id: string; isSystem: boolean }[] }
-    roleId = body.items[0]!.id
+    ).json()) as { items: { id: string; name: string; isSystem: boolean }[] }
+    const custom = body.items.find((each) => !each.isSystem)
+    expect(custom, 'the scenario needs a role that is not defined by the application').toBeDefined()
+    roleId = custom!.id
+    await page.getByRole('button', { name: custom!.name, exact: true }).click()
   })
 
   test.afterAll(async () => {

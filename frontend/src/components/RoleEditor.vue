@@ -34,11 +34,13 @@ const emit = defineEmits<{
 const draft = ref(draftOf(props.role))
 const confirming = ref(false)
 
-// Reset when the selection moves, so the next role does not open holding the last one's edits.
+// Reset when the SELECTION moves, so the next role does not open holding the last one's edits —
+// and not when the same role merely arrives again, which is what a save's own refetch does. That
+// threw away every tick made while the request was in flight.
 watch(
-  () => props.role,
-  (role) => {
-    draft.value = draftOf(role)
+  () => props.role.id,
+  () => {
+    draft.value = draftOf(props.role)
     confirming.value = false
   },
 )
