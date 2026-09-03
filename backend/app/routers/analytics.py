@@ -8,7 +8,7 @@ The period defaults come off the world's clock rather than off the wall, so a wo
 wound forward is asked about the time it is actually in.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Final
 
 from fastapi import APIRouter, Depends, Query
@@ -47,8 +47,10 @@ reading; short enough that a week is still a visible slice of it.
 
 
 def _period(params: PeriodParams, world: World) -> tuple[datetime, datetime]:
-    until = params.until if params.until is not None else world.clock.now()
-    return (params.since if params.since is not None else until - DEFAULT_PERIOD), until
+    """The window, in UTC. The bucket keys are built from it and Postgres groups in UTC."""
+    until = (params.until if params.until is not None else world.clock.now()).astimezone(UTC)
+    since = params.since.astimezone(UTC) if params.since is not None else until - DEFAULT_PERIOD
+    return since, until
 
 
 @router.get(

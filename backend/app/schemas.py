@@ -10,10 +10,10 @@ column by accident.
 """
 
 import uuid
-from datetime import datetime
-from typing import Any, Literal
+from datetime import datetime, timedelta
+from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 from substate import State
 
@@ -446,6 +446,12 @@ class SubscriberQueryParams(ApiModel):
         )
 
 
+MAX_PERIOD: Final = timedelta(days=365 * 5)
+"""How long a period may be. Every bucket of it is a mark on a plot, and the widest the interface
+asks for is a year; five is room to ask by hand without a request that answers with a quarter of a
+million points, or one that walks the bucket arithmetic past `datetime.max`."""
+
+
 class PeriodParams(ApiModel):
     """`?from=&to=` on the two figures that ask about a stretch of time.
 
@@ -454,13 +460,20 @@ class PeriodParams(ApiModel):
     from `datetime.now` would ask about a period the world has not reached.
     """
 
-    since: datetime | None = Field(default=None, alias="from")
-    until: datetime | None = Field(default=None, alias="to")
+    # AWARE, NOT MERELY A DATETIME. A naive value has no instant, and the bucket arithmetic that
+    # follows would floor it in one zone while Postgres grouped the rows in another — which
+    # answered 200 with a dense series of zeros rather than saying the input was wrong.
+    since: AwareDatetime | None = Field(default=None, alias="from")
+    until: AwareDatetime | None = Field(default=None, alias="to")
 
     @model_validator(mode="after")
-    def _forwards(self) -> "PeriodParams":
-        if self.since is not None and self.until is not None and self.since >= self.until:
+    def _a_bounded_stretch_forwards(self) -> "PeriodParams":
+        if self.since is None or self.until is None:
+            return self
+        if self.since >= self.until:
             raise ValueError("from must be before to")
+        if self.until - self.since > MAX_PERIOD:
+            raise ValueError(f"a period may not be longer than {MAX_PERIOD.days} days")
         return self
 
 

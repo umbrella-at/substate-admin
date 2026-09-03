@@ -16,7 +16,8 @@ rises, a departure counted twice, and a period that returns holes instead of zer
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
+from itertools import pairwise
 from typing import Any, Final
 
 import pytest
@@ -32,14 +33,14 @@ from substate import (
     SubscriptionRenewed,
 )
 
-from app.analytics import movements
+from app.analytics import movements, standing
 from app.models import EventJournal
-from app.seed.catalogue import USERS_PROGRAM
+from app.seed.catalogue import PLANS, USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, seed_world
 from app.subscribers.query import STATE_URGENCY
 from app.worlds.journal import ProjectedSubscriber, write_events, write_projection
 from app.worlds.registry import BASE_WORLD_ID, World, get_registry, reset_registry
-from support import Account, Clock, bearer, create_account
+from support import Account, Clock, bearer, create_account, envelope
 
 FUNNEL: Final = "/api/analytics/funnel"
 FLOW: Final = "/api/analytics/flow"
@@ -337,6 +338,181 @@ async def test_a_period_with_nothing_in_it_is_zeros_rather_than_holes(
     assert all(point.joined == 0 and point.left == 0 for point in found.points)
 
 
+async def test_the_flow_route_answers_a_dense_week_by_week_series(
+    client: AsyncClient, seeded: World, operator: Account, clock: Clock
+) -> None:
+    """The endpoint nothing called. Its arithmetic had three defects and no test could see them."""
+    figure = await _json(
+        client, FLOW, operator, clock, **{"from": _long_ago(), "to": _now(), "granularity": "week"}
+    )
+    starts = [datetime.fromisoformat(point["startsAt"]) for point in figure["points"]]
+
+    assert figure["granularity"] == "week"
+    assert len(starts) > 4
+    assert all(later - earlier == timedelta(days=7) for earlier, later in pairwise(starts))
+    assert all(start.weekday() == 0 for start in starts), "date_trunc('week') runs Monday to Monday"
+    assert sum(point["joined"] for point in figure["points"]) > 0
+
+
+async def test_the_same_instants_answer_the_same_whatever_offset_they_arrive_in(
+    client: AsyncClient, seeded: World, operator: Account, clock: Clock
+) -> None:
+    """A `from` in another zone was floored in that zone while Postgres grouped in UTC.
+
+    The keys then matched nothing and the figure answered 200 with a dense series of zeros over a
+    journal full of events — the most confident way this endpoint could be wrong.
+    """
+    until = datetime.now(UTC)
+    since = until - timedelta(days=60)
+    elsewhere = timezone(timedelta(hours=3))
+
+    utc = await _json(
+        client, FLOW, operator, clock, **{"from": since.isoformat(), "to": until.isoformat()}
+    )
+    shifted = await _json(
+        client,
+        FLOW,
+        operator,
+        clock,
+        **{
+            "from": since.astimezone(elsewhere).isoformat(),
+            "to": until.astimezone(elsewhere).isoformat(),
+        },
+    )
+
+    assert utc["points"] == shifted["points"]
+    assert sum(point["joined"] for point in utc["points"]) > 0, (
+        "a period with nothing in it proves nothing"
+    )
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"from": "2026-06-01T00:00:00"}, "from"),
+        ({"to": "2026-06-01T12:00:00"}, "to"),
+        ({"from": "2000-01-01T00:00:00Z", "to": "2026-01-01T00:00:00Z"}, None),
+        ({"from": "2026-01-01T00:00:00Z", "to": "2025-01-01T00:00:00Z"}, None),
+    ],
+)
+async def test_a_period_this_endpoint_cannot_answer_is_refused_rather_than_guessed(
+    client: AsyncClient,
+    seeded: World,
+    operator: Account,
+    clock: Clock,
+    params: dict[str, str],
+    field: str | None,
+) -> None:
+    """Naive, backwards, or longer than the bucket walk can carry.
+
+    A naive value has no instant; twenty-six years of weeks is a quarter of a million marks on a
+    plot. Both used to be a 200 or a 500 rather than a sentence naming the parameter.
+    """
+    response = await client.get(FLOW, headers=_headers(operator, clock), params=params)
+
+    assert response.status_code == 422, response.text
+    assert envelope(response)["code"] == "VALIDATION_ERROR"
+
+
+async def test_a_bucket_walk_stops_rather_than_stepping_off_the_calendar() -> None:
+    """`PeriodParams` bounds the span, so no route reaches this — a caller in-process can, and the
+    step past `datetime.max` used to be an OverflowError rather than the end of a list."""
+    walked = movements.buckets(
+        datetime(9999, 1, 1, tzinfo=UTC), datetime(9999, 12, 31, tzinfo=UTC), "week"
+    )
+    assert walked, "the walk must still produce the buckets it can"
+    assert all(start.weekday() == 0 for start in walked)
+    assert walked[-1] < datetime.max.replace(tzinfo=UTC) - timedelta(days=7)
+
+
+@pytest.fixture
+async def three_quiet_subscribers() -> AsyncIterator[tuple[World, standing.Projection, datetime]]:
+    """A world of exactly three, silent for 40, 60 and 200 days at one fixed moment.
+
+    Hand-built rather than seeded: the band arithmetic is the half of that figure a reader looks
+    at, and the seeder's population cannot pin a boundary.
+    """
+    reset_registry()
+    world = get_registry().create("a-world-of-three")
+    for plan in PLANS:
+        world.engine.register_plan(plan)
+    for user_id in ("quiet-40", "quiet-60", "quiet-200"):
+        await world.engine.subscribe(user_id, "monthly")
+
+    now = world.clock.now()
+    projection: standing.Projection = {
+        "quiet-40": ("Forty", now - timedelta(days=40)),
+        "quiet-60": ("Sixty", now - timedelta(days=60)),
+        "quiet-200": ("Two hundred", now - timedelta(days=200)),
+    }
+    yield world, projection, now
+    reset_registry()
+
+
+async def test_a_subscriber_lands_in_the_band_their_silence_is_long_enough_for(
+    three_quiet_subscribers: tuple[World, standing.Projection, datetime],
+) -> None:
+    """One in each band, and the middle one sits exactly on an edge.
+
+    Sixty days belongs to 60-90 rather than to 30-60: a band is closed at its lower edge, and
+    that is the only place the arithmetic can be off by one.
+    """
+    world, projection, now = three_quiet_subscribers
+    found = await standing.quiet(world, projection, now=now)
+
+    assert [band.count for band in found.bands] == [1, 1, 1]
+    assert found.total == 3
+    assert [(band.from_days, band.to_days) for band in found.bands] == [
+        (30, 60),
+        (60, 90),
+        (90, None),
+    ]
+
+
+async def test_a_subscriber_seen_within_the_month_is_in_no_band_at_all(
+    three_quiet_subscribers: tuple[World, standing.Projection, datetime],
+) -> None:
+    """The cohort opens at thirty days, so the figure has to be empty below it."""
+    world, _, now = three_quiet_subscribers
+    fresh: standing.Projection = {
+        user_id: (user_id, now - timedelta(days=29)) for user_id in world.subscribers
+    }
+    found = await standing.quiet(world, fresh, now=now)
+
+    assert [band.count for band in found.bands] == [0, 0, 0]
+    assert found.total == 0
+
+
+async def test_the_snapshot_names_a_state_nobody_is_in(
+    three_quiet_subscribers: tuple[World, standing.Projection, datetime],
+) -> None:
+    """Three subscribers on one plan occupy one state; the other four are zeros, not absences."""
+    world, _, _ = three_quiet_subscribers
+    found = await standing.snapshot(world)
+
+    assert len(found.states) == 5
+    assert found.total == 3
+    assert sorted(entry.count for entry in found.states) == [0, 0, 0, 0, 3]
+
+
+async def test_the_quiet_figure_and_the_cohort_still_agree_after_the_world_moves(
+    client: AsyncClient, seeded: World, operator: Account, clock: Clock
+) -> None:
+    """The figure asked the world's clock and the table asked the wall's.
+
+    They agreed while the offset was zero, which is every world this round ships — and stopped
+    the moment one was wound forward, which is what the next round is for.
+    """
+    seeded.clock.advance(timedelta(days=45))
+    await seeded.engine.tick()
+
+    figure = await _json(client, QUIET, operator, clock)
+    cohort = await _json(client, SUBSCRIBERS, operator, clock, pageSize=1, cohort="quiet")
+
+    assert figure["total"] == cohort["total"]
+    assert sum(band["count"] for band in figure["bands"]) == figure["total"]
+
+
 async def test_revenue_covers_every_month_it_was_asked_for(
     client: AsyncClient, seeded: World, operator: Account, clock: Clock
 ) -> None:
@@ -380,6 +556,23 @@ def test_a_moment_floors_to_the_bucket_postgres_would_put_it_in(
     moment: datetime, granularity: movements.Grain, expected: datetime
 ) -> None:
     assert movements.floor_to(moment, granularity) == expected
+
+
+@pytest.mark.parametrize(
+    ("granularity", "expected"),
+    [("week", datetime(2026, 2, 23, tzinfo=UTC)), ("month", datetime(2026, 2, 1, tzinfo=UTC))],
+)
+def test_a_moment_floors_in_utc_whatever_zone_it_arrived_in(
+    granularity: movements.Grain, expected: datetime
+) -> None:
+    """A Monday the first of March in Moscow is a Sunday the first in UTC, and Postgres groups in
+    UTC — so the instant is converted before it is truncated, not after."""
+    elsewhere = timezone(timedelta(hours=3))
+    monday_there = datetime(2026, 3, 2, 1, tzinfo=elsewhere)
+    first_there = datetime(2026, 3, 1, 1, tzinfo=elsewhere)
+
+    at = monday_there if granularity == "week" else first_there
+    assert movements.floor_to(at, granularity) == expected
 
 
 @pytest.mark.parametrize(

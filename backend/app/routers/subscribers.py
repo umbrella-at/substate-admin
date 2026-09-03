@@ -209,7 +209,10 @@ async def list_page(
 ) -> SubscriberPage:
     world = current_world()
     projection = await load_projection(session, world.id)
-    page = await list_subscribers(world, projection, query.to_query())
+    # The world's clock, not the wall's. A cohort is a predicate over `now`, and the analytics
+    # figure beside this table asks the same predicate — on a wound-forward world the two
+    # answered at two different instants and stopped being the same number.
+    page = await list_subscribers(world, projection, query.to_query(), now=world.clock.now())
     return SubscriberPage(
         items=[_summary(row) for row in page.items],
         total=page.total,

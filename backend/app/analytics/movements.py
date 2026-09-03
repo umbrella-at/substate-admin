@@ -80,11 +80,14 @@ class Revenue:
 def floor_to(moment: datetime, granularity: Grain) -> datetime:
     """The start of the bucket a moment falls in, matching Postgres `date_trunc`.
 
-    `date_trunc('week')` runs Monday to Monday, which is what `weekday()` counts back to.
+    IN UTC FIRST, because that is the zone the SQL groups in. Floored in the caller's zone instead,
+    a `from` carrying any other offset produced keys that matched none of Postgres's — and the
+    figure answered 200 with a dense series of zeros over a journal full of events.
     """
+    at = moment.astimezone(UTC)
     if granularity == "month":
-        return moment.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    midnight = moment.replace(hour=0, minute=0, second=0, microsecond=0)
+        return at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    midnight = at.replace(hour=0, minute=0, second=0, microsecond=0)
     return midnight - timedelta(days=midnight.weekday())
 
 
@@ -95,11 +98,16 @@ def next_bucket(start: datetime, granularity: Grain) -> datetime:
     return start + timedelta(days=7)
 
 
+LAST_BUCKET: Final = datetime.max.replace(tzinfo=UTC) - timedelta(days=62)
+"""Where the walk stops rather than stepping off the calendar. `PeriodParams` bounds the span, so
+a route cannot reach this; a caller inside the process asking about the year 9999 can."""
+
+
 def buckets(since: datetime, until: datetime, granularity: Grain) -> tuple[datetime, ...]:
     """Every bucket start from `since` up to `until`, so the answer has no holes in it."""
     starts: list[datetime] = []
     cursor = floor_to(since, granularity)
-    while cursor < until:
+    while cursor < until and cursor < LAST_BUCKET:
         starts.append(cursor)
         cursor = next_bucket(cursor, granularity)
     return tuple(starts)
@@ -173,6 +181,7 @@ async def flow(
     session: AsyncSession, world_id: str, since: datetime, until: datetime, granularity: Grain
 ) -> Flow:
     """Arrivals against departures, one point per bucket."""
+    since, until = since.astimezone(UTC), until.astimezone(UTC)
     departure = or_(
         EventJournal.type == CANCELLED,
         and_(
