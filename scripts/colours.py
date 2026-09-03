@@ -11,6 +11,10 @@ Two questions, and the second is the half that matters:
     is there a colour literal here          a hex, a colour function, a CSS colour keyword
     does every token named here exist       `--color-accent-text` has to be in tokens.css
 
+It reads every `.ts`, `.vue` and `.css` under `frontend/src` except the palette itself, and except
+a `.spec.ts` — a test does not render, and a check that makes somebody reword an assertion is one
+they reword the rule to escape.
+
 A token that does not exist resolves to the empty string, which a canvas draws as nothing. The
 first question alone would pass that, and the plot would come up blank with the source reading
 correctly.
@@ -26,6 +30,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from typing import Final
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "frontend" / "src"
@@ -42,30 +47,37 @@ _LITERAL_COLOUR = re.compile(
     r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\s*\(",
 )
 
-# A bare word can be prose, so these are looked for only inside a string in a script.
+# CSS's own named colours, all of them: a short hand-picked list let `crimson` and `cyan` through,
+# which is the failure this check exists to stop.
+
+# A bare word can be prose, so these are read only inside a string. A false positive costs one
+# entry in `_NOT_A_COLOUR`; a miss costs a second palette.
 _KEYWORDS = frozenset(
-    {
-        "white",
-        "black",
-        "red",
-        "green",
-        "blue",
-        "grey",
-        "gray",
-        "silver",
-        "orange",
-        "yellow",
-        "purple",
-        "pink",
-        "navy",
-        "teal",
-        "aqua",
-        "lime",
-        "maroon",
-        "olive",
-        "fuchsia",
-    }
+    """
+    aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue
+    blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk
+    crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki
+    darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen
+    darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue
+    dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite
+    gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki
+    lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan
+    lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen
+    lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen
+    magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen
+    mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream
+    mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid
+    palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum
+    powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown
+    seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen
+    steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow
+    yellowgreen
+    """.split()
 )
+
+_NOT_A_COLOUR: Final = frozenset({"linen", "tan", "plum", "snow", "peru"})
+"""Named colours that are also ordinary words. Removed from the scan because a sentence is not a
+palette; each is here because it was considered, not because it was convenient."""
 
 _SCRIPT = re.compile(r"<script\b[^>]*>(?P<body>.*?)</script>", re.S)
 _STRING = re.compile(r"""(['"`])(?P<body>(?:\\.|(?!\1).)*)\1""", re.S)
@@ -108,7 +120,7 @@ def offences(path: Path, text: str) -> list[str]:
     for script in scripts_of(body, single_file_unit=single_file_unit):
         for literal in _STRING.finditer(script):
             for word in re.split(r"[^a-z]+", literal.group("body").lower()):
-                if word in _KEYWORDS:
+                if word in _KEYWORDS - _NOT_A_COLOUR:
                     found.append(f"the colour keyword {word!r}")
 
     return found
@@ -119,7 +131,10 @@ def main(argv: list[str]) -> int:
     failures = 0
 
     for path in sorted(SOURCE.rglob("*")):
-        if path.suffix not in {".vue", ".ts"} or path.name.endswith(".spec.ts"):
+        if path.suffix not in {".vue", ".ts", ".css"} or path.name.endswith(".spec.ts"):
+            continue
+        # The palette itself is the one file whose whole job is to hold values.
+        if path == TOKENS:
             continue
         text = path.read_text(encoding="utf-8")
         where = path.relative_to(ROOT)
