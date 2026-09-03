@@ -19,12 +19,12 @@ const QUERY = '?period=12m'
 /** Taller than the table's shot, and the assertion below is what sets the number: five figures in
  *  three rows do not fit the height a table of twelve rows does, and a picture that cut the last
  *  plot in half would be a picture of four figures and a hint. */
-test.use({ viewport: { width: 1440, height: 1340 } })
+test.use({ viewport: { width: 1440, height: 1380 } })
 
 /** Every question on the screen, in the order it is drawn. A shot missing one is a shot of a
  *  screen that has lost a figure. */
 const QUESTIONS = [
-  'Are we growing or shrinking?',
+  'Who is arriving, and who is leaving?',
   'Where do we lose them?',
   'What is in the base right now?',
   'Who pays but has stopped turning up?',

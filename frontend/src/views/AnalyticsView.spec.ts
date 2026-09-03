@@ -143,7 +143,7 @@ describe('the five figures', () => {
     await flushPromises()
 
     for (const question of [
-      'Are we growing or shrinking?',
+      'Who is arriving, and who is leaving?',
       'Where do we lose them?',
       'What is in the base right now?',
       'Who pays but has stopped turning up?',
@@ -163,7 +163,7 @@ describe('the five figures', () => {
     expect(view.text()).toContain('351 subscriptions')
     expect(view.text()).toContain('42 subscribers')
     expect(view.text()).toContain('2099.50 USD')
-    expect(view.text()).toContain('22 arrivals against 36 departures')
+    expect(view.text()).toContain('22 arrivals, 36 departures')
   })
 
   it('says how many arrived on a trial without making it a stage', async () => {
@@ -291,5 +291,28 @@ describe('the period', () => {
     const view = render()
     await flushPromises()
     expect(view.html()).not.toContain('bg-accent-fill')
+  })
+})
+
+/**
+ * The two lines are movements, not a population. Measured on the base world: 351 arrived and 401
+ * subscriptions ended while 305 were live, so a heading promising a net promised a subtraction
+ * the journal cannot support.
+ */
+describe('the flow figure', () => {
+  it('says the two counts without putting them in a sentence that begs a subtraction', async () => {
+    const view = render()
+    await flushPromises()
+
+    expect(view.text()).toContain('22 arrivals, 36 departures')
+    expect(view.text()).not.toContain('against')
+  })
+
+  it('names the trap and points at the figure that does answer it', async () => {
+    const view = render()
+    await flushPromises()
+
+    expect(view.text()).toContain('do not subtract to a population')
+    expect(view.text()).toContain('the states figure')
   })
 })

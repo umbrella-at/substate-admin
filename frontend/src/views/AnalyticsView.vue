@@ -41,14 +41,16 @@ const router = useRouter()
 
 const period = computed<Preset>(() => periodFromRoute(route.query['period']))
 
-/** Taken once per visit, not per render. A moment that moved between two figures would put them
- *  on two periods, and the difference would be invisible. */
+/** One moment for all the figures on one paint: a `now` that moved between two of them would put
+ *  them on two periods invisibly. Refreshed when the period changes, because a tab left open for a
+ *  day was otherwise asking about the thirty days ending yesterday. */
 const now = ref(new Date())
 
 const { funnel, flow, states, quiet, revenue } = useAnalytics(period, now)
 const { isUnbuilt: worldIsUnbuilt } = useWorld()
 
 function choose(next: Preset): void {
+  now.value = new Date()
   void router.push({ query: periodToRoute(next) })
 }
 
@@ -133,9 +135,11 @@ const revenueBars = computed(() => {
 
     <WorldNotBuilt v-if="worldIsUnbuilt" />
 
-    <template v-else>
+    <!-- One gap between figures, not two. `gap-6` separates the header and the period control from
+         the figures; the figures themselves sit `16px` apart, as cards do. -->
+    <div v-else class="flex flex-col gap-4">
       <ChartFrame
-        question="Are we growing or shrinking?"
+        question="Who is arriving, and who is leaving?"
         :source="MOVEMENTS"
         :pending="flow.isPending.value"
         :failed="flow.isError.value"
@@ -145,7 +149,8 @@ const revenueBars = computed(() => {
         "
         invitation="Nothing joined or left in this period. A longer one will have movement in it."
         :busy="flow.isFetching.value"
-        :answer="`${counted(total(flowLines.joined), 'arrival', 'arrivals')} against ${total(flowLines.left)} departures`"
+        :answer="`${counted(total(flowLines.joined), 'arrival', 'arrivals')}, ${counted(total(flowLines.left), 'departure', 'departures')}`"
+        note="These two do not subtract to a population: a subscriber who lapses and pays again ends a subscription without arriving a second time. What is standing now is the states figure."
         @retry="() => void flow.refetch()"
       >
         <LineFigure
@@ -252,6 +257,6 @@ const revenueBars = computed(() => {
           />
         </ChartFrame>
       </div>
-    </template>
+    </div>
   </section>
 </template>
