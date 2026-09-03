@@ -13,10 +13,11 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 from substate import State
 
+from app.analytics.movements import Grain
 from app.audit import AuditAction
 from app.errors import ErrorCode
 from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
@@ -442,3 +443,117 @@ class SubscriberQueryParams(ApiModel):
             cohort=Cohort(self.cohort) if self.cohort else None,
             search=self.q,
         )
+
+
+class PeriodParams(ApiModel):
+    """`?from=&to=` on the two figures that ask about a stretch of time.
+
+    Both are optional and the route fills them from the world's own clock, not the wall clock: a
+    world that has been wound forward keeps its journal in its own time, and a default computed
+    from `datetime.now` would ask about a period the world has not reached.
+    """
+
+    since: datetime | None = Field(default=None, alias="from")
+    until: datetime | None = Field(default=None, alias="to")
+
+    @model_validator(mode="after")
+    def _forwards(self) -> "PeriodParams":
+        if self.since is not None and self.until is not None and self.since >= self.until:
+            raise ValueError("from must be before to")
+        return self
+
+
+class FlowParams(PeriodParams):
+    """The flow figure's query string. One grain per request: one figure asks one question."""
+
+    granularity: Grain = "week"
+
+
+class RevenueParams(ApiModel):
+    """`?months=12`. Bounded above because every month is a bar, and a bar needs room to be read."""
+
+    months: int = Field(default=12, ge=1, le=36)
+
+
+class FunnelStage(ApiModel):
+    """One bar. The three are nested subsets of the first, so `count` never rises down the list."""
+
+    stage: Literal["arrived", "paid", "renewed"]
+    count: int
+
+
+class FunnelResponse(ApiModel):
+    """GET /api/analytics/funnel. The period comes back because the caller may not have named one.
+
+    Spelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python
+    keyword, and a response field nothing can construct by name is worse than two words for one
+    idea.
+    """
+
+    since: datetime
+    until: datetime
+    stages: list[FunnelStage]
+    # Not a stage: a plan with no trial days puts a new subscriber straight in front of the first
+    # payment, so this counts how they arrived rather than a step they all take.
+    started_a_trial: int
+
+
+class FlowPoint(ApiModel):
+    """One bucket. `left` counts a departure where it was decided, not where it fell."""
+
+    starts_at: datetime
+    joined: int
+    left: int
+
+
+class FlowResponse(ApiModel):
+    """GET /api/analytics/flow. Every bucket in the period is here, empty ones included."""
+
+    since: datetime
+    until: datetime
+    granularity: Grain
+    points: list[FlowPoint]
+
+
+class StateCount(ApiModel):
+    state: Literal["trial", "active", "grace", "expired", "cancelled"]
+    count: int
+
+
+class StatesResponse(ApiModel):
+    """GET /api/analytics/states.
+
+    `total` is the same number `GET /api/subscribers` reports with no filters, because both walk
+    the engine once through the same iterator. The two screens sit side by side and a reader will
+    compare them.
+    """
+
+    states: list[StateCount]
+    total: int
+
+
+class QuietBand(ApiModel):
+    """One stretch of silence. `toDays` is null on the last band, which has no upper edge."""
+
+    from_days: int
+    to_days: int | None
+    count: int
+
+
+class QuietResponse(ApiModel):
+    """GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table."""
+
+    bands: list[QuietBand]
+    total: int
+
+
+class RevenueMonth(ApiModel):
+    starts_at: datetime
+    amount: int
+
+
+class RevenueResponse(ApiModel):
+    """GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells."""
+
+    currency: str
+    months: list[RevenueMonth]

@@ -92,6 +92,16 @@ REFERRAL_PROGRAMS: Final[tuple[ReferralProgram, ...]] = (USERS_PROGRAM, PARTNERS
 
 PLAN_BY_ID: Final[dict[str, Plan]] = {plan.id: plan for plan in PLANS}
 
+CURRENCY: Final = PLANS[0].currency
+"""What this world sells in, and the reason the revenue figure may add its payments up.
+
+A payment carries no currency — `Payment` has no such field — so a sum over them is only a sum of
+money while every plan agrees. The guard below is what keeps that from becoming untrue quietly.
+"""
+
+if {plan.currency for plan in PLANS} != {CURRENCY}:
+    raise RuntimeError("the catalogue sells in more than one currency; revenue cannot be summed")
+
 # How often each commitment is chosen. The weighting toward short periods is load-bearing rather
 # than decorative: GRACE is fed by renewal frequency, and an annual subscriber contributes one
 # chance to fall behind per year. A table where most people renew twice a year has nobody in

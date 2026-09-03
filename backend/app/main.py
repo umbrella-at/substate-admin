@@ -28,7 +28,7 @@ from app.config import get_settings
 from app.db import dispose_engine, get_engine
 from app.errors import install_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
-from app.routers import audit, auth, health, plans, subscribers, users
+from app.routers import analytics, audit, auth, health, plans, subscribers, users
 from app.worlds.bootstrap import build_base_world, set_base_world_status
 from app.worlds.journal import flush_world
 from app.worlds.registry import World, get_registry
@@ -132,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(plans.programs_router, prefix=API_PREFIX)
     app.include_router(subscribers.router, prefix=API_PREFIX)
     app.include_router(audit.router, prefix=API_PREFIX)
+    app.include_router(analytics.router, prefix=API_PREFIX)
 
     return app
 

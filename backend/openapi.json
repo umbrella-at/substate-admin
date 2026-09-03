@@ -262,6 +262,131 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "FlowPoint": {
+        "additionalProperties": false,
+        "description": "One bucket. `left` counts a departure where it was decided, not where it fell.",
+        "properties": {
+          "joined": {
+            "title": "Joined",
+            "type": "integer"
+          },
+          "left": {
+            "title": "Left",
+            "type": "integer"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "title": "Startsat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "joined",
+          "left"
+        ],
+        "title": "FlowPoint",
+        "type": "object"
+      },
+      "FlowResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/flow. Every bucket in the period is here, empty ones included.",
+        "properties": {
+          "granularity": {
+            "enum": [
+              "week",
+              "month"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/FlowPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "granularity",
+          "points"
+        ],
+        "title": "FlowResponse",
+        "type": "object"
+      },
+      "FunnelResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/funnel. The period comes back because the caller may not have named one.\n\nSpelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python\nkeyword, and a response field nothing can construct by name is worse than two words for one\nidea.",
+        "properties": {
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStage"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "startedATrial": {
+            "title": "Startedatrial",
+            "type": "integer"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "stages",
+          "startedATrial"
+        ],
+        "title": "FunnelResponse",
+        "type": "object"
+      },
+      "FunnelStage": {
+        "additionalProperties": false,
+        "description": "One bar. The three are nested subsets of the first, so `count` never rises down the list.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "stage": {
+            "enum": [
+              "arrived",
+              "paid",
+              "renewed"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "count"
+        ],
+        "title": "FunnelStage",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -462,6 +587,61 @@
         "title": "PlanSummary",
         "type": "object"
       },
+      "QuietBand": {
+        "additionalProperties": false,
+        "description": "One stretch of silence. `toDays` is null on the last band, which has no upper edge.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fromDays": {
+            "title": "Fromdays",
+            "type": "integer"
+          },
+          "toDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todays"
+          }
+        },
+        "required": [
+          "fromDays",
+          "toDays",
+          "count"
+        ],
+        "title": "QuietBand",
+        "type": "object"
+      },
+      "QuietResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table.",
+        "properties": {
+          "bands": {
+            "items": {
+              "$ref": "#/components/schemas/QuietBand"
+            },
+            "title": "Bands",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bands",
+          "total"
+        ],
+        "title": "QuietResponse",
+        "type": "object"
+      },
       "RedeemRequest": {
         "additionalProperties": false,
         "description": "POST /api/subscribers/{id}/redeem.",
@@ -508,6 +688,49 @@
         "title": "ReferralProgramSummary",
         "type": "object"
       },
+      "RevenueMonth": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "title": "Startsat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "amount"
+        ],
+        "title": "RevenueMonth",
+        "type": "object"
+      },
+      "RevenueResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/RevenueMonth"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "currency",
+          "months"
+        ],
+        "title": "RevenueResponse",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -526,6 +749,55 @@
           "name"
         ],
         "title": "RoleSummary",
+        "type": "object"
+      },
+      "StateCount": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "trial",
+              "active",
+              "grace",
+              "expired",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "title": "StateCount",
+        "type": "object"
+      },
+      "StatesResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/states.\n\n`total` is the same number `GET /api/subscribers` reports with no filters, because both walk\nthe engine once through the same iterator. The two screens sit side by side and a reader will\ncompare them.",
+        "properties": {
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/StateCount"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "states",
+          "total"
+        ],
+        "title": "StatesResponse",
         "type": "object"
       },
       "SubscribeRequest": {
@@ -1126,6 +1398,366 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/analytics/flow": {
+      "get": {
+        "operationId": "read_flow_api_analytics_flow_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "week",
+              "enum": [
+                "week",
+                "month"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Arrivals against departures, bucket by bucket",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/funnel": {
+      "get": {
+        "operationId": "read_funnel_api_analytics_funnel_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FunnelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Where the people who arrived in a period stopped",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/quiet": {
+      "get": {
+        "operationId": "read_quiet_api_analytics_quiet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuietResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The quiet cohort, split by how long the silence has run",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/revenue": {
+      "get": {
+        "operationId": "read_revenue_api_analytics_revenue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "months",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 36,
+              "minimum": 1,
+              "title": "Months",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "What was taken, by calendar month",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/states": {
+      "get": {
+        "operationId": "read_states_api_analytics_states_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every subscription the engine holds, by the state it is in",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/audit": {
       "get": {
         "operationId": "list_page_api_audit_get",

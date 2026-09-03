@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/analytics/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arrivals against departures, bucket by bucket */
+        get: operations["read_flow_api_analytics_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the people who arrived in a period stopped */
+        get: operations["read_funnel_api_analytics_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/quiet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The quiet cohort, split by how long the silence has run */
+        get: operations["read_quiet_api_analytics_quiet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What was taken, by calendar month */
+        get: operations["read_revenue_api_analytics_revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every subscription the engine holds, by the state it is in */
+        get: operations["read_states_api_analytics_states_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -508,6 +593,81 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
         };
+        /**
+         * FlowPoint
+         * @description One bucket. `left` counts a departure where it was decided, not where it fell.
+         */
+        FlowPoint: {
+            /** Joined */
+            joined: number;
+            /** Left */
+            left: number;
+            /**
+             * Startsat
+             * Format: date-time
+             */
+            startsAt: string;
+        };
+        /**
+         * FlowResponse
+         * @description GET /api/analytics/flow. Every bucket in the period is here, empty ones included.
+         */
+        FlowResponse: {
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "week" | "month";
+            /** Points */
+            points: components["schemas"]["FlowPoint"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+        };
+        /**
+         * FunnelResponse
+         * @description GET /api/analytics/funnel. The period comes back because the caller may not have named one.
+         *
+         *     Spelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python
+         *     keyword, and a response field nothing can construct by name is worse than two words for one
+         *     idea.
+         */
+        FunnelResponse: {
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Stages */
+            stages: components["schemas"]["FunnelStage"][];
+            /** Startedatrial */
+            startedATrial: number;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+        };
+        /**
+         * FunnelStage
+         * @description One bar. The three are nested subsets of the first, so `count` never rises down the list.
+         */
+        FunnelStage: {
+            /** Count */
+            count: number;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "arrived" | "paid" | "renewed";
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -596,6 +756,28 @@ export interface components {
             trialDays: number;
         };
         /**
+         * QuietBand
+         * @description One stretch of silence. `toDays` is null on the last band, which has no upper edge.
+         */
+        QuietBand: {
+            /** Count */
+            count: number;
+            /** Fromdays */
+            fromDays: number;
+            /** Todays */
+            toDays: number | null;
+        };
+        /**
+         * QuietResponse
+         * @description GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table.
+         */
+        QuietResponse: {
+            /** Bands */
+            bands: components["schemas"]["QuietBand"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * RedeemRequest
          * @description POST /api/subscribers/{id}/redeem.
          */
@@ -621,6 +803,26 @@ export interface components {
             /** Percent */
             percent: number;
         };
+        /** RevenueMonth */
+        RevenueMonth: {
+            /** Amount */
+            amount: number;
+            /**
+             * Startsat
+             * Format: date-time
+             */
+            startsAt: string;
+        };
+        /**
+         * RevenueResponse
+         * @description GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells.
+         */
+        RevenueResponse: {
+            /** Currency */
+            currency: string;
+            /** Months */
+            months: components["schemas"]["RevenueMonth"][];
+        };
         /**
          * RoleSummary
          * @description A role as the panel displays it. `id` stays inside the process.
@@ -630,6 +832,30 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /** StateCount */
+        StateCount: {
+            /** Count */
+            count: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "trial" | "active" | "grace" | "expired" | "cancelled";
+        };
+        /**
+         * StatesResponse
+         * @description GET /api/analytics/states.
+         *
+         *     `total` is the same number `GET /api/subscribers` reports with no filters, because both walk
+         *     the engine once through the same iterator. The two screens sit side by side and a reader will
+         *     compare them.
+         */
+        StatesResponse: {
+            /** States */
+            states: components["schemas"]["StateCount"][];
+            /** Total */
+            total: number;
         };
         /**
          * SubscribeRequest
@@ -882,6 +1108,232 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_flow_api_analytics_flow_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                granularity?: "week" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_funnel_api_analytics_funnel_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunnelResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_quiet_api_analytics_quiet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuietResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_revenue_api_analytics_revenue_get: {
+        parameters: {
+            query?: {
+                months?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_states_api_analytics_states_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_page_api_audit_get: {
         parameters: {
             query?: {
