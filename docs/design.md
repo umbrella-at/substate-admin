@@ -360,13 +360,17 @@ the number has got the point.
 | plot | `--chart-plot`, `224px` |
 | between figures | `16px`, as between cards |
 
-`224px` is derived rather than chosen, from the busiest of the five. The states snapshot has five
-bars; five at the table's own `40px` row height come to `200px`, and the remaining `24px` is
-`4px` of gap in each of the six places there is one — between each pair and above and below.
+`224px` is the height of the canvas, and **the value axis is drawn inside it** rather than under
+it. What is left for the marks is that height less a line of `12px` type and its clearance, so the
+number is chosen against both ends of the range: the sparsest figure's bars reach the cap below,
+and the busiest still has five bars a reader can tell apart. Measured, because the arithmetic is
+the sort that reads convincingly and is wrong: three bars come out at the `40px` cap, five at
+about two-thirds of it.
 
 **A bar is never thicker than a table row.** A figure with three marks does not grow its bars to
 fill the plot: three slabs are a different chart from five bars, and the reader would be told that
-the two figures are measuring different things when they are not.
+the two figures are measuring different things when they are not. A figure with five is allowed to
+draw them thinner — the cap is a ceiling, not a height.
 
 Layout says a control's height is not a number, and this does not contradict it. A control's
 height follows its type and its padding; a plot has no type to follow, so the height is a value,
@@ -420,12 +424,15 @@ project has twice refused: `GRACE`, `TRIAL`, `ACTIVE`, `CANCELLED`, `EXPIRED`.
 | grid lines along the value axis | `--border`, `1px` |
 | grid lines along the category axis | none |
 | axis rule | none; the grid line at zero is the axis |
-| tick labels | `12px`, mono, `--text-muted` |
+| value-axis ticks | `12px`, mono, `--text-muted` |
+| category-axis ticks | `12px`, ui, `--text-muted` |
 | legend | `12px`, `--text-secondary`, above the plot, left, only where there are two series |
 | bar and line fill | the series colour at full strength; no gradient |
 
-Ticks are mono for the reason Typography gives: they are numbers compared down a column, and
-proportional digits make two of the same length look different lengths.
+The value axis is mono for the reason Typography gives: its ticks are numbers compared down a
+column, and proportional digits make two of the same length look different lengths. The category
+axis is not — a state's name is a name, and `Paid at least once` in mono is a sentence pretending
+to be an id.
 
 **A tooltip is a floating layer** and takes what Layout gives one — `--surface-2` with a
 `--border-strong` outline, `6px` radius, `13px`, `--text-primary`. No shadow, here as everywhere.
@@ -657,7 +664,7 @@ a month, and nobody can tell which half. So:
 | every utility resolves to something | `scripts/utilities.py` fails on a class name that produced no CSS |
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
 | a dialog's edge is measured against what is behind it | `scripts/contrast.py` composites `--scrim` over both surfaces and measures the outline on the result |
-| a colour reaches a canvas from this file | `scripts/colours.py` fails on a colour literal in the frontend sources, and on a token name the stylesheet does not declare |
+| a colour reaches a canvas from this file | `scripts/colours.py` reads every `.ts`, `.vue` and `.css` under `frontend/src` bar the palette itself, and fails on a colour literal or on a token name the stylesheet does not declare |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
 
@@ -699,6 +706,10 @@ reads the sources instead, with comments removed for the reason `utilities.py` g
 questions: is there a colour literal here, and does every token named here exist. The second is
 the one that matters — a token that does not exist resolves to the empty string, which draws
 nothing and says nothing, and the source still reads correctly.
+
+A colour literal is a hex, a colour function, or one of CSS's own named colours. The named ones are
+the specification's whole list rather than a shorter one somebody remembered: the first version
+held nineteen, and `crimson` and `cyan` walked through the entire gate.
 
 The same shape of silence is why `scripts/assets.py` exists. A generator that writes
 `@import url('https://fonts.googleapis.com/…')` into this stylesheet costs nothing visible: the
