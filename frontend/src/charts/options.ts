@@ -48,6 +48,12 @@ export function chartOptions(
 ): Shared {
   const grid = furniture('grid', read)
   const tick = furniture('tick', read)
+  // Mono on the VALUE axis for the reason Typography gives: proportional digits make two numbers
+  // of the same length look different lengths. A category is a name, not a number, so it takes
+  // the ui face — "Paid at least once" set in mono is a sentence pretending to be an id.
+  const ticks = { size: TICK_SIZE, family: furniture('tickFace', read) }
+  const labels = { size: TICK_SIZE, family: furniture('labelFace', read) }
+  const sentence = { size: TOOLTIP_TEXT, family: furniture('labelFace', read) }
   const said = tickFormat ?? format
   const label = (value: number | string): string =>
     typeof value === 'number' && said !== undefined ? said(value) : String(value)
@@ -57,20 +63,14 @@ export function chartOptions(
     border: { display: false },
     grid: { color: grid, drawTicks: false },
     // Six rules at most. A plot with ten is a grid somebody has to read past to see the marks.
-    ticks: {
-      color: tick,
-      font: { size: TICK_SIZE },
-      padding: 8,
-      maxTicksLimit: 6,
-      callback: label,
-    },
+    ticks: { color: tick, font: ticks, padding: 8, maxTicksLimit: 6, callback: label },
   }
   // `maxRotation: 0` and let Chart.js drop the labels that will not fit. A rotated tick is a
   // label a reader tilts their head for, and twelve months in half a column is where it happens.
   const categories = {
     border: { display: false },
     grid: { display: false },
-    ticks: { color: tick, font: { size: TICK_SIZE }, padding: 8, maxRotation: 0, autoSkip: true },
+    ticks: { color: tick, font: labels, padding: 8, maxRotation: 0, autoSkip: true },
   }
 
   return {
@@ -80,7 +80,9 @@ export function chartOptions(
     // On first paint only. A figure that replayed itself whenever a poll came back would tell the
     // whole story again every thirty seconds.
     animation: prefersReducedMotion() ? false : { duration: ENTRANCE },
-    animations: { colors: false, x: false, y: false },
+    // COLLECTION names, not property names. `Animations.configure` drops any entry that is not an
+    // object, so `x: false` and `y: false` disabled nothing and every update replayed the figure.
+    animations: { numbers: false, colors: false },
     scales: horizontal ? { x: values, y: categories } : { x: categories, y: values },
     plugins: {
       legend: {
@@ -89,7 +91,7 @@ export function chartOptions(
         position: 'top',
         labels: {
           color: furniture('legend', read),
-          font: { size: TICK_SIZE },
+          font: labels,
           boxWidth: 12,
           boxHeight: 2,
           usePointStyle: false,
@@ -101,8 +103,8 @@ export function chartOptions(
         borderWidth: 1,
         titleColor: furniture('tooltipText', read),
         bodyColor: furniture('tooltipText', read),
-        titleFont: { size: TOOLTIP_TEXT },
-        bodyFont: { size: TOOLTIP_TEXT },
+        titleFont: sentence,
+        bodyFont: sentence,
         cornerRadius: 6,
         displayColors: false,
         padding: 8,
