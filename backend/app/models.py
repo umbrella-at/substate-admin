@@ -314,7 +314,9 @@ class AuditLog(Base):
     # a copy here would be a second answer to a question `substate` already answers.
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
-    world_id: Mapped[str] = mapped_column(Text)
+    # Nullable, because an edit to a role is not a fact about a world. A sentinel would file
+    # it under a place it has nothing to do with, and the screen could not tell the two apart.
+    world_id: Mapped[str | None] = mapped_column(Text, default=None)
     # HMAC, never the address. The pepper is what stops the whole IPv4 space being a lookup table,
     # and no response carries this column: a truncated HMAC on a screen is not evidence.
     ip_hash: Mapped[str] = mapped_column(Text)

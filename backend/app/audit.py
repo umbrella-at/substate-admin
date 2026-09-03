@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal, get_args
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,9 @@ AuditAction = Literal[
     "subscription.redeem",
     "subscription.payment",
     "subscription.assign_program",
+    "role.create",
+    "role.update",
+    "role.delete",
 ]
 """What was asked for, named as the button names it.
 
@@ -43,7 +46,8 @@ being different is what makes that readable rather than confusing.
 
 AUDIT_ACTIONS: Final[tuple[AuditAction, ...]] = get_args(AuditAction)
 
-TargetType = Literal["subscription"]
+TargetType = Literal["subscription", "role"]
+"""What the row is about. A subscription lives in a world; a role lives in this panel."""
 
 OK: Final = "ok"
 REFUSED: Final = "refused"
@@ -61,13 +65,13 @@ class Entry:
     target_type: TargetType
     target_id: str
     ip_hash: str
+    world_id: str | None = None
+    """Where it happened, when that is a question. A role edit is not about a world."""
     payload: Mapping[str, Any] = field(default_factory=dict)
     """The arguments of the operation, and nothing else. No token, no password, no raw address."""
 
 
-async def record(
-    session: AsyncSession, entry: Entry, *, world_id: str, refusal: ErrorCode | None
-) -> None:
+async def record(session: AsyncSession, entry: Entry, *, refusal: ErrorCode | None) -> None:
     """Add one row. The caller's transaction is what decides whether it survives."""
     session.add(
         AuditLog(
@@ -78,7 +82,7 @@ async def record(
             outcome=OK if refusal is None else REFUSED,
             error_code=None if refusal is None else refusal.value,
             payload_json=dict(entry.payload),
-            world_id=world_id,
+            world_id=entry.world_id,
             ip_hash=entry.ip_hash,
         )
     )
@@ -129,7 +133,9 @@ async def perform(
     pending = world.sink.drain()
     if pending:
         await write_events(await session.connection(), world.id, pending)
-    await record(session, entry, world_id=world.id, refusal=code)
+    # The world is `perform`'s to name, not the caller's: an engine operation happens in the
+    # world it was run against, and an entry saying otherwise would be a row filed elsewhere.
+    await record(session, replace(entry, world_id=world.id), refusal=code)
     await session.commit()
 
     if refused is not None:

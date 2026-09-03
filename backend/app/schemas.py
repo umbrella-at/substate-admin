@@ -18,8 +18,9 @@ from pydantic.alias_generators import to_camel
 from substate import State
 
 from app.analytics.movements import Grain
-from app.audit import AuditAction
+from app.audit import AuditAction, TargetType
 from app.errors import ErrorCode
+from app.permissions import PermissionCode
 from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
 
 
@@ -359,13 +360,13 @@ class AuditEntry(ApiModel):
     occurred_at: datetime
     actor: AuditActor
     action: AuditAction
-    target_type: str
+    target_type: TargetType
     target_id: str
 
-    # Which world it happened in. The base world is rebuilt at every restart, so a row older than
-    # the last one names a subscriber whose state has been reset — which is why the screen links
-    # the target only when this matches the world it is looking at.
-    world_id: str
+    # Which world it happened in, when that is a question at all — null on a row about a role.
+    # The base world is rebuilt at every restart, so an older row names a subscriber who has been
+    # reset, which is why the screen links a target only when this matches the live world.
+    world_id: str | None = None
 
     outcome: Literal["ok", "refused"]
     error_code: ErrorCode | None = None
@@ -557,3 +558,56 @@ class RevenueResponse(ApiModel):
 
     currency: str
     months: list[RevenueMonth]
+
+
+class PermissionSummary(ApiModel):
+    """One permission a role can grant, with the sentence that says what it is for."""
+
+    code: str
+    description: str
+
+
+class RoleDetail(ApiModel):
+    """One role and everything the editor needs to draw it.
+
+    `holders` is here so the screen can say why a role cannot be deleted before somebody presses
+    the button and is told. `permissions` is sorted, so two roles granting the same set read the
+    same way down the column.
+    """
+
+    id: uuid.UUID
+    code: str
+    name: str
+    is_system: bool
+    permissions: list[str]
+    holders: int
+
+
+class RolesResponse(ApiModel):
+    """GET /api/roles: the roles, and the catalogue they may grant from.
+
+    The catalogue travels with them rather than under an endpoint of its own. One request draws
+    one screen, and the editor cannot then offer a checkbox for a permission the server has never
+    heard of.
+    """
+
+    items: list[RoleDetail]
+    permissions: list[PermissionSummary]
+
+
+class RoleWriteRequest(ApiModel):
+    """The editable half of a role: its name and what it grants.
+
+    `permissions` is typed as the catalogue rather than as strings, so a code this application
+    does not have is refused by the schema and named in `field` — the editor never sends one,
+    and a direct call gets told which value was wrong rather than a 500 from a foreign key.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    permissions: list[PermissionCode] = Field(default_factory=list)
+
+
+class CreateRoleRequest(RoleWriteRequest):
+    """POST /api/roles. The code is set once and never edited: it is what people call the role."""
+
+    code: str = Field(min_length=2, max_length=40, pattern=r"^[a-z][a-z0-9_-]*$")

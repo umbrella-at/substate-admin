@@ -41,9 +41,9 @@ async def _write(
                 target_type="subscription",
                 target_id=target,
                 ip_hash="0" * 64,
+                world_id=BASE_WORLD_ID,
                 payload={"note": target},
             ),
-            world_id=BASE_WORLD_ID,
             refusal=ErrorCode.PROMO_ALREADY_BOUND if refused else None,
         )
     await session.commit()

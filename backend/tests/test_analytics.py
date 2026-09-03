@@ -4,10 +4,9 @@ THE SNAPSHOT AND THE TABLE ARE ONE CLAIM. A reader opens the states figure besid
 list and compares them, so `sum(states) == states.total == subscribers.total` is asserted here
 rather than left to two pieces of code walking the engine the same way by habit.
 
-It is asserted twice: once on a freshly seeded world, and once after the clock has been wound
-forward and the engine ticked. The second run also asserts that the distribution MOVED — without
-that the test would pass against a world that had stopped, which is the shape of a check that
-proves nothing.
+It is asserted twice: on a freshly seeded world, and after the clock has been wound forward and
+the engine ticked. The second run also asserts that the distribution MOVED, without which it
+would pass against a world that had stopped — the shape of a check that proves nothing.
 
 The three journal figures answer a different question and are not compared with the table. What
 is asserted about them is the arithmetic that would otherwise be silently wrong: a funnel that

@@ -1,9 +1,8 @@
 """The five figures, one route each.
 
-Two of them read the engine and three read the journal, and the split is visible in the imports
-rather than buried: `standing` answers what is true now, `movements` answers what happened. Only
-the first kind can be compared with the subscriber table, and only `states` is the same question
-the table asks.
+Two read the engine and three read the journal, and the split is visible in the imports rather
+than buried: `standing` answers what is true now, `movements` answers what happened. Only
+`states` asks the question the subscriber table asks, and only it may be compared with it.
 
 The period defaults come off the world's clock rather than off the wall, so a world that has been
 wound forward is asked about the time it is actually in.

@@ -14,6 +14,7 @@ import { ref } from 'vue'
 
 import { ApiError, type AuditEntry, type AuditPage } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
+import { AUDIT_ACTIONS } from '@/domain/audit'
 import AuditView from '@/views/AuditView.vue'
 
 const routeQuery = ref<Record<string, string | string[]>>({})
@@ -149,12 +150,14 @@ describe('the four states', () => {
 })
 
 describe('the filters', () => {
-  // The six, named as a person would say them rather than as the codes they are stored under.
+  // Every action the vocabulary has, named as a person would say it rather than as the code it is
+  // stored under. Counted against the vocabulary rather than against a number written twice.
   it('offers every action, and nothing else', async () => {
     const wrapper = await render()
 
     expect(wrapper.findAll('fieldset').at(0)?.text()).toContain('Recorded a payment')
-    expect(wrapper.findAll('label')).toHaveLength(6)
+    expect(wrapper.findAll('fieldset').at(0)?.text()).toContain('Changed what a role grants')
+    expect(wrapper.findAll('label')).toHaveLength(AUDIT_ACTIONS.length)
   })
 
   it('offers three outcomes and no more', async () => {
