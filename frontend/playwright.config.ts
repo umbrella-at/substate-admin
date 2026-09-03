@@ -34,6 +34,21 @@ export const account = {
   password: process.env['E2E_PASSWORD'] ?? 'playwright-local-password',
 } as const
 
+/** The second account, and it exists for one scenario: a permission is not held, and both halves
+ *  of that — the control that is not drawn and the endpoint that refuses — are asserted against
+ *  the same running service. A `viewer` has every `*.read` code except `users` and `audit`. */
+export const viewer = {
+  email: process.env['E2E_VIEWER_EMAIL'] ?? 'e2e-viewer@substate-admin.test',
+  password: process.env['E2E_VIEWER_PASSWORD'] ?? 'playwright-local-password',
+} as const
+
+/** The third, which holds `users.read` and not `users.write`: the sharper half of the same rule,
+ *  where the screen opens and the controls on it do not exist. */
+export const support = {
+  email: process.env['E2E_SUPPORT_EMAIL'] ?? 'e2e-support@substate-admin.test',
+  password: process.env['E2E_SUPPORT_PASSWORD'] ?? 'playwright-local-password',
+} as const
+
 export default defineConfig({
   testDir: './e2e',
 

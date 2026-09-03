@@ -88,6 +88,12 @@ export const router = createRouter({
       component: () => import('@/views/AnalyticsView.vue'),
     },
     {
+      path: '/users',
+      name: 'users',
+      meta: { permission: 'users.read' },
+      component: () => import('@/views/UsersView.vue'),
+    },
+    {
       path: '/audit',
       name: 'audit',
       meta: { permission: 'audit.read' },
