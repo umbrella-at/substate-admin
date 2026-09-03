@@ -21,7 +21,7 @@
 11 53 backend/app/routers/auth.py
 2 9 backend/app/routers/health.py
 2 8 backend/app/routers/plans.py
-5 28 backend/app/routers/subscribers.py
+4 24 backend/app/routers/subscribers.py
 1 8 backend/app/routers/users.py
 2 11 backend/app/schema_filter.py
 8 34 backend/app/schemas.py
