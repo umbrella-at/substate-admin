@@ -142,7 +142,10 @@ function toggleUrgency(): void {
        Four rows, and the grouping is the argument. Search and Cohort narrow the whole table, so
        they share a row. State and Plan are one question each, so each gets its own with its label
        beside it. Actions are not filters and sit apart at the bottom. -->
-  <form class="flex flex-col gap-3" @submit.prevent>
+
+  <!-- Named, so it is a landmark. There is a second form in the frame now — the clock control —
+       and "the form on this page" stopped identifying anything. -->
+  <form class="flex flex-col gap-3" aria-label="Filters" @submit.prevent>
     <div class="flex flex-wrap items-end gap-4">
       <div class="w-full max-w-form">
         <AppInput v-model="text" label="Search" placeholder="Name or identifier" />

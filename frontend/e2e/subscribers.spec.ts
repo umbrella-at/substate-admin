@@ -252,7 +252,7 @@ test.describe('the subscriber table', () => {
     await page.getByLabel('Search').fill('zzzzz-nobody-has-this-name')
     await expect(page.getByText('No subscribers match these filters.')).toBeVisible()
     await expect(page.getByText('The demonstration world was not built.')).toHaveCount(0)
-    await expect(page.locator('form')).toBeVisible()
+    await expect(page.getByRole('form', { name: 'Filters' })).toBeVisible()
   })
 
   test('an empty result says the filters caused it and offers to clear them', async () => {
