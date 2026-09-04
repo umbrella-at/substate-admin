@@ -69,13 +69,33 @@ def normalize_email(raw: str) -> str:
 
 
 class Role(Base):
-    """A named bundle of permissions."""
+    """A named bundle of permissions.
+
+    `world_id` is NULL for the roles of this installation and set for a sandbox's own copies of
+    them, which a demonstration visitor may edit and break. The copies die with the world.
+    """
 
     __tablename__ = "roles"
 
+    __table_args__ = (
+        # Two rules, not one: a code is unique among this installation's roles, and unique among
+        # one sandbox's. `UNIQUE (world_id, code)` would say neither — Postgres counts NULLs as
+        # distinct, so it would let the real `admin` exist twice.
+        Index("ix_roles_code", "code", unique=True, postgresql_where=text("world_id IS NULL")),
+        Index(
+            "ix_roles_world_id_code",
+            "world_id",
+            "code",
+            unique=True,
+            postgresql_where=text("world_id IS NOT NULL"),
+        ),
+        {"schema": SCHEMA},
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=func.gen_random_uuid())
-    code: Mapped[str] = mapped_column(unique=True)
+    code: Mapped[str]
     name: Mapped[str]
+    world_id: Mapped[str | None] = mapped_column(Text, default=None)
 
     # System roles are force-synced from app.permissions on every deploy and may not be deleted;
     # that rule is enforced in the application, not by a constraint, because it is about who may
@@ -113,14 +133,33 @@ class RolePermission(Base):
 
 
 class User(Base):
-    """An operator of the admin panel."""
+    """An operator of the admin panel.
+
+    `world_id` is NULL for the operators of this installation and set for the invented ones a
+    sandbox is populated with, so that the demonstration's users screen has something on it that
+    nobody outside can see. They die with the world.
+    """
 
     __tablename__ = "users"
+
+    __table_args__ = (
+        # One address per installation, one address per sandbox. See the same pair on `roles`.
+        Index("ix_users_email", "email", unique=True, postgresql_where=text("world_id IS NULL")),
+        Index(
+            "ix_users_world_id_email",
+            "world_id",
+            "email",
+            unique=True,
+            postgresql_where=text("world_id IS NOT NULL"),
+        ),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, server_default=func.gen_random_uuid())
 
     # Stored lowercased by normalize_email() above.
-    email: Mapped[str] = mapped_column(unique=True)
+    email: Mapped[str]
+    world_id: Mapped[str | None] = mapped_column(Text, default=None)
 
     # argon2id. It never leaves the process: no schema exposes it and no log line may contain it.
     password_hash: Mapped[str]
@@ -343,3 +382,36 @@ class AuditLog(Base):
         Index("ix_audit_log_target_id_occurred_at", "target_id", occurred_at.desc()),
         {"schema": SCHEMA},
     )
+
+
+class DemoSandbox(Base):
+    """One demonstration world, as far as Postgres knows about it.
+
+    The world itself is in memory: an engine, a clock and a storage that no other process can see.
+    This row is what survives a restart, and the only thing it is for is that survival — it names a
+    world whose rows are still in four other tables and whose engine is gone.
+
+    Which is why the reaper reads it and the visitor never does. Nothing on any screen is drawn
+    from this table.
+    """
+
+    __tablename__ = "demo_sandboxes"
+
+    __table_args__ = (
+        # An expiry past the ceiling would be a sliding window that never closes, which is the one
+        # thing the ceiling exists to prevent.
+        CheckConstraint("expires_at <= ceiling_at", name="within_the_ceiling"),
+        {"schema": SCHEMA},
+    )
+
+    world_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Pushed forward by activity; the reaper takes whatever has fallen behind now.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    # created_at + the hard ceiling, set once. A visitor cannot hold a world past this by using it.
+    ceiling_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    # HMAC, never the address, exactly as the audit stores it.
+    ip_hash: Mapped[str] = mapped_column(Text)

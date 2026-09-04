@@ -112,7 +112,16 @@ async def login(
 
     # One statement: the joined eager load on User.role brings the role's code back with the row,
     # and the log line below needs it.
-    user = (await session.execute(select(User).where(User.email == email))).scalars().one_or_none()
+    #
+    # An operator of this installation, which is what `world_id IS NULL` means. A sandbox invents
+    # operators of its own and they have no password anybody was ever given; without the predicate
+    # `one_or_none` would raise on the address two worlds happen to share, and a 500 at the login
+    # form is the last place to discover it.
+    user = (
+        (await session.execute(select(User).where(User.email == email, User.world_id.is_(None))))
+        .scalars()
+        .one_or_none()
+    )
 
     if user is None:
         # A verification nobody asked for, against a hash of bytes that were discarded at import.
