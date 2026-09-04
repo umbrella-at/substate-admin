@@ -139,7 +139,7 @@
 2 15 frontend/src/stores/auth.spec.ts
 2 18 frontend/src/stores/auth.ts
 1 6 frontend/src/views/AuditView.spec.ts
-3 26 frontend/src/views/AuditView.vue
+2 18 frontend/src/views/AuditView.vue
 1 11 frontend/src/views/DashboardView.spec.ts
 3 20 frontend/src/views/DashboardView.vue
 2 14 frontend/src/views/LoginView.spec.ts

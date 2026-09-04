@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import { daysWound, modelTime } from '@/domain/clock'
+import { daysWound, modelClock, modelDate } from '@/domain/clock'
 
 describe('the moment a world is at', () => {
-  it('is stated in UTC, and says so', () => {
+  it('reads as a day and a time of day, in UTC, saying so', () => {
     // Everything else the panel shows about a world is UTC. A clock in the reader's own zone next
     // to a table in UTC is an hour of arithmetic somebody has to do to compare two numbers.
-    expect(modelTime(Date.parse('2026-09-04T06:30:00Z'))).toBe('4 Sept 2026, 06:30 UTC')
+    const at = Date.parse('2026-09-04T06:30:00Z')
+    expect(modelDate(at)).toBe('4 Sept 2026')
+    expect(modelClock(at)).toBe('06:30 UTC')
   })
 
   it('keeps a twenty-four hour clock', () => {
-    expect(modelTime(Date.parse('2026-09-04T18:05:00Z'))).toContain('18:05')
+    expect(modelClock(Date.parse('2026-09-04T18:05:00Z'))).toBe('18:05 UTC')
+  })
+
+  it('is split so that a longer month name cannot move the line', () => {
+    // The panel is 240px wide. One string wraps in September and not in October, and a reading
+    // that jumps a line between two months looks broken in one of them.
+    expect(modelDate(Date.parse('2026-09-04T06:30:00Z'))).not.toContain(':')
   })
 })
 

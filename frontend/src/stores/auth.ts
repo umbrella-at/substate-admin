@@ -24,6 +24,11 @@ export const useAuthStore = defineStore('auth', () => {
   const permissions = ref<ReadonlySet<string>>(new Set())
   const kind = ref<MeResponse['kind'] | null>(null)
 
+  /** The world this session reads: a sandbox's id for a demonstration visitor, null for an
+   *  operator, who reads the one `/api/health` names. Anything that has to know which world a row
+   *  belongs to asks here first. */
+  const worldId = ref<string | null>(null)
+
   /** False until the opening refresh has been answered one way or the other. The router guard
    *  waits on it; without that wait the first navigation of a reload reads an empty store and
    *  sends a signed-in person to the login page. */
@@ -39,6 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = me.user
     role.value = me.role
     kind.value = me.kind
+    worldId.value = me.worldId ?? null
     permissions.value = new Set(me.permissions)
   }
 
@@ -46,6 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     role.value = null
     kind.value = null
+    worldId.value = null
     permissions.value = new Set()
   }
 
@@ -99,5 +106,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, role, permissions, kind, ready, isAuthenticated, can, adopt, clear, bootstrap }
+  return {
+    user,
+    role,
+    permissions,
+    kind,
+    worldId,
+    ready,
+    isAuthenticated,
+    can,
+    adopt,
+    clear,
+    bootstrap,
+  }
 })

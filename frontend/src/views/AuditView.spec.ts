@@ -9,11 +9,13 @@
 
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 import { ApiError, type AuditEntry, type AuditPage } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
+import { useAuthStore } from '@/stores/auth'
 import { AUDIT_ACTIONS } from '@/domain/audit'
 import AuditView from '@/views/AuditView.vue'
 
@@ -65,6 +67,7 @@ async function render(answer: unknown = page()) {
   const wrapper = mount(AuditView, {
     global: {
       plugins: [
+        createPinia(),
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -95,11 +98,55 @@ beforeEach(() => {
   push.mockClear()
 })
 
+describe('which world the rows belong to', () => {
+  it("is the session's own, not the one /api/health names", async () => {
+    // `/api/health` is public and always names the base world. A demonstration visitor asking it
+    // would be told their own rows were recorded somewhere else, and every link on this screen
+    // would quietly stop existing — no error, just targets that are no longer clickable.
+    setActivePinia(createPinia())
+    useAuthStore().adopt({
+      kind: 'demo',
+      permissions: ['audit.read'],
+      role: { code: 'demo', name: 'Demo' },
+      user: {
+        createdAt: '2026-01-01T00:00:00Z',
+        email: 'you@example.com',
+        id: '00000000-0000-0000-0000-000000000000',
+        isActive: true,
+        lastLoginAt: null,
+      },
+      worldId: 'a-sandbox',
+    })
+
+    const wrapper = mount(AuditView, {
+      global: {
+        plugins: [
+          [
+            VueQueryPlugin,
+            { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+          ],
+        ],
+        provide: {
+          [apiClientKey as symbol]: {
+            audit: vi.fn(async () => page([entry({ worldId: 'a-sandbox' })])),
+            health: vi.fn(async () => health),
+          },
+        },
+        stubs: { RouterLink: RouterLinkStub },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.findAllComponents(RouterLinkStub).length).toBeGreaterThan(0)
+  })
+})
+
 describe('the four states', () => {
   it('shows the shape of the table while it is loading', async () => {
     const wrapper = mount(AuditView, {
       global: {
-        plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
+        plugins: [createPinia(), [VueQueryPlugin, { queryClient: new QueryClient() }]],
         provide: {
           [apiClientKey as symbol]: {
             audit: vi.fn(() => new Promise(() => {})),

@@ -22,7 +22,7 @@ import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
 import { useWorldClock } from '@/composables/useWorldClock'
-import { daysWound, modelTime } from '@/domain/clock'
+import { daysWound, modelClock, modelDate } from '@/domain/clock'
 
 const client = useApiClient()
 const queryClient = useQueryClient()
@@ -40,7 +40,8 @@ const STEPS = [
   { days: 30, label: 'Month' },
 ] as const
 
-const reading = computed(() => modelTime(now.value))
+const day = computed(() => modelDate(now.value))
+const time = computed(() => modelClock(now.value))
 const ahead = computed(() => daysWound(offsetMs.value))
 
 /** What the field holds, as a number of days, or null when it is not one this control may send.
@@ -82,7 +83,8 @@ async function wind(days: number): Promise<void> {
     <p class="text-caption text-text-muted">
       {{ isSandbox ? 'Your world' : 'The demonstration world' }}
     </p>
-    <p class="mt-1 font-numeric text-ui text-text-primary">{{ reading }}</p>
+    <p class="mt-1 font-numeric text-ui text-text-primary">{{ day }}</p>
+    <p class="font-numeric text-dense text-text-secondary">{{ time }}</p>
     <p v-if="ahead > 0" class="mt-1 text-caption text-text-muted">
       {{ ahead }} {{ ahead === 1 ? 'day' : 'days' }} ahead of today
     </p>
