@@ -20,7 +20,11 @@ import {
   type RevenueResponse,
   type StatesResponse,
 } from '@/api/client'
+import { createPinia, setActivePinia } from 'pinia'
+
 import { apiClientKey } from '@/api/provide'
+import { forgetWorldClock } from '@/composables/useWorldClock'
+import { useAuthStore } from '@/stores/auth'
 import AnalyticsView from '@/views/AnalyticsView.vue'
 
 const routeQuery = ref<Record<string, string | string[]>>({})
@@ -98,6 +102,28 @@ function health(seeded: boolean) {
   }
 }
 
+/** A session, because the clock query is guarded on one like every other query in the frame. */
+function signedIn() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().adopt({
+    kind: 'demo',
+    permissions: ['analytics.read'],
+    role: { code: 'demo', name: 'Demo' },
+    user: {
+      createdAt: '2026-01-01T00:00:00Z',
+      email: 'you@example.com',
+      id: '00000000-0000-0000-0000-000000000000',
+      isActive: true,
+      lastLoginAt: null,
+    },
+    worldId: 'w',
+  })
+  return pinia
+}
+
+const AT_ZERO = { now: '2026-09-04T00:00:00Z', offsetSeconds: 0, isSandbox: false, daysLeft: 365 }
+
 type Answers = {
   funnel?: () => Promise<unknown>
   flow?: () => Promise<unknown>
@@ -115,12 +141,16 @@ function render(over: Answers = {}) {
     quiet: over.quiet ?? (() => Promise.resolve(QUIET)),
     revenue: over.revenue ?? (() => Promise.resolve(REVENUE)),
     health: () => Promise.resolve(health(over.seeded ?? true)),
+    // The screen reads the world's clock for itself: a period measured against the browser's
+    // would describe the month before a visitor wound theirs forward.
+    clock: () => Promise.resolve(AT_ZERO),
   }
   // The figures are stubbed: they draw to a canvas, which is a picture rather than a fact, and
   // what this file is about is which region of the screen is on it.
   return mount(AnalyticsView, {
     global: {
       plugins: [
+        signedIn(),
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -314,5 +344,104 @@ describe('the flow figure', () => {
 
     expect(view.text()).toContain('do not subtract to a population')
     expect(view.text()).toContain('the states figure')
+  })
+})
+
+describe('which thirty days the figures ask about', () => {
+  it("is the world's last thirty days, not this browser's", async () => {
+    // A world wound a month forward has a last-thirty-days that ended a month ago here. Measured
+    // against the running service: the browser's window answered joined 64 / left 89 for a world
+    // whose own window held 69 / 109 — the month the visitor had just made was outside it.
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.parse('2026-09-04T00:00:00Z'))
+    forgetWorldClock()
+    const asked: URLSearchParams[] = []
+    const clock = {
+      now: '2026-10-04T00:00:00Z',
+      offsetSeconds: 30 * 24 * 60 * 60,
+      isSandbox: true,
+      daysLeft: 335,
+    }
+
+    const wrapper = mount(AnalyticsView, {
+      global: {
+        plugins: [
+          signedIn(),
+          [
+            VueQueryPlugin,
+            { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+          ],
+        ],
+        provide: {
+          [apiClientKey as symbol]: {
+            funnel: () => Promise.resolve(FUNNEL),
+            flow: (params: URLSearchParams) => {
+              asked.push(params)
+              return Promise.resolve(FLOW)
+            },
+            states: () => Promise.resolve(STATES),
+            quiet: () => Promise.resolve(QUIET),
+            revenue: () => Promise.resolve(REVENUE),
+            health: () => Promise.resolve(health(true)),
+            clock: () => Promise.resolve(clock),
+          },
+        },
+        stubs: { BarFigure: true, LineFigure: true },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const to = asked.at(-1)?.get('to') ?? ''
+    expect(Date.parse(to)).toBeGreaterThan(Date.parse('2026-10-01T00:00:00Z'))
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('asks the right window on the first request when the clock is already known', async () => {
+    // The warm case, which is the ordinary one: the frame fetched the clock before this screen
+    // was opened, so nothing changes while it mounts and there is no correction to wait for. The
+    // window has to be right at the first request or it is never corrected at all.
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.parse('2026-09-04T00:00:00Z'))
+    forgetWorldClock()
+    const asked: URLSearchParams[] = []
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wound = {
+      now: '2026-10-04T00:00:00Z',
+      offsetSeconds: 30 * 24 * 60 * 60,
+      isSandbox: true,
+      daysLeft: 335,
+    }
+    queryClient.setQueryData(['clock'], wound)
+
+    const wrapper = mount(AnalyticsView, {
+      global: {
+        plugins: [signedIn(), [VueQueryPlugin, { queryClient }]],
+        provide: {
+          [apiClientKey as symbol]: {
+            funnel: () => Promise.resolve(FUNNEL),
+            flow: (params: URLSearchParams) => {
+              asked.push(params)
+              return Promise.resolve(FLOW)
+            },
+            states: () => Promise.resolve(STATES),
+            quiet: () => Promise.resolve(QUIET),
+            revenue: () => Promise.resolve(REVENUE),
+            health: () => Promise.resolve(health(true)),
+            clock: () => Promise.resolve(wound),
+          },
+        },
+        stubs: { BarFigure: true, LineFigure: true },
+      },
+    })
+    await flushPromises()
+
+    expect(asked).toHaveLength(1)
+    expect(Date.parse(asked[0]?.get('to') ?? '')).toBeGreaterThan(
+      Date.parse('2026-10-01T00:00:00Z'),
+    )
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 })

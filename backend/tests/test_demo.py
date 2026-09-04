@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import audit
 from app.demo import sandboxes
 from app.demo.operators import INVENTED, VISITOR
-from app.demo.sandboxes import reap
+from app.demo.sandboxes import open_sandbox, reap
 from app.models import AuditLog, DemoSandbox, Role, User
 from app.security.ratelimit import DEMO_PER_IP, LOGIN_PER_IP, get_limiter
 from app.security.tokens import decode_access_token
@@ -491,3 +491,88 @@ async def test_the_ticker_is_what_collects_a_lapsed_sandbox(
             await asyncio.sleep(0)
 
     assert collected == [world.id]
+
+
+async def test_an_operator_can_still_sign_in_at_an_address_a_sandbox_invented(
+    client: AsyncClient, base_world: World, session: AsyncSession
+) -> None:
+    """THE COLLISION IS THE DOCUMENTED SETUP, NOT A HYPOTHETICAL.
+
+    A sandbox names its visitor `you@example.com`, and the README's own first command creates an
+    operator at exactly that address. Once uniqueness became two partial rules, both rows exist —
+    and the login statement's `one_or_none()` sees two of them.
+
+    What that produces is a 500 on the one page a stranger can reach, from the change that was
+    made to keep things safer.
+    """
+    account = await create_account(session, email=VISITOR)
+    await session.commit()
+    await open_one(client)
+
+    answered = await login(client, account)
+
+    assert answered.status_code == 200, answered.text
+
+
+async def test_a_sandbox_measures_its_life_on_the_clock_it_was_given(
+    client: AsyncClient, base_world: World, session: AsyncSession
+) -> None:
+    """The `now` a request carries, not the registry's own reading of the wall clock.
+
+    Everything else about a session — the pass's expiry, the rate-limit decision — is measured
+    against the injected clock, and a sandbox measured against a different one disagrees with its
+    own pass about when it ends.
+    """
+    moment = datetime(2030, 1, 1, tzinfo=UTC)
+
+    sandbox = await open_sandbox(session, get_registry(), ip_hash="x", now=moment)
+
+    assert sandbox.world.created_at == moment
+    assert sandbox.world.expires_at == moment + sandboxes.SANDBOX_TTL
+    assert sandbox.world.ceiling_at == moment + sandboxes.SANDBOX_CEILING
+
+
+async def test_a_world_nobody_can_reach_is_not_left_standing(
+    client: AsyncClient, base_world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A commit is a thing that fails, and it happens after the world is in the registry.
+
+    No token is minted, so the world is unreachable — and it would go on holding one of the slots
+    under the ceiling and being ticked into a journal it has no sandbox row for.
+    """
+
+    async def refuse(self: object) -> None:
+        raise RuntimeError("the commit failed")
+
+    monkeypatch.setattr(AsyncSession, "commit", refuse)
+
+    # The transport re-raises what the application did not handle, which is the honest shape of a
+    # 500 here: the point is what the registry holds afterwards.
+    with pytest.raises(RuntimeError):
+        await client.post(SESSION)
+
+    assert get_registry().sandboxes() == ()
+
+
+async def test_a_purge_that_failed_is_tried_again(client: AsyncClient, base_world: World) -> None:
+    """The reaper drops a world from the registry and then deletes its rows, in that order.
+
+    So a purge that fails leaves rows behind AND a world `expired()` will never name again: its
+    four thousand journal rows would wait for a restart that might be days away.
+    """
+    body = await open_one(client)
+    world = world_of(body["accessToken"])
+    world.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    attempts: list[str] = []
+
+    async def refuses_once(world_id: str) -> None:
+        attempts.append(world_id)
+        if len(attempts) == 1:
+            raise RuntimeError("the database was not there")
+
+    with pytest.raises(RuntimeError):
+        await reap(get_registry(), refuses_once)
+    collected = await reap(get_registry(), refuses_once)
+
+    assert attempts == [world.id, world.id]
+    assert collected == 1

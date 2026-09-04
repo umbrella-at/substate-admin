@@ -493,6 +493,28 @@ describe('a demonstration session', () => {
     expect(onSessionLost).not.toHaveBeenCalled()
   })
 
+  it('stops being a demonstration the moment a real session is refreshed into the tab', async () => {
+    // A tab that opened a demonstration and then signed in: `bootstrap` races the refresh against
+    // a five-second timeout, and when the timeout wins the stored pass is adopted first.
+
+    // The late refresh has to take the tab back, or this operator's next expiry is renewed at the
+    // demonstration door under their own signed-in identity.
+    const api = client()
+    api.setDemoToken('a-pass')
+    fetchMock.mockResolvedValueOnce(ok({ accessToken: 'an-operators-token', expiresIn: 900 }))
+
+    expect(await api.refresh()).toBe('renewed')
+
+    fetchMock
+      .mockResolvedValueOnce(refused(401, 'TOKEN_EXPIRED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'another', expiresIn: 900 }))
+      .mockResolvedValueOnce(ok({ fine: true }))
+    await api.request('/api/subscribers')
+
+    expect(paths()).not.toContain('/api/demo/session')
+    expect(rememberedDemoToken()).toBeNull()
+  })
+
   it('keeps the pass where a reload can find it, and drops it when a real session starts', () => {
     // There is no refresh cookie behind a demonstration, so without this F5 ends it while the
     // world is still standing and nothing in the browser can reach it again.

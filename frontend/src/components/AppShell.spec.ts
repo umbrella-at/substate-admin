@@ -28,7 +28,8 @@ vi.mock('vue-router', async (importOriginal) => ({
 
 /** The frame reads the world's clock for every screen inside it, so mounting it needs the query
  *  plumbing and a client that can answer. What the reading says is asserted elsewhere. */
-const stillThinking = { clock: () => new Promise(() => {}) }
+const asked = vi.fn(() => new Promise(() => {}))
+const stillThinking = { clock: asked }
 
 function render() {
   return mount(AppShell, {
@@ -66,5 +67,34 @@ describe('the sidebar', () => {
     const links = render().findAllComponents(RouterLinkStub)
     expect(links.at(0)?.attributes('aria-current')).toBeUndefined()
     expect(links.at(1)?.attributes('aria-current')).toBe('page')
+  })
+})
+
+describe('the world the frame is showing', () => {
+  it('asks what time it is there, whoever is looking', () => {
+    // The clock control is drawn only for whoever may press it, and `support` and `viewer` never
+    // hold `demo.control` — so a frame that read the clock only through the control would leave
+    // them measuring every relative time against their own browser on a world somebody wound.
+    const auth = useAuthStore()
+    // A session, because the query is guarded on one — every query mounted in the frame is, so
+    // that a teardown's refetch cannot turn a deliberate ending into a session-expired banner.
+    auth.adopt({
+      kind: 'user',
+      permissions: [],
+      role: { code: 'viewer', name: 'Viewer' },
+      user: {
+        createdAt: '2026-01-01T00:00:00Z',
+        email: 'viewer@example.com',
+        id: '00000000-0000-0000-0000-000000000000',
+        isActive: true,
+        lastLoginAt: null,
+      },
+    })
+    vi.spyOn(auth, 'can').mockReturnValue(false)
+    asked.mockClear()
+
+    render()
+
+    expect(asked).toHaveBeenCalled()
   })
 })

@@ -184,6 +184,10 @@ class WorldRegistry:
 
     _worlds: dict[str, World] = field(default_factory=dict)
 
+    _unpurged: set[str] = field(default_factory=set)
+    """Dropped, not yet deleted. On the registry rather than in the module, so that a second
+    registry — a test's, or a second process one day — does not inherit the first one's debts."""
+
     def create(
         self,
         world_id: str | None = None,
@@ -234,7 +238,23 @@ class WorldRegistry:
         return world
 
     def drop(self, world_id: str) -> bool:
-        return self._worlds.pop(world_id, None) is not None
+        """Take a world out of the process, and remember that its rows are still on disk.
+
+        Dropping and purging are two steps and the second can fail, so the registry keeps the
+        list: without it a dropped world is one `expired()` never names again, and its four
+        thousand journal rows wait for a restart that might be days away.
+        """
+        gone = self._worlds.pop(world_id, None) is not None
+        if gone:
+            self._unpurged.add(world_id)
+        return gone
+
+    def unpurged(self) -> tuple[str, ...]:
+        """Worlds this process has dropped whose rows nobody has deleted yet."""
+        return tuple(sorted(self._unpurged))
+
+    def purged(self, world_id: str) -> None:
+        self._unpurged.discard(world_id)
 
     def all(self) -> tuple[World, ...]:
         """Every world this process holds, expired ones included.

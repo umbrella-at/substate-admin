@@ -191,3 +191,30 @@ def test_no_endpoint_lets_the_caller_name_a_world(route: APIRoute) -> None:
     """
     named = {name for name in _accepted(route) if "world" in name.lower()}
     assert named == set(), f"{route.path} reads {sorted(named)} from the request"
+
+
+def test_every_guarded_route_declares_the_ending_it_can_serve() -> None:
+    """410 is not one route's answer: the identity resolver raises it, and that stands behind
+    every guarded route in the service.
+
+    A schema that omits it leaves a generated client with no type for the one failure that ends
+    every demonstration — and `error_responses` exists precisely so the published document
+    describes this envelope rather than FastAPI's default shape.
+    """
+    guarded = [route for route in api_routes(app) if 401 in route.responses]
+
+    assert guarded, "no route declares 401, so this asserts nothing"
+    missing = [route.path for route in guarded if 410 not in route.responses]
+    assert missing == []
+
+
+def test_the_door_a_stranger_presses_does_not_ask_for_a_token() -> None:
+    """FastAPI turns any HTTPBearer dependency into a REQUIRED scheme, `auto_error=False` or not.
+
+    The one route whose first press comes from somebody with no credential at all published itself
+    as needing one, which is what a generated SDK and the docs page both read.
+    """
+    door = next(route for route in api_routes(app) if route.path == "/demo/session")
+
+    security = (door.openapi_extra or {}).get("security", [])
+    assert {} in security, "the door must offer an alternative with no credential in it"

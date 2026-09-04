@@ -18,7 +18,7 @@ import LineFigure from '@/components/LineFigure.vue'
 import WorldNotBuilt from '@/components/WorldNotBuilt.vue'
 import { useAnalytics } from '@/composables/useAnalytics'
 import { useWorld } from '@/composables/useWorld'
-import { useWorldNow } from '@/composables/useWorldClock'
+import { useWorldClock } from '@/composables/useWorldClock'
 import {
   amount,
   bandLabel,
@@ -46,10 +46,14 @@ const period = computed<Preset>(() => periodFromRoute(route.query['period']))
  *  them on two periods invisibly. Refreshed when the period changes, because a tab left open for a
  *  day was otherwise asking about the thirty days ending yesterday. */
 
+/* Asked for here rather than taken from the frame: these five figures are the ones a wrong moment
+   ruins, and a screen that is right only when its parent happened to fetch something is a screen
+   with a dependency nobody can see. The query is shared, so asking twice costs one request. */
+
 /* THE WORLD'S MOMENT, NOT THE BROWSER'S, AND THE CLOCK CONTROL IS WHY. A world wound a month
    forward has a last-thirty-days that ended a month ago in this browser, so the funnel, the flow
    and the revenue would describe the month before the visitor arrived, beside a table that moved. */
-const worldNow = useWorldNow()
+const { now: worldNow } = useWorldClock()
 const now = ref(new Date(worldNow.value))
 watch(worldNow, (moment) => {
   // Only when the world itself moves, not with the beat. A window that slid every ten seconds

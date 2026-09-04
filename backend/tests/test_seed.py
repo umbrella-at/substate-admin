@@ -316,3 +316,17 @@ async def test_every_subscriber_has_a_name_and_a_last_seen(
 
     assert len(report.subscribers_projection) == report.subscribers
     assert all(name and seen is not None for _, name, seen in report.subscribers_projection)
+
+
+async def test_the_report_counts_the_events_the_run_produced(
+    seeded: tuple[SeedReport, OffsetClock, EventTally],
+) -> None:
+    """`events` was declared and never assigned, so it read zero for a run that made thousands.
+
+    It survived because both callers sidestepped it — one logs the COPY's own count, the other the
+    subscriber count — which is exactly how a field stays wrong.
+    """
+    report, _, tally = seeded
+
+    assert report.events == tally.events
+    assert report.events > 0

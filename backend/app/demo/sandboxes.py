@@ -55,15 +55,6 @@ MAX_SANDBOXES: Final = 32
 """How many may stand at once. See the module docstring for what one costs and why this number."""
 
 
-_unpurged: set[str] = set()
-"""Worlds dropped from the registry whose rows are not deleted yet.
-
-A purge runs in its own transaction and can fail — an unreachable database, a row written by a
-request that beat the reaper to it. Without this the world is already out of the registry, so
-nothing ever tries again and its four thousand journal rows wait for the next restart.
-"""
-
-
 class SandboxesAreFull(Exception):
     """The ceiling is reached. The caller answers with the base world on offer instead."""
 
@@ -177,18 +168,17 @@ async def reap(registry: WorldRegistry, purge: Purge, *, now: datetime | None = 
     start collects — the alternative is a visitor reading a table halfway through being emptied.
     """
     moment = now if now is not None else datetime.now(UTC)
-    doomed = [world.id for world in registry.expired(moment) if world.is_sandbox]
-    for world_id in doomed:
-        registry.drop(world_id)
-        _unpurged.add(world_id)
+    for world in registry.expired(moment):
+        if world.is_sandbox:
+            registry.drop(world.id)
 
     collected = 0
     # Whatever a previous pass could not finish comes with this one. Dropping from the registry
     # and purging are two steps, and a world that failed the second was never coming back to
     # `expired()` — its rows would have waited for a restart that might be days away.
-    for world_id in sorted(_unpurged):
+    for world_id in registry.unpurged():
         await purge(world_id)
-        _unpurged.discard(world_id)
+        registry.purged(world_id)
         collected += 1
         _log.info("sandbox_reaped", world_id=world_id, standing=len(registry.sandboxes()))
     return collected

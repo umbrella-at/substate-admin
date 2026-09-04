@@ -26,7 +26,11 @@ const FRESH_FOR = 30_000
 export function useAnalytics(period: Ref<Preset>, now: Ref<Date>) {
   const client = useApiClient()
   const params = computed(() => periodParams(period.value, now.value))
-  const key = computed(() => period.value.value)
+
+  /* THE MOMENT IS PART OF THE QUESTION, NOT ONLY THE PRESET. The window is thirty days ending at
+     `now`, and a world whose clock has been wound has a different `now` — so a key holding only
+     "last 30 days" files two different questions under one answer and never asks the second. */
+  const key = computed(() => [period.value.value, now.value.getTime()] as const)
 
   const funnel = useQuery<FunnelResponse>({
     queryKey: computed(() => ['analytics', 'funnel', key.value]),

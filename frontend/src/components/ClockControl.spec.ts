@@ -133,6 +133,23 @@ describe('winding the clock', () => {
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 
+  it('does not offer a step the world has no room for', async () => {
+    // The refusal carries the number of days left, but only after a press. A control that offers
+    // what will be refused is a control that has to be pressed to be understood.
+    const client = stubClient({
+      clock: vi.fn().mockResolvedValue({ ...AT_ZERO, offsetSeconds: 360 * 86400, daysLeft: 5 }),
+    })
+    const { wrapper } = await open(client)
+
+    const month = wrapper.findAll('button').find((button) => button.text() === 'Month')
+    const day = wrapper.findAll('button').find((button) => button.text() === 'Day')
+    expect(month?.attributes('disabled')).toBe('')
+    expect(day?.attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('input').setValue('30')
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBe('')
+  })
+
   it('says so when the world did not move', async () => {
     const client = stubClient({ advanceClock: vi.fn().mockRejectedValue(new Error('no')) })
     const { wrapper } = await open(client)
