@@ -251,9 +251,11 @@ async def test_an_edit_to_a_role_is_recorded_and_names_no_world(
     rows = (
         (
             await session.execute(
+                # Tie-broken by `seq`. The three writes share this test's outer transaction, so
+                # they share an `occurred_at` — and the order without it was the primary key's.
                 select(AuditLog)
                 .where(AuditLog.target_id == "recorded")
-                .order_by(AuditLog.occurred_at)
+                .order_by(AuditLog.occurred_at, AuditLog.seq)
             )
         )
         .scalars()

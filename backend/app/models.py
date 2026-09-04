@@ -320,12 +320,15 @@ class AuditLog(Base):
     # HMAC, never the address. The pepper is what stops the whole IPv4 space being a lookup table,
     # and no response carries this column: a truncated HMAC on a screen is not evidence.
     ip_hash: Mapped[str] = mapped_column(Text)
-    # `now()` is the transaction's timestamp, not the statement's, and each operation is its own
-    # request — so rows written together are simultaneous by construction, which is what the id
-    # tie-break in the reader's ORDER BY exists for.
+    # `now()` is the transaction's timestamp, not the statement's, so every row written inside one
+    # transaction is simultaneous by construction.
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    # Which is why the order is this, and not the primary key: a uuid tie-break put three edits to
+    # one role on screen as delete, update, create. The same fix 0005 made for the event journal.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=False))
 
     __table_args__ = (
         # A refusal with no code says only that something failed, which is the one thing an audit
@@ -334,8 +337,9 @@ class AuditLog(Base):
             "(outcome = 'refused') = (error_code IS NOT NULL)",
             name="error_code_set_when_refused",
         ),
-        # The screen reads one world newest first; a subscriber's own trail reads one target.
-        Index("ix_audit_log_world_id_occurred_at", "world_id", occurred_at.desc()),
+        # The screen reads one world newest first, tie-break included, so the ordering is the
+        # index rather than a step after it; a subscriber's own trail reads one target.
+        Index("ix_audit_log_world_id_occurred_at_seq", "world_id", occurred_at.desc(), seq.desc()),
         Index("ix_audit_log_target_id_occurred_at", "target_id", occurred_at.desc()),
         {"schema": SCHEMA},
     )
