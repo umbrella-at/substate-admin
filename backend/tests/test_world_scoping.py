@@ -10,12 +10,17 @@ operators on one address — and `one_or_none()` on the login path turns the sec
 """
 
 import uuid
+from collections.abc import Iterator
 
 import pytest
+from fastapi.dependencies.models import Dependant
+from fastapi.routing import APIRoute
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import api_routes, app
 from app.models import Role, User
 
 
@@ -106,3 +111,58 @@ async def test_one_sandbox_cannot_hold_a_role_code_twice(session: AsyncSession) 
 
     with pytest.raises(IntegrityError):
         await _role(session, code=code, world_id="world-one")
+
+
+def _model_names(annotation: object) -> set[str]:
+    """Every name a pydantic model accepts, its aliases included, at any depth."""
+    if not (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
+        return set()
+    found: set[str] = set()
+    for name, field in annotation.model_fields.items():
+        found.add(name)
+        if field.alias is not None:
+            found.add(field.alias)
+        found |= _model_names(field.annotation)
+    return found
+
+
+def _accepted(route: APIRoute) -> set[str]:
+    """Every name this route will read a value out of: path, query, header, cookie or body."""
+    names = set(route.param_convertors)
+    for dependant in _walk(route.dependant):
+        for field in (
+            *dependant.query_params,
+            *dependant.path_params,
+            *dependant.header_params,
+            *dependant.cookie_params,
+            *dependant.body_params,
+        ):
+            names |= {field.name, field.alias} | _model_names(field.field_info.annotation)
+    return names
+
+
+def _walk(dependant: Dependant) -> Iterator[Dependant]:
+    yield dependant
+    for sub in dependant.dependencies:
+        yield from _walk(sub)
+
+
+@pytest.mark.parametrize(
+    "route",
+    api_routes(app),
+    ids=[f"{sorted(r.methods or [])[0]} {r.path}" for r in api_routes(app)],
+)
+def test_no_endpoint_lets_the_caller_name_a_world(route: APIRoute) -> None:
+    """THE ISOLATION, AS A PROPERTY OF THE ROUTER RATHER THAN AS A GREP DONE ONCE.
+
+    A demo session's world is a claim inside a signed token, and a request that could name one
+    would be a request that could name somebody else's.
+
+    Today no model has such a field, which is exactly why this is worth asserting: the day somebody
+    adds `worldId` to a filter object for a good local reason, nothing else in the suite notices.
+
+    Sub-dependencies are walked too, and pydantic models are opened to any depth, because a field
+    buried in a nested query model is read from the request just as surely as a top-level one.
+    """
+    named = {name for name in _accepted(route) if "world" in name.lower()}
+    assert named == set(), f"{route.path} reads {sorted(named)} from the request"

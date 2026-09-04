@@ -18,6 +18,7 @@ edit answers with permissions the database no longer grants.
 """
 
 import uuid
+from datetime import timedelta
 from typing import Final
 
 import pytest
@@ -41,7 +42,7 @@ from app.deps import (
 )
 from app.main import API_PREFIX, api_routes, app
 from app.permissions import ROLE_CODES, SYSTEM_ROLES, RoleCode, system_role
-from app.worlds.registry import World
+from app.worlds.registry import World, get_registry
 from support import Clock, bearer, create_account, envelope, role_id_for
 
 
@@ -204,15 +205,19 @@ async def test_the_permission_matrix(
 @pytest.mark.parametrize(
     ("route", "declaration"), _guarded(), ids=[f"{_method(r)} {_url(r)}" for r, _ in _guarded()]
 )
-async def test_a_demo_token_reaches_no_guarded_route(
+async def test_a_demo_token_whose_world_is_gone_reaches_no_guarded_route(
     client: AsyncClient,
     session: AsyncSession,
     clock: Clock,
     route: APIRoute,
     declaration: RouteDeclaration,
 ) -> None:
-    """A demo token names a world and drives its clock. Every route here is about a real account,
-    and the refusal is by token type rather than by which role happens to hold demo.control."""
+    """The ordinary end of every demonstration, on every route at once.
+
+    Worlds live in memory, so an hour passing and a deploy restarting the process are the same
+    event from outside — and the answer is the same on all of them, before the subject is even
+    looked up.
+    """
     account = await create_account(session, email="demo-session@example.com", role_code="demo")
     method = _method(route)
 
@@ -221,6 +226,27 @@ async def test_a_demo_token_reaches_no_guarded_route(
         _url(route),
         headers=bearer(account, now=clock.now, typ="demo", world_id=uuid.uuid4()),
         json=None if method == "GET" else {},
+    )
+
+    assert response.status_code == 410
+    assert envelope(response)["code"] == "SANDBOX_GONE"
+
+
+async def test_a_demo_token_cannot_name_an_operator_of_this_installation(
+    client: AsyncClient, session: AsyncSession, clock: Clock
+) -> None:
+    """THE ISOLATION, ASSERTED FROM THE SIDE IT WOULD BE BROKEN FROM.
+
+    A demo token is signed by this service, so nothing about the signature says which rows it may
+    reach. The subject is looked up together with the world, and an operator of this installation
+    carries no world — so a demo token naming one finds nothing and is refused.
+    """
+    world = get_registry().create(str(uuid.uuid4()), ttl=timedelta(minutes=60))
+    operator = await create_account(session, email="real@example.com", role_code="admin")
+
+    response = await client.get(
+        "/api/subscribers",
+        headers=bearer(operator, now=clock.now, typ="demo", world_id=uuid.UUID(world.id)),
     )
 
     assert response.status_code == 401
