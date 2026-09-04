@@ -56,6 +56,8 @@ class ErrorCode(StrEnum):
     ROLE_IS_SYSTEM = auto()
     ROLE_IN_USE = auto()
     ROLE_CODE_TAKEN = auto()
+    SANDBOX_GONE = auto()
+    SANDBOX_FULL = auto()
 
     # Refusals that came out of `substate`. Each name is the exception's own, mechanically
     # respelled — `app.subscribers.operations` asserts that at import, so a code here and the
@@ -130,6 +132,19 @@ _DEFAULTS: Final[Mapping[ErrorCode, tuple[int, str]]] = MappingProxyType(
         ErrorCode.UNKNOWN_REFERRAL_PROGRAM: (
             422,
             "No referral programme is registered under that id.",
+        ),
+        # 410 rather than 404, and one code for two endings. A demonstration that ran out of time
+        # and one whose process was restarted under it are the same event from outside, and the
+        # panel's answer to both is the same: it was here, it is over, start another.
+        ErrorCode.SANDBOX_GONE: (
+            410,
+            "This demonstration has ended. Everything in it was invented and is now gone; "
+            "starting another takes one click.",
+        ),
+        ErrorCode.SANDBOX_FULL: (
+            503,
+            "Every demonstration slot is in use just now. They are handed back within the hour, "
+            "and the panel can be read in the meantime.",
         ),
     }
 )

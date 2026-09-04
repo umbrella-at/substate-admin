@@ -66,6 +66,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "S"]
 # The seeder's whole purpose is a reproducible pseudo-random history: `random` is the right
 # tool and `secrets` would destroy the property the determinism test rests on.
 "app/seed/*" = ["S311"]
+# The invented colleagues in a sandbox are drawn from the seeder's own name generator, for the
+# same reason and with the same requirement: two visitors must meet the same people.
+"app/demo/operators.py" = ["S311"]
 # S101 asserts are how a test states its expectation, and every "password" in a fixture is a
 # literal by definition. Relaxed here and nowhere else.
 "tests/**/*.py" = ["S101", "S105", "S106", "S311"]

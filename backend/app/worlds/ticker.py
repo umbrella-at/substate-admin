@@ -24,8 +24,15 @@ _log = structlog.get_logger(__name__)
 
 TICK_INTERVAL = timedelta(seconds=30)
 
+REAP_INTERVAL = timedelta(minutes=1)
+"""How often lapsed sandboxes are collected. A world costs half a megabyte, so the cost of being
+a minute late is nothing; the cost of never running is a process that fills up."""
+
 Recorder = Callable[[World], Awaitable[None]]
 """Writes down whatever a world has emitted. The ticker knows nothing about the database."""
+
+Reaper = Callable[[], Awaitable[int]]
+"""Collects whatever has lapsed, and says how many went. Also knows about the database."""
 
 
 async def tick_once(
@@ -66,18 +73,32 @@ async def tick_once(
 async def run_ticker(
     registry: WorldRegistry,
     record: Recorder | None = None,
+    reap: Reaper | None = None,
     *,
     interval: timedelta = TICK_INTERVAL,
+    reap_every: timedelta = REAP_INTERVAL,
 ) -> None:
-    """Tick every `interval` until cancelled.
+    """Tick every `interval`, collecting lapsed sandboxes as they come due, until cancelled.
 
-    Cancellation is the normal way this ends — the lifespan cancels it on shutdown — so it is
-    allowed through rather than logged as a failure.
+    THE REAPER RUNS HERE RATHER THAN AS A TASK OF ITS OWN, AND THAT IS THE WHOLE POINT.
+
+    Two tasks would interleave at every await: the reaper drops a world and deletes its rows while
+    the tick loop is midway through its snapshot, and the recorder then COPYs fresh events for a
+    world that no longer exists — rows nothing will ever clean up. One loop cannot race itself.
+
+    Reaping first, so that a world which lapsed during the sleep is gone before anything writes on
+    its behalf. Cancellation is the normal way this ends — the lifespan cancels it on shutdown — so
+    it is allowed through rather than logged as a failure.
     """
     _log.info("ticker_started", interval_seconds=interval.total_seconds())
+    since_reap = timedelta()
     try:
         while True:
             await asyncio.sleep(interval.total_seconds())
+            since_reap += interval
+            if reap is not None and since_reap >= reap_every:
+                since_reap = timedelta()
+                await _reap_once(reap)
             produced = await tick_once(registry, record)
             if produced:
                 _log.info("worlds_ticked", events=produced, worlds=len(registry.live()))
@@ -86,19 +107,40 @@ async def run_ticker(
         raise
 
 
+async def _reap_once(reap: Reaper) -> None:
+    """Collect, and survive a failure to. An unreachable database is a reason to try again in a
+    minute, not a reason to stop every world in the process from moving."""
+    try:
+        collected = await reap()
+    except Exception as failure:  # deliberately total: see the docstring
+        _log.error(
+            "sandbox_reaping_failed",
+            error=type(failure).__name__,
+            detail=str(failure),
+            exc_info=True,
+        )
+        return
+    if collected:
+        _log.info("sandboxes_reaped", worlds=collected)
+
+
 @contextlib.asynccontextmanager
 async def ticking(
     registry: WorldRegistry,
     record: Recorder | None = None,
+    reap: Reaper | None = None,
     *,
     interval: timedelta = TICK_INTERVAL,
+    reap_every: timedelta = REAP_INTERVAL,
 ) -> AsyncIterator[asyncio.Task[None]]:
     """Run the ticker for the lifetime of the block, and make sure it is gone afterwards.
 
     The await on cancellation is not ceremony: without it the task can outlive the loop it was
     started on, and the process holds a reference to a world that is being torn down.
     """
-    task = asyncio.create_task(run_ticker(registry, record, interval=interval))
+    task = asyncio.create_task(
+        run_ticker(registry, record, reap, interval=interval, reap_every=reap_every)
+    )
     try:
         yield task
     finally:

@@ -86,11 +86,33 @@ async def purge_orphans(connection: AsyncConnection, live_world_ids: Sequence[st
     if not live_world_ids:
         return 0
     ids = list(live_world_ids)
+
+    # The same order purge_sandbox keeps, and for the same two RESTRICT keys. A restart is where
+    # this matters most: sandboxes live in memory, so every one of them is an orphan by the time
+    # this runs, and their operators would otherwise pile up across deploys.
+    await connection.execute(
+        text(
+            "DELETE FROM admin.audit_log WHERE actor_user_id IN "
+            "(SELECT id FROM admin.users WHERE world_id IS NOT NULL AND world_id <> ALL(:ids))"
+        ),
+        {"ids": ids},
+    )
+    await connection.execute(
+        text("DELETE FROM admin.users WHERE world_id IS NOT NULL AND world_id <> ALL(:ids)"),
+        {"ids": ids},
+    )
+    await connection.execute(
+        text("DELETE FROM admin.roles WHERE world_id IS NOT NULL AND world_id <> ALL(:ids)"),
+        {"ids": ids},
+    )
     result = await connection.execute(
         text("DELETE FROM admin.event_journal WHERE world_id <> ALL(:ids)"), {"ids": ids}
     )
     await connection.execute(
         text("DELETE FROM admin.subscriber_view WHERE world_id <> ALL(:ids)"), {"ids": ids}
+    )
+    await connection.execute(
+        text("DELETE FROM admin.demo_sandboxes WHERE world_id <> ALL(:ids)"), {"ids": ids}
     )
     return result.rowcount or 0
 
@@ -152,3 +174,60 @@ async def write_projection(
             )
             written += 1
     return written
+
+
+async def rewrite_projection(
+    connection: AsyncConnection, world_id: str, subscribers: Iterable[ProjectedSubscriber]
+) -> int:
+    """Replace a world's projection with this one.
+
+    Delete and COPY rather than an upsert, because COPY cannot carry ON CONFLICT and this table
+    is a few hundred rows.
+
+    The pair has to be one transaction: between them the world has no names and no activity at
+    all, and every reader treats a missing row as "never here".
+
+    Not `purge_world`, which would take the event journal with it — and the funnel, the flow and
+    the revenue figures are read from that journal.
+    """
+    await connection.execute(
+        text("DELETE FROM admin.subscriber_view WHERE world_id = :world"), {"world": world_id}
+    )
+    return await write_projection(connection, world_id, subscribers)
+
+
+async def purge_sandbox(connection: AsyncConnection, world_id: str) -> None:
+    """Delete everything one sandbox owns, in the only order the foreign keys allow.
+
+    `audit_log.actor_user_id` and `users.role_id` are both ON DELETE RESTRICT, so the audit goes
+    before its actors and the operators before their roles.
+
+    Nothing in the database enforces the sequence — there is no worlds table to hang a cascade off
+    — so it is four statements somebody keeps in order, which is why they are here and not spread
+    across callers.
+
+    THE AUDIT DIES WITH THE WORLD, WHICH IS THE OPPOSITE OF THE RULE FOR EVERY OTHER ROW IN IT.
+
+    That table is a record of people and is deliberately not purged with the base world. A demo
+    actor is not a person: they are invented at the door and gone in an hour.
+
+    Keeping their rows would mean keeping the `users` row each one points at, forever, for every
+    passer-by who pressed a button, and the audit would fill with operators who never existed.
+    """
+    await connection.execute(
+        text(
+            "DELETE FROM admin.audit_log WHERE actor_user_id IN "
+            "(SELECT id FROM admin.users WHERE world_id = :world)"
+        ),
+        {"world": world_id},
+    )
+    await connection.execute(
+        text("DELETE FROM admin.users WHERE world_id = :world"), {"world": world_id}
+    )
+    await connection.execute(
+        text("DELETE FROM admin.roles WHERE world_id = :world"), {"world": world_id}
+    )
+    await purge_world(connection, world_id)
+    await connection.execute(
+        text("DELETE FROM admin.demo_sandboxes WHERE world_id = :world"), {"world": world_id}
+    )

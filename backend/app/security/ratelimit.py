@@ -61,7 +61,18 @@ LOGIN_PER_IP: Final = RateLimitRule("login_ip", 20, timedelta(minutes=15))
 # credential, and presenting a bad one twice already ends the session.
 REFRESH_PER_IP: Final = RateLimitRule("refresh_ip", 60, timedelta(minutes=1))
 
-_ALL_RULES: Final = (LOGIN_PER_EMAIL, LOGIN_PER_IP, REFRESH_PER_IP)
+# Building a demonstration world costs a seventh of a second of the only CPU there is, so this is
+# a valve on that rather than a security boundary: the ceiling on how many may stand at once is
+# what actually bounds the box.
+
+# Ten, not five, because an office watching together shares one address and the sixth person being
+# told to wait is a worse failure than the eleventh. Its own bucket, so a visitor cannot spend an
+# operator's allowance to sign in — and cannot borrow one.
+DEMO_PER_IP: Final = RateLimitRule("demo_ip", 10, timedelta(minutes=15))
+
+# Every rule, and the sweep's horizon is computed from it. A rule left out of this tuple has its
+# counters swept at the shortest window here, which reads as enforced and is not.
+_ALL_RULES: Final = (LOGIN_PER_EMAIL, LOGIN_PER_IP, REFRESH_PER_IP, DEMO_PER_IP)
 _LONGEST_WINDOW: Final = max(rule.window for rule in _ALL_RULES)
 _SWEEP_INTERVAL: Final = timedelta(minutes=5)
 

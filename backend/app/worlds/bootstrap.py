@@ -78,7 +78,7 @@ async def build_base_world(
             # empty against a world that has a history, which reads as data loss rather than as a
             # restart.
             await purge_world(connection, BASE_WORLD_ID)
-            await purge_orphans(connection, [w.id for w in registry.live()])
+            await purge_orphans(connection, [w.id for w in registry.all()])
             written = await write_events(connection, BASE_WORLD_ID, world.sink.drain())
             await write_projection(
                 connection,

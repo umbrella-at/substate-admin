@@ -110,6 +110,11 @@ class World:
     sink: EventSink
     created_at: datetime
     expires_at: datetime | None = None
+
+    ceiling_at: datetime | None = None
+    """The far end, set once. A sandbox is extended by being used, and this is what it is extended
+    towards rather than past — without it, a visitor who keeps a tab open keeps a world forever."""
+
     seeded: bool = False
 
     population: Population | None = None
@@ -123,6 +128,32 @@ class World:
     def subscribers(self) -> set[str]:
         """Who exists in this world, as the sink has seen them."""
         return self.sink.subscribers
+
+    @property
+    def is_sandbox(self) -> bool:
+        """Whether this world is somebody's demonstration rather than the one everybody reads."""
+        return self.expires_at is not None
+
+    def alive_at(self, moment: datetime) -> bool:
+        return self.expires_at is None or self.expires_at > moment
+
+    def extend(self, *, ttl: timedelta, now: datetime) -> datetime:
+        """Push the expiry out to `now + ttl`, never past the ceiling and never backwards.
+
+        Both guards earn their place. Without the ceiling a tab left open holds a world for as long
+        as the process lives; without the second, a request arriving late behind a slower one would
+        pull the expiry back in and reap a session somebody is using.
+
+        A world with no expiry is the base world, and extending it is a programming error rather
+        than a request anybody can make — so it raises instead of quietly doing nothing.
+        """
+        if self.expires_at is None:
+            raise ValueError("the base world does not expire")
+        wanted = now + ttl
+        if self.ceiling_at is not None:
+            wanted = min(wanted, self.ceiling_at)
+        self.expires_at = max(self.expires_at, wanted)
+        return self.expires_at
 
 
 @dataclass(slots=True)
@@ -147,6 +178,7 @@ class WorldRegistry:
         *,
         on_event: Callable[[Event], None] | None = None,
         ttl: timedelta | None = None,
+        ceiling: timedelta | None = None,
         offset: timedelta = timedelta(),
         default_program: ReferralProgram | None = None,
     ) -> World:
@@ -155,6 +187,10 @@ class WorldRegistry:
         `on_event` is passed through the sink rather than to the engine: the engine accepts one
         sink and accepts it once, so anything that wants to watch a world has to go through the
         one object that already does.
+
+        Replacing rather than refusing is what the base world's rebuild at every start needs, and
+        it is a trap for everything else: extending a sandbox means `extend`, because a second
+        `create` under the same id silently throws away the world somebody is looking at.
         """
         identifier = world_id if world_id is not None else str(uuid.uuid4())
         clock = OffsetClock(offset)
@@ -171,6 +207,7 @@ class WorldRegistry:
             sink=sink,
             created_at=now,
             expires_at=None if ttl is None else now + ttl,
+            ceiling_at=None if ceiling is None else now + ceiling,
         )
         self._worlds[identifier] = world
         return world
@@ -187,18 +224,29 @@ class WorldRegistry:
     def drop(self, world_id: str) -> bool:
         return self._worlds.pop(world_id, None) is not None
 
-    def live(self) -> tuple[World, ...]:
+    def all(self) -> tuple[World, ...]:
+        """Every world this process holds, expired ones included.
+
+        What a purge of rows belonging to worlds nobody remembers has to be given. Handing it
+        `live()` instead deletes the journal of a sandbox that has lapsed but not yet been reaped
+        — out from under a visitor who is still holding a token for it.
+        """
+        return tuple(self._worlds.values())
+
+    def live(self, now: datetime | None = None) -> tuple[World, ...]:
         """Every world that has not expired, base first."""
-        now = datetime.now(UTC)
-        alive = [w for w in self._worlds.values() if w.expires_at is None or w.expires_at > now]
+        moment = now if now is not None else datetime.now(UTC)
+        alive = [w for w in self._worlds.values() if w.alive_at(moment)]
         alive.sort(key=lambda w: (w.id != BASE_WORLD_ID, w.created_at))
         return tuple(alive)
 
-    def expired(self) -> tuple[World, ...]:
-        now = datetime.now(UTC)
-        return tuple(
-            w for w in self._worlds.values() if w.expires_at is not None and w.expires_at <= now
-        )
+    def expired(self, now: datetime | None = None) -> tuple[World, ...]:
+        moment = now if now is not None else datetime.now(UTC)
+        return tuple(w for w in self._worlds.values() if not w.alive_at(moment))
+
+    def sandboxes(self) -> tuple[World, ...]:
+        """Every world that is somebody's demonstration. What the ceiling is counted against."""
+        return tuple(w for w in self._worlds.values() if w.is_sandbox)
 
     def __len__(self) -> int:
         return len(self._worlds)
