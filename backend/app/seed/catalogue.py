@@ -15,13 +15,16 @@ from substate import Accrual, Period, Plan, PromoCode, PromoKind, ReferralProgra
 # payment, and `Payment` has no currency field at all — so it is the panel that has to keep it
 # honest.
 PLANS: Final[tuple[Plan, ...]] = (
+    # Six days of courtesy, not two. The weekly plan renews thirty-nine times a year, so it makes
+    # most of the missed payments here and held them the shortest — which is why standing GRACE
+    # averaged three and emptied on one day in forty. Six is still under the period.
     Plan(
         id="weekly",
         price=200,
         currency="USD",
         period=Period.days(7),
         trial_days=0,
-        grace_days=2,
+        grace_days=6,
     ),
     Plan(
         id="monthly",
@@ -91,6 +94,16 @@ REFERRAL_PROGRAMS: Final[tuple[ReferralProgram, ...]] = (USERS_PROGRAM, PARTNERS
 """`USERS_PROGRAM` is the engine's default: a referrer nobody assigned is on it."""
 
 PLAN_BY_ID: Final[dict[str, Plan]] = {plan.id: plan for plan in PLANS}
+
+CURRENCY: Final = PLANS[0].currency
+"""What this world sells in, and the reason the revenue figure may add its payments up.
+
+A payment carries no currency — `Payment` has no such field — so a sum over them is only a sum of
+money while every plan agrees. The guard below is what keeps that from becoming untrue quietly.
+"""
+
+if {plan.currency for plan in PLANS} != {CURRENCY}:
+    raise RuntimeError("the catalogue sells in more than one currency; revenue cannot be summed")
 
 # How often each commitment is chosen. The weighting toward short periods is load-bearing rather
 # than decorative: GRACE is fed by renewal frequency, and an annual subscriber contributes one

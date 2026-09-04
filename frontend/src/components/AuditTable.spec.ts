@@ -123,3 +123,36 @@ describe('the identity cells', () => {
     expect(wrapper.emitted('filterTarget')).toEqual([['sub-0001']])
   })
 })
+
+/**
+ * A role row is not about a subscriber, and the world column it has no value for used to make it
+ * read as one from another world.
+ */
+describe('a row about a role', () => {
+  const edit = entry({
+    action: 'role.update',
+    targetType: 'role',
+    targetId: 'analysts',
+    worldId: null,
+    payload: { name: 'Analysts', permissions: ['analytics.read'] },
+  })
+
+  it('is not offered as a subscriber to follow', () => {
+    const view = render([edit])
+    expect(view.findAllComponents(RouterLinkStub)).toHaveLength(0)
+    expect(view.text()).toContain('analysts')
+  })
+
+  // It said "Recorded in world null", which is the world column having no value said as though it
+  // had one.
+  it('says what it is rather than naming a world it has none of', () => {
+    const title = render([edit]).find('button[title]').attributes('title')
+    expect(title).toBe('A role, which belongs to this panel rather than to a world')
+    expect(title).not.toContain('null')
+  })
+
+  it('still leaves a subscriber in the live world a link', () => {
+    const view = render([entry(), edit])
+    expect(view.findAllComponents(RouterLinkStub)).toHaveLength(1)
+  })
+})

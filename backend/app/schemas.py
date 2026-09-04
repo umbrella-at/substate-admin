@@ -10,15 +10,17 @@ column by accident.
 """
 
 import uuid
-from datetime import datetime
-from typing import Any, Literal
+from datetime import datetime, timedelta
+from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 from substate import State
 
-from app.audit import AuditAction
+from app.analytics.movements import Grain
+from app.audit import AuditAction, TargetType
 from app.errors import ErrorCode
+from app.permissions import PermissionCode
 from app.subscribers.query import Cohort, SubscriberQuery, parse_sort
 
 
@@ -358,13 +360,13 @@ class AuditEntry(ApiModel):
     occurred_at: datetime
     actor: AuditActor
     action: AuditAction
-    target_type: str
+    target_type: TargetType
     target_id: str
 
-    # Which world it happened in. The base world is rebuilt at every restart, so a row older than
-    # the last one names a subscriber whose state has been reset — which is why the screen links
-    # the target only when this matches the world it is looking at.
-    world_id: str
+    # Which world it happened in, when that is a question at all — null on a row about a role.
+    # The base world is rebuilt at every restart, so an older row names a subscriber who has been
+    # reset, which is why the screen links a target only when this matches the live world.
+    world_id: str | None = None
 
     outcome: Literal["ok", "refused"]
     error_code: ErrorCode | None = None
@@ -442,3 +444,183 @@ class SubscriberQueryParams(ApiModel):
             cohort=Cohort(self.cohort) if self.cohort else None,
             search=self.q,
         )
+
+
+MAX_PERIOD: Final = timedelta(days=365 * 5)
+"""How long a period may be. Every bucket of it is a mark on a plot, and the widest the interface
+asks for is a year; five is room to ask by hand without a request that answers with a quarter of a
+million points, or one that walks the bucket arithmetic past `datetime.max`."""
+
+
+class PeriodParams(ApiModel):
+    """`?from=&to=` on the two figures that ask about a stretch of time.
+
+    Both are optional and the route fills them from the world's own clock, not the wall clock: a
+    world that has been wound forward keeps its journal in its own time, and a default computed
+    from `datetime.now` would ask about a period the world has not reached.
+    """
+
+    # AWARE, NOT MERELY A DATETIME. A naive value has no instant, and the bucket arithmetic that
+    # follows would floor it in one zone while Postgres grouped the rows in another — which
+    # answered 200 with a dense series of zeros rather than saying the input was wrong.
+    since: AwareDatetime | None = Field(default=None, alias="from")
+    until: AwareDatetime | None = Field(default=None, alias="to")
+
+    @model_validator(mode="after")
+    def _a_bounded_stretch_forwards(self) -> "PeriodParams":
+        if self.since is None or self.until is None:
+            return self
+        if self.since >= self.until:
+            raise ValueError("from must be before to")
+        if self.until - self.since > MAX_PERIOD:
+            raise ValueError(f"a period may not be longer than {MAX_PERIOD.days} days")
+        return self
+
+
+class FlowParams(PeriodParams):
+    """The flow figure's query string. One grain per request: one figure asks one question."""
+
+    granularity: Grain = "week"
+
+
+class RevenueParams(ApiModel):
+    """`?months=12`. Bounded above because every month is a bar, and a bar needs room to be read."""
+
+    months: int = Field(default=12, ge=1, le=36)
+
+
+class FunnelStage(ApiModel):
+    """One bar. The three are nested subsets of the first, so `count` never rises down the list."""
+
+    stage: Literal["arrived", "paid", "renewed"]
+    count: int
+
+
+class FunnelResponse(ApiModel):
+    """GET /api/analytics/funnel. The period comes back because the caller may not have named one.
+
+    Spelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python
+    keyword, and a response field nothing can construct by name is worse than two words for one
+    idea.
+    """
+
+    since: datetime
+    until: datetime
+    stages: list[FunnelStage]
+    # Not a stage: a plan with no trial days puts a new subscriber straight in front of the first
+    # payment, so this counts how they arrived rather than a step they all take.
+    started_a_trial: int
+
+
+class FlowPoint(ApiModel):
+    """One bucket. `left` counts a departure where it was decided, not where it fell."""
+
+    starts_at: datetime
+    joined: int
+    left: int
+
+
+class FlowResponse(ApiModel):
+    """GET /api/analytics/flow. Every bucket in the period is here, empty ones included."""
+
+    since: datetime
+    until: datetime
+    granularity: Grain
+    points: list[FlowPoint]
+
+
+class StateCount(ApiModel):
+    state: Literal["trial", "active", "grace", "expired", "cancelled"]
+    count: int
+
+
+class StatesResponse(ApiModel):
+    """GET /api/analytics/states.
+
+    `total` is the same number `GET /api/subscribers` reports with no filters, because both walk
+    the engine once through the same iterator. The two screens sit side by side and a reader will
+    compare them.
+    """
+
+    states: list[StateCount]
+    total: int
+
+
+class QuietBand(ApiModel):
+    """One stretch of silence. `toDays` is null on the last band, which has no upper edge."""
+
+    from_days: int
+    to_days: int | None
+    count: int
+
+
+class QuietResponse(ApiModel):
+    """GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table."""
+
+    bands: list[QuietBand]
+    total: int
+
+
+class RevenueMonth(ApiModel):
+    starts_at: datetime
+    amount: int
+
+
+class RevenueResponse(ApiModel):
+    """GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells."""
+
+    currency: str
+    months: list[RevenueMonth]
+
+
+class PermissionSummary(ApiModel):
+    """One permission a role can grant, with the sentence that says what it is for."""
+
+    code: str
+    description: str
+
+
+class RoleDetail(ApiModel):
+    """One role and everything the editor needs to draw it.
+
+    `holders` is here so the screen can say why a role cannot be deleted before somebody presses
+    the button and is told. `permissions` is sorted, so two roles granting the same set read the
+    same way down the column.
+    """
+
+    id: uuid.UUID
+    code: str
+    name: str
+    is_system: bool
+    permissions: list[str]
+    holders: int
+
+
+class RolesResponse(ApiModel):
+    """GET /api/roles: the roles, and the catalogue they may grant from.
+
+    The catalogue travels with them rather than under an endpoint of its own. One request draws
+    one screen, and the editor cannot then offer a checkbox for a permission the server has never
+    heard of.
+    """
+
+    items: list[RoleDetail]
+    permissions: list[PermissionSummary]
+
+
+class RoleWriteRequest(ApiModel):
+    """The editable half of a role: its name and what it grants.
+
+    `permissions` is typed as the catalogue rather than as strings, so a code this application
+    does not have is refused by the schema and named in `field` — the editor never sends one,
+    and a direct call gets told which value was wrong rather than a 500 from a foreign key.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    permissions: list[PermissionCode] = Field(default_factory=list)
+
+
+class CreateRoleRequest(RoleWriteRequest):
+    """POST /api/roles. The code is set once and never edited: it is what people call the role."""
+
+    code: str = Field(min_length=2, max_length=40, pattern=r"^[a-z][a-z0-9_-]*$")

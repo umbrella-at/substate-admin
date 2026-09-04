@@ -16,7 +16,8 @@ import { money } from '@/domain/events'
 
 export type Outcome = AuditEntry['outcome']
 
-/** The six, in the order the panel offers them: the ones an operator reaches for first. */
+/** In the order the panel offers them: what an operator reaches for first, then the role edits.
+ *  Role edits sit last because they are rare and are looked for deliberately, not scanned. */
 export const AUDIT_ACTIONS: readonly AuditAction[] = [
   'subscription.payment',
   'subscription.cancel',
@@ -24,13 +25,16 @@ export const AUDIT_ACTIONS: readonly AuditAction[] = [
   'subscription.redeem',
   'subscription.subscribe',
   'subscription.assign_program',
+  'role.create',
+  'role.update',
+  'role.delete',
 ] as const
 
 /** What each action was, said as a person would say it.
  *
- *  Total over the six with no fallback, the same construction and the same reason as the state
- *  chip's: a seventh action should arrive as a type error here rather than as a raw code in a
- *  column somebody has to decipher. */
+ *  Total with no fallback, the same construction and the same reason as the state chip's: a new
+ *  action arrives as a type error here rather than as a raw code in a column somebody has to
+ *  decipher. It is how these three got their labels. */
 export const ACTION_LABEL: Record<AuditAction, string> = {
   'subscription.subscribe': 'Started a subscription',
   'subscription.cancel': 'Cancelled a subscription',
@@ -38,6 +42,9 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   'subscription.redeem': 'Redeemed a promo code',
   'subscription.payment': 'Recorded a payment',
   'subscription.assign_program': 'Assigned a referral programme',
+  'role.create': 'Created a role',
+  'role.update': 'Changed what a role grants',
+  'role.delete': 'Deleted a role',
 }
 
 function text(payload: Record<string, unknown>, key: string): string | null {
@@ -74,7 +81,22 @@ export function requested(entry: AuditEntry): string {
       const paid = typeof amount === 'number' ? money(amount) : ''
       return reference === null ? paid : `${paid} · ${reference}`
     }
+    // A role edit is named by its target, which the column beside this one already carries. What
+    // this adds is the grant list, which is the part somebody is auditing.
+    case 'role.create':
+    case 'role.update':
+      return granted(payload)
+    case 'role.delete':
+      return text(payload, 'name') ?? ''
   }
+}
+
+/** The permission codes an edit submitted, counted rather than listed: thirteen of them in a
+ *  table cell would push every other column off the screen. */
+function granted(payload: Record<string, unknown>): string {
+  const codes = payload['permissions']
+  if (!Array.isArray(codes)) return ''
+  return codes.length === 1 ? '1 permission' : `${codes.length} permissions`
 }
 
 export interface AuditQuery {

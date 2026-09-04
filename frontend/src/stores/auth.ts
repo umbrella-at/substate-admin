@@ -9,7 +9,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
 import type { ApiClient, MeResponse } from '@/api/client'
-import type { PermissionCode } from '@/domain/permissions'
+import { granted, type PermissionCode } from '@/domain/permissions'
 
 export type SessionUser = MeResponse['user']
 export type SessionRole = MeResponse['role']
@@ -32,7 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => user.value !== null)
 
   function can(permission: PermissionCode): boolean {
-    return permissions.value.has(permission)
+    return granted(permissions.value, permission)
   }
 
   function adopt(me: MeResponse): void {

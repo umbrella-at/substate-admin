@@ -26,9 +26,8 @@ from substate import Payment, Subscription
 from app import audit
 from app.db import get_session
 from app.deps import Identity, RequirePermission
-from app.errors import ApiError, ErrorCode
 from app.models import SubscriberView
-from app.routers import error_responses
+from app.routers import current_world, error_responses
 from app.routers.plans import plan_summary
 from app.schemas import (
     AssignProgramRequest,
@@ -49,34 +48,16 @@ from app.schemas import (
 from app.security.ratelimit import client_ip_hash
 from app.seed.catalogue import PLAN_BY_ID
 from app.subscribers.events import JournalEntry, list_events
+from app.subscribers.projection import load as load_projection
 from app.subscribers.query import SubscriberRow, build_row, list_subscribers
 from app.worlds.journal import payload_of
-from app.worlds.registry import BASE_WORLD_ID, World, WorldRegistry, get_registry
+from app.worlds.registry import World
 
 router = APIRouter(prefix="/subscribers", tags=["subscribers"])
 
 PANEL_PROVIDER = "panel"
 """Where money recorded here came from. Not a field on the request: it did not arrive through a
 gateway, and letting an operator type a provider name would invite them to claim it did."""
-
-
-def _world() -> World:
-    """The world this request reads.
-
-    Always the base world today. It is a function rather than a constant because the world will
-    eventually be read out of the token, once a visitor can have a sandbox of their own, and every
-    caller here already goes through it — which is the whole point of putting the world key on
-    everything from the first day rather than the last.
-    """
-    registry: WorldRegistry = get_registry()
-    world = registry.get(BASE_WORLD_ID)
-    if world is None:
-        raise ApiError(
-            ErrorCode.INTERNAL_ERROR,
-            message="The demonstration world is not available.",
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-    return world
 
 
 async def _require(world: World, user_id: str) -> Subscription:
@@ -111,21 +92,6 @@ async def _projected(
         )
     ).first()
     return (user_id, None) if found is None else (found.display_name, found.last_active_at)
-
-
-async def _projection(
-    session: AsyncSession, world_id: str
-) -> dict[str, tuple[str, datetime | None]]:
-    rows = (
-        await session.execute(
-            select(
-                SubscriberView.user_id,
-                SubscriberView.display_name,
-                SubscriberView.last_active_at,
-            ).where(SubscriberView.world_id == world_id)
-        )
-    ).all()
-    return {row.user_id: (row.display_name, row.last_active_at) for row in rows}
 
 
 def _event(entry: JournalEntry) -> SubscriberEvent:
@@ -184,7 +150,7 @@ async def _operate(
     a `NotSubscribed` dressed up as a domain refusal — and so nothing is written to the audit for
     a subscriber that does not exist.
     """
-    world = _world()
+    world = current_world()
     await _require(world, user_id)
 
     entry = audit.Entry(
@@ -241,9 +207,12 @@ async def list_page(
     query: Annotated[SubscriberQueryParams, Query()],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SubscriberPage:
-    world = _world()
-    projection = await _projection(session, world.id)
-    page = await list_subscribers(world, projection, query.to_query())
+    world = current_world()
+    projection = await load_projection(session, world.id)
+    # The world's clock, not the wall's. A cohort is a predicate over `now`, and the analytics
+    # figure beside this table asks the same predicate — on a wound-forward world the two
+    # answered at two different instants and stopped being the same number.
+    page = await list_subscribers(world, projection, query.to_query(), now=world.clock.now())
     return SubscriberPage(
         items=[_summary(row) for row in page.items],
         total=page.total,
@@ -262,7 +231,7 @@ async def read_one(
     user_id: str,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SubscriberDetail:
-    world = _world()
+    world = current_world()
     await _require(world, user_id)
     return await _detail(session, world, user_id)
 
@@ -278,7 +247,7 @@ async def read_events(
     page: Annotated[PageParams, Query()],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SubscriberEventPage:
-    world = _world()
+    world = current_world()
     await _require(world, user_id)
 
     found = await list_events(session, world.id, user_id, page=page.page, page_size=page.page_size)

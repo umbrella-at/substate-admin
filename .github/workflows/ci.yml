@@ -288,8 +288,10 @@ jobs:
       # The browser reaches the site over plain http://127.0.0.1, where a Secure cookie is not
       # stored: at the default the login succeeds and the reload fails, looking like a refresh bug.
       COOKIE_SECURE: "false"
-      # The account the scenario signs in as; its password is minted below, per run.
+      # The accounts the scenarios sign in as; their password is minted below, per run.
       E2E_EMAIL: e2e@substate-admin.test
+      E2E_VIEWER_EMAIL: e2e-viewer@substate-admin.test
+      E2E_SUPPORT_EMAIL: e2e-support@substate-admin.test
     services:
       postgres:
         image: postgres:18
@@ -348,6 +350,9 @@ jobs:
             echo "JWT_SECRET=$jwt_secret"
             echo "IP_HASH_PEPPER=$pepper"
             echo "E2E_PASSWORD=$password"
+            # The three accounts differ by role and by nothing else, so they share one secret.
+            echo "E2E_VIEWER_PASSWORD=$password"
+            echo "E2E_SUPPORT_PASSWORD=$password"
           } >> "$GITHUB_ENV"
 
       - name: Build the database
@@ -358,13 +363,22 @@ jobs:
           uv run --frozen substate-admin sync-permissions
 
       # `create-user` reads one line when piped: a password passed as an argument shows up in /proc
-      # and in the log. `admin`: with no permissions the dashboard proves only that it renders.
-      - name: Create the account the scenario signs in as
+      # and in the log. Three roles, because the permission scenario needs a visitor who is refused
+      # the screen and one who gets it with none of its controls.
+      - name: Create the accounts and the role the scenarios need
         working-directory: backend
         run: |
           set -euo pipefail
-          printf '%s\n' "$E2E_PASSWORD" \
-            | uv run --frozen substate-admin create-user --email "$E2E_EMAIL" --role admin
+          make() {
+            printf '%s\n' "$2" | uv run --frozen substate-admin create-user --email "$1" --role "$3"
+          }
+          make "$E2E_EMAIL" "$E2E_PASSWORD" admin
+          make "$E2E_VIEWER_EMAIL" "$E2E_VIEWER_PASSWORD" viewer
+          make "$E2E_SUPPORT_EMAIL" "$E2E_SUPPORT_PASSWORD" support
+          # A role the deploy does not define. Save and Delete are hidden on a system role
+          # whoever is looking, so asserting their absence there could not fail.
+          uv run --frozen substate-admin create-role \
+            --code e2e-analysts --name Analysts --grant analytics.read
 
       # A redirect to a file, not the step's stdout: a process holding that pipe hangs the job
       # until it times out. /api/health answers 200 only after a real SELECT 1.

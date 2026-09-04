@@ -39,13 +39,15 @@ function entry(over: Partial<AuditEntry> = {}): AuditEntry {
 }
 
 describe('the action vocabulary', () => {
-  // Total over the six, and stated here as well as in the type: a label record that gained an
-  // entry nobody writes is a string in a file everybody reads and nobody sees on screen.
+  // Total, and stated here as well as in the type: a label record that gained an entry nobody
+  // writes is a string in a file everybody reads and nobody sees on screen.
   it('has a label for every action and no others', () => {
     expect(Object.keys(ACTION_LABEL).sort()).toEqual([...AUDIT_ACTIONS].sort())
   })
 
-  it('offers the six in the order an operator reaches for them', () => {
+  // Subscription operations first, in the order an operator reaches for them, and the role edits
+  // after: those are rare and are looked for on purpose rather than scanned past.
+  it('offers the operations first and the role edits last', () => {
     expect([...AUDIT_ACTIONS]).toEqual([
       'subscription.payment',
       'subscription.cancel',
@@ -53,6 +55,9 @@ describe('the action vocabulary', () => {
       'subscription.redeem',
       'subscription.subscribe',
       'subscription.assign_program',
+      'role.create',
+      'role.update',
+      'role.delete',
     ])
   })
 })

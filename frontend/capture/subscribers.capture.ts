@@ -16,7 +16,7 @@
 
 import { fileURLToPath } from 'node:url'
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { account } from '../playwright.config.ts'
 
@@ -25,21 +25,32 @@ import { account } from '../playwright.config.ts'
 const SHOT = fileURLToPath(new URL('../../docs/subscribers.png', import.meta.url))
 
 /** Twelve rows rather than the default twenty-five: the pager is only worth showing next to the
- *  rows it pages through, and twenty-five of them push it a screen below the filters.
- *
- *  The order is the table's own, and the page is not the first one. Sorted by last activity, page
- *  one is everybody who turned up today — trials and actives, two colours for a column that has
- *  five. Further in, the same order holds four of them, and both pager buttons are live.
- *
- *  THE PAGE NUMBER IS RE-CHOSEN WHEN THE CALENDAR MOVES IT, and that is the arrangement rather
- *  than a maintenance cost. The seed fixes the population; the world is nine months of history
- *  ending now, so which people sit on which page of an activity-ordered table moves as the days
- *  do. It was page six; the assertion below is what said so rather than letting the picture
- *  quietly become a column of one colour. */
-const QUERY = '?page=28&pageSize=12'
+ *  rows it pages through, and twenty-five of them push it a screen below the filters. */
 const PAGE_SIZE = 12
 
+/** THE PAGE IS CHOSEN HERE RATHER THAN WRITTEN DOWN, and that is the correction.
+ *
+ *  A pinned number was re-chosen by hand every time the calendar moved under the world — it was
+ *  six, then twenty-eight — and measuring it finally said why that never stopped: over 21 landing
+ *  days the states on page 28 ran 2 to 4, and no page at all reached four on 8 of those days. A
+ *  written-down page with a floor under it is a coin, and it came up tails in CI.
+ *
+ *  So the run asks the table which page has the most of the lifecycle on it and photographs that
+ *  one. The floor below is what the world always affords: three of the five, on all 21 days. */
+const COLOURS = 3
+
+/** The table's own order, which is what makes the picture honest and also what caps it. Activity
+ *  and state are correlated by construction — today's visitors are trials and actives, the long
+ *  silent are expired and cancelled — so a page of twelve spans three states, not five. */
+const SORT = '-lastActiveAt'
+
 test('the subscriber table', async ({ page }) => {
+  const login = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/auth/login' &&
+      response.request().method() === 'POST',
+  )
+
   await page.goto('/')
   await page.getByLabel('Email', { exact: true }).fill(account.email)
   await page.getByLabel('Password', { exact: true }).fill(account.password)
@@ -48,9 +59,11 @@ test('the subscriber table', async ({ page }) => {
   // Signed in before navigating, not merely asked to be. The access token is held in memory and
   // the navigation below throws that heap away, so leaving early lands on the login page with a
   // refresh cookie that was never issued.
+  const { accessToken } = (await (await login).json()) as { accessToken: string }
   await expect(page.getByRole('link', { name: 'Subscribers' })).toBeVisible()
 
-  await page.goto(`/subscribers${QUERY}`)
+  const chosen = await richestPage(page, accessToken)
+  await page.goto(`/subscribers?page=${chosen}&pageSize=${PAGE_SIZE}&sort=${SORT}`)
 
   const rows = page.locator('tbody tr')
   await expect(rows).toHaveCount(PAGE_SIZE)
@@ -65,10 +78,9 @@ test('the subscriber table', async ({ page }) => {
   // has scrolled below it is a pager the picture does not have.
   await expect(page.getByRole('button', { name: 'Next' })).toBeInViewport({ ratio: 1 })
 
-  // Four kinds of chip at least, because a column of one colour says nothing about a lifecycle
-  // and the five colours are most of what this screen has to explain.
+  // Enough of the lifecycle to explain the colours. A column of one says nothing about it.
   const distinct = new Set(await chips.allInnerTexts())
-  expect(distinct.size).toBeGreaterThan(3)
+  expect(distinct.size).toBeGreaterThanOrEqual(COLOURS)
 
   // The fonts are part of the design and arrive after the rows do; shooting before they land
   // photographs the fallback stack. `globalThis` because this file is type-checked without the
@@ -80,3 +92,32 @@ test('the subscriber table', async ({ page }) => {
   // rather than catching one of them a third of the way through.
   await page.screenshot({ path: SHOT, animations: 'disabled' })
 })
+
+/**
+ * The page of twelve holding the most states, asked of the table rather than assumed. Read whole
+ * rather than page by page: four requests instead of thirty, and the order is the one the browser
+ * is about to ask for.
+ */
+async function richestPage(page: Page, accessToken: string): Promise<number> {
+  const states: string[] = []
+  for (const chunk of [1, 2, 3, 4]) {
+    const answer = await page.request.get(
+      `/api/subscribers?page=${chunk}&pageSize=100&sort=${SORT}`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
+    )
+    const body = (await answer.json()) as { items: { state: string }[] }
+    states.push(...body.items.map((item) => item.state))
+  }
+
+  let best = { page: 1, distinct: 0 }
+  // The last page is skipped: a short page draws a pager with nothing after it.
+  for (let start = 0; start + 2 * PAGE_SIZE <= states.length; start += PAGE_SIZE) {
+    const distinct = new Set(states.slice(start, start + PAGE_SIZE)).size
+    if (distinct > best.distinct && start > 0) best = { page: start / PAGE_SIZE + 1, distinct }
+  }
+  expect(
+    best.distinct,
+    'no page of the table held enough of the lifecycle to photograph',
+  ).toBeGreaterThanOrEqual(COLOURS)
+  return best.page
+}

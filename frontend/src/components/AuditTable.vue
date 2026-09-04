@@ -20,7 +20,7 @@ import type { AuditEntry } from '@/api/client'
 import { ACTION_LABEL, requested } from '@/domain/audit'
 import { instant } from '@/domain/events'
 
-defineProps<{
+const props = defineProps<{
   rows: AuditEntry[]
   /** A newer page is on its way. The rows below are real and one question out of date, which is
    *  what the other two tables in this application also say rather than emptying themselves. */
@@ -32,6 +32,14 @@ defineProps<{
 }>()
 
 defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
+
+/** Why this target is not a link. A role is not a subscriber and names no world, so the sentence
+ *  about "another world" would be about a column that is empty on purpose. */
+function targetTitle(row: AuditEntry): string {
+  if (row.targetType === 'role') return 'A role, which belongs to this panel rather than to a world'
+  if (props.liveWorld === null) return 'Which world this panel is showing is not known yet'
+  return `Recorded in world ${row.worldId}, which is not the one on screen`
+}
 </script>
 
 <template>
@@ -87,7 +95,7 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
                  name — the base world is rebuilt at every restart — and a link into a world that
                  is gone answers 404 to somebody who followed it in good faith. -->
             <RouterLink
-              v-if="row.worldId === liveWorld"
+              v-if="row.targetType === 'subscription' && row.worldId === liveWorld"
               :to="{ name: 'subscriber', params: { userId: row.targetId } }"
               class="rounded-control text-accent-text hover:underline focus-visible:underline"
             >
@@ -97,11 +105,7 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
               v-else
               type="button"
               class="rounded-control text-text-secondary hover:text-text-primary"
-              :title="
-                liveWorld === null
-                  ? 'Which world this panel is showing is not known yet'
-                  : `Recorded in world ${row.worldId}, which is not the one on screen`
-              "
+              :title="targetTitle(row)"
               @click="$emit('filterTarget', row.targetId)"
             >
               {{ row.targetId }}

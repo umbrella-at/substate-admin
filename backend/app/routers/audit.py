@@ -73,11 +73,12 @@ async def list_page(
         ).join(User, User.id == AuditLog.actor_user_id),
         query,
     )
-    # Tie-broken by id, because a burst of operations shares a millisecond and an order with no
-    # tiebreaker lets one row appear on two pages and on neither.
+    # Tie-broken by `seq`, the order the rows were written in. A burst of operations shares a
+    # transaction and therefore an `occurred_at`, and the random uuid this used to fall back on
+    # ordered them arbitrarily — as well as letting one row appear on two pages and on neither.
     rows = (
         await session.execute(
-            statement.order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc())
+            statement.order_by(AuditLog.occurred_at.desc(), AuditLog.seq.desc())
             .limit(query.page_size)
             .offset((query.page - 1) * query.page_size)
         )

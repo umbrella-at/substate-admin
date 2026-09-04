@@ -102,6 +102,22 @@ for role in ("trial", "active", "grace", "expired", "cancelled"):
     PAIRS.append((f"state-{role}-text", f"state-{role}-bg", 4.5, True, f"{role} chip text"))
     PAIRS.append((f"state-{role}-bg", "surface-1", 3.0, False, f"{role} chip fill — the text identifies it"))
 
+# A chart series IS what identifies its own mark: a bar with no colour is not a shorter bar, it is
+# a bar the reader cannot attribute. So 1.4.11 applies to it in a way it does not apply to a chip's
+# fill, and these are required rather than merely measured.
+for role in ("trial", "active", "grace", "expired", "cancelled"):
+    PAIRS.append((f"state-{role}-text", "surface-1", 3.0, True, f"{role} bar in the states figure"))
+
+PAIRS += [
+    ("accent-text", "surface-1", 3.0, True, "a single-series bar or line"),
+    ("success-text", "surface-1", 3.0, True, "the inflow line"),
+    ("danger-text", "surface-1", 3.0, True, "the outflow line"),
+    # The two lines are 1.47:1 apart, which is hue and nothing else — so the outflow line is
+    # dashed as well as red, and this number is why that dash is not decoration.
+    ("success-text", "danger-text", 3.0, False, "inflow against outflow — separated by the dash, not by this"),
+    ("border", "surface-1", 3.0, False, "a chart's grid line — the ticks label the scale, not this"),
+]
+
 for role in ("success", "warning", "danger"):
     PAIRS.append((f"{role}-text", f"{role}-bg", 4.5, True, f"{role} notice text"))
     PAIRS.append((f"{role}-bg", "surface-1", 3.0, False, f"{role} notice fill against a panel"))

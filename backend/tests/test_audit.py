@@ -41,9 +41,9 @@ async def _write(
                 target_type="subscription",
                 target_id=target,
                 ip_hash="0" * 64,
+                world_id=BASE_WORLD_ID,
                 payload={"note": target},
             ),
-            world_id=BASE_WORLD_ID,
             refusal=ErrorCode.PROMO_ALREADY_BOUND if refused else None,
         )
     await session.commit()
@@ -173,6 +173,32 @@ async def test_paging_over_simultaneous_rows_covers_each_once(
 
     assert len(seen) == BATCH
     assert len(set(seen)) == BATCH
+
+
+async def test_simultaneous_rows_come_back_in_the_order_they_were_written(
+    client: AsyncClient, session: AsyncSession, admin: tuple[User, dict[str, str]]
+) -> None:
+    """Newest first, and "newest" among rows sharing an instant is the one written last.
+
+    `now()` is the transaction's timestamp, so a burst shares `occurred_at` exactly and the order
+    falls to the tie-break. On the primary key — a random uuid — three edits to one role came back
+    delete, update, create.
+    """
+    account, headers = admin
+    written = [f"sub-{n:04d}" for n in range(BATCH)]
+    await _write(session, account.id, targets=written)
+
+    answer = await client.get(f"{AUDIT}?pageSize={BATCH}", headers=headers)
+    rows = answer.json()["items"]
+
+    assert [row["targetId"] for row in rows] == list(reversed(written))
+    # One instant, so this is the tie-break's doing and not the timestamp's.
+    assert len({row["occurredAt"] for row in rows}) == 1
+
+    # The half that makes the first assertion mean something: the primary key would have ordered
+    # these differently, so a reader tie-breaking on it could not have passed by luck.
+    by_uuid = sorted(rows, key=lambda row: row["id"], reverse=True)
+    assert [row["targetId"] for row in by_uuid] != list(reversed(written))
 
 
 async def test_filtering_by_the_subscriber_narrows_to_that_subscriber(

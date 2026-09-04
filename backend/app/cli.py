@@ -32,7 +32,7 @@ from app.config import get_settings
 from app.db import dispose_engine, get_sessionmaker, utc_now
 from app.logging import configure_logging
 from app.models import Permission, Role, RolePermission, User, normalize_email
-from app.permissions import PERMISSIONS, ROLE_CODES, SYSTEM_ROLES, SystemRole
+from app.permissions import PERMISSION_CODES, PERMISSIONS, ROLE_CODES, SYSTEM_ROLES, SystemRole
 from app.security.passwords import PasswordPolicyError, hash_password, validate_password
 from app.security.refresh import PRUNE_RETENTION, prune_expired
 
@@ -50,6 +50,19 @@ MAX_EMAIL_LENGTH: Final = 320
 
 class CommandError(Exception):
     """A refusal the operator reads as one line. The message is the whole error report."""
+
+
+@dataclass(frozen=True, slots=True)
+class CreatedRole:
+    """What `create_role` did."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    permissions: list[str]
+
+    # False when the role already existed and only its grants were replaced.
+    created: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +207,45 @@ async def create_user(
     )
 
 
+async def create_role(
+    session: AsyncSession, *, code: str, name: str, permissions: Sequence[str]
+) -> CreatedRole:
+    """Create a role of the panel's own, or replace what an existing custom one grants.
+
+    A deploy has only the four system roles, and the first custom one has to exist before anybody
+    can be put on it — the same reason `create-user` exists. A system role is refused here for the
+    reason the API refuses it: the next deploy would restore it.
+    """
+    if code in ROLE_CODES:
+        raise CommandError(
+            f"{code!r} is a role this application defines and restores on every deploy. "
+            "Choose a code of your own."
+        )
+    unknown = sorted(set(permissions) - set(PERMISSION_CODES))
+    if unknown:
+        raise CommandError(
+            f"no such permission: {', '.join(unknown)}. "
+            f"The catalogue holds: {', '.join(PERMISSION_CODES)}."
+        )
+
+    role = (await session.execute(select(Role).where(Role.code == code))).scalars().first()
+    created = role is None
+    if role is None:
+        role = Role(code=code, name=name, is_system=False)
+        session.add(role)
+        await session.flush()
+    else:
+        role.name = name
+        await session.execute(delete(RolePermission).where(RolePermission.role_id == role.id))
+
+    for permission in sorted(set(permissions)):
+        session.add(RolePermission(role_id=role.id, permission_code=permission))
+    await session.commit()
+    return CreatedRole(
+        id=role.id, code=code, name=name, created=created, permissions=sorted(set(permissions))
+    )
+
+
 async def sync_permissions(session: AsyncSession) -> SyncReport:
     """Force the permission table and the four system roles to match the catalogue.
 
@@ -296,6 +348,12 @@ async def _sync_role(session: AsyncSession, spec: SystemRole) -> RoleSync:
         granted=granted,
         revoked=revoked,
     )
+
+
+def render_created_role(result: CreatedRole) -> list[str]:
+    verb = "Created" if result.created else "Replaced what"
+    granted = ", ".join(result.permissions) if result.permissions else "nothing"
+    return [f"{verb} the role {result.code} ({result.id}) grants: {granted}."]
 
 
 async def prune_tokens(session: AsyncSession) -> int:
@@ -443,6 +501,19 @@ def _create_user_command(args: argparse.Namespace) -> list[str]:
     return _run(work)
 
 
+def _create_role_command(args: argparse.Namespace) -> list[str]:
+    code: str = args.code
+    name: str = args.name
+    permissions: list[str] = list(args.grant or ())
+
+    async def work(session: AsyncSession) -> list[str]:
+        return render_created_role(
+            await create_role(session, code=code, name=name, permissions=permissions)
+        )
+
+    return _run(work)
+
+
 def _sync_permissions_command(_: argparse.Namespace) -> list[str]:
     async def work(session: AsyncSession) -> list[str]:
         return render_sync(await sync_permissions(session))
@@ -459,6 +530,7 @@ def _prune_tokens_command(_: argparse.Namespace) -> list[str]:
 
 COMMANDS: Final[Mapping[str, Callable[[argparse.Namespace], list[str]]]] = {
     "create-user": _create_user_command,
+    "create-role": _create_role_command,
     "sync-permissions": _sync_permissions_command,
     "prune-tokens": _prune_tokens_command,
 }
@@ -489,6 +561,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--set-password",
         action="store_true",
         help="Replace the password of an account that already exists.",
+    )
+
+    role = subparsers.add_parser(
+        "create-role",
+        help="Create a role of your own, or replace what one grants.",
+        description=(
+            "Create a role the panel's own operators can be put on, or replace the grants of one "
+            "that exists. A deploy ships only the four system roles, and those are refused here: "
+            "the next deploy would restore them. Idempotent on the code."
+        ),
+    )
+    role.add_argument("--code", required=True, help="The role's code, as people will refer to it.")
+    role.add_argument("--name", required=True, help="The role's name, as a screen shows it.")
+    role.add_argument(
+        "--grant",
+        action="append",
+        metavar="PERMISSION",
+        help="A permission this role grants. Repeat for each; omit for a role that grants nothing.",
     )
 
     subparsers.add_parser(

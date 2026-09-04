@@ -25,9 +25,8 @@ export const PERMISSIONS = [
 
 export type PermissionCode = (typeof PERMISSIONS)[number]
 
-/** Whether a set of permissions granted by the server contains a code the interface asks for.
- *  Kept as a function rather than inlined so both the router guard and any component asking
- *  "may I draw this" go through one rule. */
+/** Whether the set the server granted contains a code the interface asks for. One rule, and the
+ *  store's `can` is its only caller — the guard and every component ask through that. */
 export function granted(held: ReadonlySet<string>, needed: PermissionCode): boolean {
   return held.has(needed)
 }

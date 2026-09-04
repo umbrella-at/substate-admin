@@ -10,10 +10,13 @@ is deciding whether the library is worth building on.
 
 ![One subscriber in grace: the two boundaries that state has, the operations available on it, and the events behind them](docs/subscriber.png)
 
-Both pictures are generated rather than taken. `npm --prefix frontend run capture` signs in to a
-running copy, frames the same windows every time and overwrites the files above. The frames assert
-what they photographed — four states in the table, both boundaries and every operation on the card
-— so a shot that has quietly got worse is a failed run rather than a discovery in the README.
+![Five figures: arrivals against departures by week, where the funnel loses people, the five states standing now, how long the quiet have been quiet, and revenue by month](docs/analytics.png)
+
+All three pictures are generated rather than taken. `npm --prefix frontend run capture` signs in to
+a running copy, frames the same windows every time and overwrites the files above. The frames
+assert what they photographed — four states in the table, both boundaries and every operation on
+the card, five drawn plots and no skeletons on the analytics screen — so a shot that has quietly
+got worse is a failed run rather than a discovery in the README.
 
 ## Live
 
@@ -89,11 +92,37 @@ deliberately narrow: signing in, signing out and changing a filter are authentic
 navigation, and they belong in the structured log where they do not bury the handful of lines that
 say somebody changed something.
 
-**Roles and permissions out of the database.** The router and the navigation ask whether a
-permission is held, never which role holds it — roles are rows an administrator can edit, and
-keying the interface on role codes would mean a role change could only take effect with a frontend
-release. The catalogue is the backend's `permissions.py`, force-synced into the database on every
-deploy.
+**Five figures, and one number that has to agree with the table.** Each asks a single question and
+says under it where its answer came from, because two sources sit behind them: the engine holds
+what is true now, the journal holds what happened. Only the state snapshot asks the table's own
+question of the table's own source, and it walks the engine through the same iterator the table
+does — so `sum(states) == subscribers.total` holds by construction rather than by two pieces of
+code agreeing. A test asserts it twice: on a fresh world, and after the clock has been wound
+forward forty-five days and the engine ticked.
+
+**A funnel of three stages, because the fourth was not one.** The specification asked for arrived →
+trial → paid → renewed. Measured on the real history, the third stage stands taller than the
+second: a weekly plan has no trial days, so 72 of 351 arrivals are put straight in front of the
+first payment. Four descending bars would have shown the third one rising and read as a defect, so
+the trial is a sentence under the plot rather than a step in it.
+
+**A departure is counted once.** `substate` gives a cancelled subscription's eventual expiry the
+reason `cancelled`, so "expired plus cancelled" — which is what the specification says — counts 76
+of the base world's 485 departures twice. The outflow line counts a departure where it was decided.
+
+**Roles and permissions out of the database, and edited from the panel.** The router and the
+navigation ask whether a permission is held, never which role holds it — roles are rows an
+administrator can edit, and keying the interface on role codes would mean a role change could only
+take effect with a frontend release. The catalogue is the backend's `permissions.py`, force-synced
+into the database on every deploy.
+
+**A control nobody may press is not drawn, and the endpoint refuses it anyway.** Either half alone
+is a false comfort: a hidden button over an open endpoint is a panel that only looks locked, and a
+403 under a button that is drawn is a panel offering a locked door. A browser test signs in as a
+`viewer`, asserts the section is absent from the menu and that `GET /api/roles` answers 403; then
+as `support`, who gets the screen, none of its controls, and a 403 on the write behind them. A
+system role is refused by the application too, and not merely hidden — the deploy restores it from
+the catalogue, so an accepted edit would be undone at the next push.
 
 FastAPI on async SQLAlchemy over PostgreSQL 18, Vue 3.5 and TypeScript on Tailwind v4, and
 `schema.d.ts` generated from the backend's own OpenAPI document — both files committed, and CI
@@ -132,6 +161,16 @@ renewed twice, and seven in ten had lapsed at least once.
 model and train you to edit the test instead of thinking; ranges catch the thing that matters,
 which is a population drifting out of the shape that makes the screen worth looking at.
 
+**And a range is asserted of a size, not of a draw** — which took a red build to notice. Standing
+grace is the one population in single digits, so its value on any given day is a sample: the world
+is built ending *now*, and the same seed lands on a different calendar every day. Measured over 120
+consecutive landing days it ran 0 to 8 around a mean of 3.1, so the floor of three the test held it
+to was below its own mean and failed on 38% of days — and the demonstration's *call today* filter
+was empty on one day in forty. The weekly plan, which renews thirty-nine times a year and so
+produces most of the missed payments, held them for two days; six days of courtesy puts the mean at
+5.6 and leaves the filter empty on none of those 120 days. The test now asserts the mean over a
+week of landing days, which is what the calibration was ever a statement about.
+
 Comments in the code say what breaks if the line beside them changes. The reasoning behind a
 decision is in the pull request that made it.
 
@@ -166,6 +205,19 @@ npm --prefix frontend ci
 `COOKIE_SECURE=false` is the one that catches people: Safari refuses a `Secure` cookie over
 `http://localhost` without saying so, and the panel logs in and then cannot refresh.
 
+The browser tests need two more accounts and a role of the panel's own — the permission scenario
+signs in as somebody who is refused, and a role the deploy defines hides its own controls from
+everybody:
+
+```sh
+uv run --directory backend substate-admin create-role \
+  --code e2e-analysts --name Analysts --grant analytics.read
+printf 'playwright-local-password\n' | uv run --directory backend \
+  substate-admin create-user --email e2e-viewer@substate-admin.test --role viewer
+printf 'playwright-local-password\n' | uv run --directory backend \
+  substate-admin create-user --email e2e-support@substate-admin.test --role support
+```
+
 Everything CI checks, in one command:
 
 ```sh
@@ -184,8 +236,9 @@ a run that proved less than the last one.
   no card data. Subscriptions here are state machines, not invoices.
 - **Not a billing panel for a real business.** It is not hardened, audited, or supported for
   production operation, and it is not intended for it.
-- **Not a dashboard of decorative charts.** There is no number in this project that is not backed
-  by a real substate event.
+- **Not a dashboard of decorative charts.** Five figures, one question each, and every number on
+  them counts events the engine actually emitted. There is no sixth, and there is no date picker:
+  the design file refused one, so the period is a choice from three.
 
 ## substate
 

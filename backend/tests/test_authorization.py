@@ -147,6 +147,21 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         # The one code `viewer` is denied besides `users.read`: showing somebody the product is
         # not showing them what the people who run it have been doing.
         ("GET", "/api/audit"): "audit.read",
+        # The five figures take the code named after what they are, not after their sources. Two
+        # of them read the same engine the table reads and three read the journal, and gating
+        # either half with `subscribers.read` would make the permission describe a query plan.
+        ("GET", "/api/analytics/funnel"): "analytics.read",
+        ("GET", "/api/analytics/flow"): "analytics.read",
+        ("GET", "/api/analytics/states"): "analytics.read",
+        ("GET", "/api/analytics/quiet"): "analytics.read",
+        ("GET", "/api/analytics/revenue"): "analytics.read",
+        # Roles take the codes the catalogue already describes as covering "the panel's own users
+        # and roles". A `roles.*` pair of its own would draw a line the panel does not draw:
+        # whoever may disable an operator's account is whoever decides what operators may do.
+        ("GET", "/api/roles"): "users.read",
+        ("POST", "/api/roles"): "users.write",
+        ("PUT", "/api/roles/{role_id}"): "users.write",
+        ("DELETE", "/api/roles/{role_id}"): "users.write",
     }
 
 

@@ -23,6 +23,16 @@ export type AuditAction = AuditEntry['action']
 export type PlanSummary = components['schemas']['PlanSummary']
 export type ReferralProgramSummary = components['schemas']['ReferralProgramSummary']
 export type HealthResponse = components['schemas']['HealthResponse']
+export type FunnelResponse = components['schemas']['FunnelResponse']
+export type FlowResponse = components['schemas']['FlowResponse']
+export type StatesResponse = components['schemas']['StatesResponse']
+export type QuietResponse = components['schemas']['QuietResponse']
+export type RevenueResponse = components['schemas']['RevenueResponse']
+export type UserListResponse = components['schemas']['UserListResponse']
+export type UserSummary = components['schemas']['UserSummary']
+export type RolesResponse = components['schemas']['RolesResponse']
+export type RoleDetail = components['schemas']['RoleDetail']
+export type PermissionSummary = components['schemas']['PermissionSummary']
 /** The three things asking for a new access token can mean, and they must stay three. Collapsing
  *  the last two into one boolean is what turns a two-second deploy restart into every open tab
  *  being signed out of a session the server still considers perfectly valid. */
@@ -46,7 +56,7 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal | undefined
   /** Set on the one retry a request is allowed after a refresh, so a loop is impossible. */
@@ -235,6 +245,39 @@ export function createClient(hooks: ClientHooks) {
 
     audit: (params: URLSearchParams, signal: AbortSignal) =>
       request<AuditPage>(`${BASE}/audit?${params.toString()}`, { signal }),
+
+    // The five figures. Each takes a signal for the reason the table does: the period control
+    // changes while a request is out, and the answer to the previous period must not land on top
+    // of the answer to this one.
+    funnel: (params: URLSearchParams, signal: AbortSignal) =>
+      request<FunnelResponse>(`${BASE}/analytics/funnel?${params.toString()}`, { signal }),
+
+    flow: (params: URLSearchParams, signal: AbortSignal) =>
+      request<FlowResponse>(`${BASE}/analytics/flow?${params.toString()}`, { signal }),
+
+    states: (signal: AbortSignal) =>
+      request<StatesResponse>(`${BASE}/analytics/states`, { signal }),
+
+    quiet: (signal: AbortSignal) => request<QuietResponse>(`${BASE}/analytics/quiet`, { signal }),
+
+    revenue: (params: URLSearchParams, signal: AbortSignal) =>
+      request<RevenueResponse>(`${BASE}/analytics/revenue?${params.toString()}`, { signal }),
+
+    users: (params: URLSearchParams, signal: AbortSignal) =>
+      request<UserListResponse>(`${BASE}/users?${params.toString()}`, { signal }),
+
+    roles: (signal: AbortSignal) => request<RolesResponse>(`${BASE}/roles`, { signal }),
+
+    // The three writes. No signal, for the reason the subscriber operations give: cancelling a
+    // write discards the answer and not the write.
+    createRole: (body: { code: string; name: string; permissions: string[] }) =>
+      request<RoleDetail>(`${BASE}/roles`, { method: 'POST', body }),
+
+    replaceRole: (roleId: string, body: { name: string; permissions: string[] }) =>
+      request<RoleDetail>(`${BASE}/roles/${encodeURIComponent(roleId)}`, { method: 'PUT', body }),
+
+    deleteRole: (roleId: string) =>
+      request<null>(`${BASE}/roles/${encodeURIComponent(roleId)}`, { method: 'DELETE' }),
 
     // The six operations, one signature. They differ by their path and their body and by nothing
     // else, which is what the uniform `{subscriber, events}` answer bought — the alternative was

@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/analytics/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arrivals against departures, bucket by bucket */
+        get: operations["read_flow_api_analytics_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the people who arrived in a period stopped */
+        get: operations["read_funnel_api_analytics_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/quiet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The quiet cohort, split by how long the silence has run */
+        get: operations["read_quiet_api_analytics_quiet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What was taken, by calendar month */
+        get: operations["read_revenue_api_analytics_revenue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every subscription the engine holds, by the state it is in */
+        get: operations["read_states_api_analytics_states_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -164,6 +249,42 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every role, and the permissions a role may grant */
+        get: operations["list_roles_api_roles_get"];
+        put?: never;
+        /** Create a role of your own */
+        post: operations["create_role_api_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace a role's name and what it grants */
+        put: operations["replace_role_api_roles__role_id__put"];
+        post?: never;
+        /** Delete a role nobody holds */
+        delete: operations["delete_role_api_roles__role_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -406,7 +527,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program";
+            action: "subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete";
             actor: components["schemas"]["AuditActor"];
             errorCode?: components["schemas"]["ErrorCode"] | null;
             /**
@@ -430,10 +551,13 @@ export interface components {
             };
             /** Targetid */
             targetId: string;
-            /** Targettype */
-            targetType: string;
+            /**
+             * Targettype
+             * @enum {string}
+             */
+            targetType: "subscription" | "role";
             /** Worldid */
-            worldId: string;
+            worldId?: string | null;
         };
         /**
          * AuditPage
@@ -456,6 +580,18 @@ export interface components {
         ChangePlanRequest: {
             /** Planid */
             planId: string;
+        };
+        /**
+         * CreateRoleRequest
+         * @description POST /api/roles. The code is set once and never edited: it is what people call the role.
+         */
+        CreateRoleRequest: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: ("subscribers.read" | "subscribers.write" | "plans.read" | "plans.write" | "promo.read" | "promo.write" | "referrals.read" | "referrals.write" | "analytics.read" | "audit.read" | "users.read" | "users.write" | "demo.control")[];
         };
         /**
          * EngineEvent
@@ -498,7 +634,7 @@ export interface components {
          *     call site is a code that falls through it.
          * @enum {string}
          */
-        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ALREADY_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
+        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ROLE_IS_SYSTEM" | "ROLE_IN_USE" | "ROLE_CODE_TAKEN" | "ALREADY_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
         /**
          * ErrorEnvelope
          * @description The body of every non-2xx response this service produces.
@@ -507,6 +643,81 @@ export interface components {
          */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
+        };
+        /**
+         * FlowPoint
+         * @description One bucket. `left` counts a departure where it was decided, not where it fell.
+         */
+        FlowPoint: {
+            /** Joined */
+            joined: number;
+            /** Left */
+            left: number;
+            /**
+             * Startsat
+             * Format: date-time
+             */
+            startsAt: string;
+        };
+        /**
+         * FlowResponse
+         * @description GET /api/analytics/flow. Every bucket in the period is here, empty ones included.
+         */
+        FlowResponse: {
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "week" | "month";
+            /** Points */
+            points: components["schemas"]["FlowPoint"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+        };
+        /**
+         * FunnelResponse
+         * @description GET /api/analytics/funnel. The period comes back because the caller may not have named one.
+         *
+         *     Spelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python
+         *     keyword, and a response field nothing can construct by name is worse than two words for one
+         *     idea.
+         */
+        FunnelResponse: {
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Stages */
+            stages: components["schemas"]["FunnelStage"][];
+            /** Startedatrial */
+            startedATrial: number;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+        };
+        /**
+         * FunnelStage
+         * @description One bar. The three are nested subsets of the first, so `count` never rises down the list.
+         */
+        FunnelStage: {
+            /** Count */
+            count: number;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "arrived" | "paid" | "renewed";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -573,6 +784,16 @@ export interface components {
             reference?: string | null;
         };
         /**
+         * PermissionSummary
+         * @description One permission a role can grant, with the sentence that says what it is for.
+         */
+        PermissionSummary: {
+            /** Code */
+            code: string;
+            /** Description */
+            description: string;
+        };
+        /**
          * PlanSummary
          * @description The plan a subscription is on, as the card shows it.
          */
@@ -594,6 +815,28 @@ export interface components {
             price: number;
             /** Trialdays */
             trialDays: number;
+        };
+        /**
+         * QuietBand
+         * @description One stretch of silence. `toDays` is null on the last band, which has no upper edge.
+         */
+        QuietBand: {
+            /** Count */
+            count: number;
+            /** Fromdays */
+            fromDays: number;
+            /** Todays */
+            toDays: number | null;
+        };
+        /**
+         * QuietResponse
+         * @description GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table.
+         */
+        QuietResponse: {
+            /** Bands */
+            bands: components["schemas"]["QuietBand"][];
+            /** Total */
+            total: number;
         };
         /**
          * RedeemRequest
@@ -621,6 +864,51 @@ export interface components {
             /** Percent */
             percent: number;
         };
+        /** RevenueMonth */
+        RevenueMonth: {
+            /** Amount */
+            amount: number;
+            /**
+             * Startsat
+             * Format: date-time
+             */
+            startsAt: string;
+        };
+        /**
+         * RevenueResponse
+         * @description GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells.
+         */
+        RevenueResponse: {
+            /** Currency */
+            currency: string;
+            /** Months */
+            months: components["schemas"]["RevenueMonth"][];
+        };
+        /**
+         * RoleDetail
+         * @description One role and everything the editor needs to draw it.
+         *
+         *     `holders` is here so the screen can say why a role cannot be deleted before somebody presses
+         *     the button and is told. `permissions` is sorted, so two roles granting the same set read the
+         *     same way down the column.
+         */
+        RoleDetail: {
+            /** Code */
+            code: string;
+            /** Holders */
+            holders: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Issystem */
+            isSystem: boolean;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
+        };
         /**
          * RoleSummary
          * @description A role as the panel displays it. `id` stays inside the process.
@@ -630,6 +918,58 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /**
+         * RoleWriteRequest
+         * @description The editable half of a role: its name and what it grants.
+         *
+         *     `permissions` is typed as the catalogue rather than as strings, so a code this application
+         *     does not have is refused by the schema and named in `field` — the editor never sends one,
+         *     and a direct call gets told which value was wrong rather than a 500 from a foreign key.
+         */
+        RoleWriteRequest: {
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: ("subscribers.read" | "subscribers.write" | "plans.read" | "plans.write" | "promo.read" | "promo.write" | "referrals.read" | "referrals.write" | "analytics.read" | "audit.read" | "users.read" | "users.write" | "demo.control")[];
+        };
+        /**
+         * RolesResponse
+         * @description GET /api/roles: the roles, and the catalogue they may grant from.
+         *
+         *     The catalogue travels with them rather than under an endpoint of its own. One request draws
+         *     one screen, and the editor cannot then offer a checkbox for a permission the server has never
+         *     heard of.
+         */
+        RolesResponse: {
+            /** Items */
+            items: components["schemas"]["RoleDetail"][];
+            /** Permissions */
+            permissions: components["schemas"]["PermissionSummary"][];
+        };
+        /** StateCount */
+        StateCount: {
+            /** Count */
+            count: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "trial" | "active" | "grace" | "expired" | "cancelled";
+        };
+        /**
+         * StatesResponse
+         * @description GET /api/analytics/states.
+         *
+         *     `total` is the same number `GET /api/subscribers` reports with no filters, because both walk
+         *     the engine once through the same iterator. The two screens sit side by side and a reader will
+         *     compare them.
+         */
+        StatesResponse: {
+            /** States */
+            states: components["schemas"]["StateCount"][];
+            /** Total */
+            total: number;
         };
         /**
          * SubscribeRequest
@@ -882,13 +1222,239 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_flow_api_analytics_flow_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                granularity?: "week" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_funnel_api_analytics_funnel_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunnelResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_quiet_api_analytics_quiet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuietResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_revenue_api_analytics_revenue_get: {
+        parameters: {
+            query?: {
+                months?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_states_api_analytics_states_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_page_api_audit_get: {
         parameters: {
             query?: {
                 page?: number;
                 pageSize?: number;
                 actorUserId?: string | null;
-                action?: ("subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program")[];
+                action?: ("subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete")[];
                 targetId?: string | null;
                 outcome?: ("ok" | "refused") | null;
             };
@@ -1173,6 +1739,240 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_roles_api_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolesResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_role_api_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replace_role_api_roles__role_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_role_api_roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

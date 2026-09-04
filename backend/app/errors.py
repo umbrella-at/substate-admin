@@ -53,6 +53,9 @@ class ErrorCode(StrEnum):
     NOT_FOUND = auto()
     METHOD_NOT_ALLOWED = auto()
     INTERNAL_ERROR = auto()
+    ROLE_IS_SYSTEM = auto()
+    ROLE_IN_USE = auto()
+    ROLE_CODE_TAKEN = auto()
 
     # Refusals that came out of `substate`. Each name is the exception's own, mechanically
     # respelled — `app.subscribers.operations` asserts that at import, so a code here and the
@@ -89,6 +92,19 @@ _DEFAULTS: Final[Mapping[ErrorCode, tuple[int, str]]] = MappingProxyType(
             "The service failed to handle this request. Try again; the request id in the "
             "response headers identifies it in the log.",
         ),
+        # The two the roles editor produces, and one the API can produce without an editor. All
+        # three are 409: they are refusals about the state of the world rather than about a value
+        # that was submitted, and each names the way out.
+        ErrorCode.ROLE_IS_SYSTEM: (
+            409,
+            "This role is defined by the application and is restored on every deploy. "
+            "Copy it into a role of your own and change that.",
+        ),
+        ErrorCode.ROLE_IN_USE: (
+            409,
+            "People still hold this role. Move them to another one, and it can be deleted.",
+        ),
+        ErrorCode.ROLE_CODE_TAKEN: (409, "A role already exists under that code."),
         # A refusal names what is true and what can be done about it. "Something went wrong" is
         # the one sentence none of these may become: the engine knew exactly what was wrong.
         #

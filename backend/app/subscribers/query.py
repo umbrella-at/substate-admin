@@ -11,6 +11,7 @@ everything is for.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -174,10 +175,28 @@ def _matches(row: SubscriberRow, query: SubscriberQuery, now: datetime) -> bool:
         needle = query.search.casefold()
         if needle not in row.display_name.casefold() and needle not in row.user_id.casefold():
             return False
-    return query.cohort is None or _in_cohort(row, query.cohort, now)
+    return query.cohort is None or in_cohort(row, query.cohort, now)
 
 
-def _in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
+def live_subscriptions(world: World) -> AsyncIterator[Subscription]:
+    """Every subscription the engine still has, for the ids this world knows about.
+
+    The one walk behind both the table's total and the analytics snapshot. Two walks would be two
+    answers to how many subscribers there are, on two screens a reader opens side by side.
+    """
+
+    async def walk() -> AsyncIterator[Subscription]:
+        for user_id in world.subscribers:
+            subscription = await world.engine.get_subscription(user_id)
+            # Known to the journal, gone from the engine. Not an error: an event names a
+            # subscriber, and a subscription can be removed while its history stays.
+            if subscription is not None:
+                yield subscription
+
+    return walk()
+
+
+def in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
     match cohort:
         case Cohort.QUIET:
             return (
@@ -238,12 +257,8 @@ async def list_subscribers(
     field, descending = parse_sort(query.sort)
 
     rows: list[SubscriberRow] = []
-    for user_id in world.subscribers:
-        subscription = await world.engine.get_subscription(user_id)
-        if subscription is None:
-            # Known to the journal, gone from the engine. Not an error: an event names a
-            # subscriber, and a subscription can be removed while its history stays.
-            continue
+    async for subscription in live_subscriptions(world):
+        user_id = subscription.user_id
         display_name, last_active_at = projection.get(user_id, (user_id, None))
         row = build_row(subscription, display_name, last_active_at)
         if _matches(row, query, moment):

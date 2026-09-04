@@ -50,7 +50,10 @@
               "subscription.change_plan",
               "subscription.redeem",
               "subscription.payment",
-              "subscription.assign_program"
+              "subscription.assign_program",
+              "role.create",
+              "role.update",
+              "role.delete"
             ],
             "title": "Action",
             "type": "string"
@@ -96,12 +99,23 @@
             "type": "string"
           },
           "targetType": {
+            "enum": [
+              "subscription",
+              "role"
+            ],
             "title": "Targettype",
             "type": "string"
           },
           "worldId": {
-            "title": "Worldid",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worldid"
           }
         },
         "required": [
@@ -111,7 +125,6 @@
           "action",
           "targetType",
           "targetId",
-          "worldId",
           "outcome",
           "payload"
         ],
@@ -166,6 +179,53 @@
           "planId"
         ],
         "title": "ChangePlanRequest",
+        "type": "object"
+      },
+      "CreateRoleRequest": {
+        "additionalProperties": false,
+        "description": "POST /api/roles. The code is set once and never edited: it is what people call the role.",
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 2,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "enum": [
+                "subscribers.read",
+                "subscribers.write",
+                "plans.read",
+                "plans.write",
+                "promo.read",
+                "promo.write",
+                "referrals.read",
+                "referrals.write",
+                "analytics.read",
+                "audit.read",
+                "users.read",
+                "users.write",
+                "demo.control"
+              ],
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "code"
+        ],
+        "title": "CreateRoleRequest",
         "type": "object"
       },
       "EngineEvent": {
@@ -239,6 +299,9 @@
           "NOT_FOUND",
           "METHOD_NOT_ALLOWED",
           "INTERNAL_ERROR",
+          "ROLE_IS_SYSTEM",
+          "ROLE_IN_USE",
+          "ROLE_CODE_TAKEN",
           "ALREADY_SUBSCRIBED",
           "UNKNOWN_PLAN",
           "UNKNOWN_PROMO_CODE",
@@ -260,6 +323,131 @@
           "error"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "FlowPoint": {
+        "additionalProperties": false,
+        "description": "One bucket. `left` counts a departure where it was decided, not where it fell.",
+        "properties": {
+          "joined": {
+            "title": "Joined",
+            "type": "integer"
+          },
+          "left": {
+            "title": "Left",
+            "type": "integer"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "title": "Startsat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "joined",
+          "left"
+        ],
+        "title": "FlowPoint",
+        "type": "object"
+      },
+      "FlowResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/flow. Every bucket in the period is here, empty ones included.",
+        "properties": {
+          "granularity": {
+            "enum": [
+              "week",
+              "month"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/FlowPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "granularity",
+          "points"
+        ],
+        "title": "FlowResponse",
+        "type": "object"
+      },
+      "FunnelResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/funnel. The period comes back because the caller may not have named one.\n\nSpelled `since`/`until` rather than the query string's `from`/`to`: `from` is a Python\nkeyword, and a response field nothing can construct by name is worse than two words for one\nidea.",
+        "properties": {
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStage"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "startedATrial": {
+            "title": "Startedatrial",
+            "type": "integer"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "stages",
+          "startedATrial"
+        ],
+        "title": "FunnelResponse",
+        "type": "object"
+      },
+      "FunnelStage": {
+        "additionalProperties": false,
+        "description": "One bar. The three are nested subsets of the first, so `count` never rises down the list.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "stage": {
+            "enum": [
+              "arrived",
+              "paid",
+              "renewed"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "count"
+        ],
+        "title": "FunnelStage",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -413,6 +601,26 @@
         "title": "PaymentRequest",
         "type": "object"
       },
+      "PermissionSummary": {
+        "additionalProperties": false,
+        "description": "One permission a role can grant, with the sentence that says what it is for.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "description"
+        ],
+        "title": "PermissionSummary",
+        "type": "object"
+      },
       "PlanSummary": {
         "additionalProperties": false,
         "description": "The plan a subscription is on, as the card shows it.",
@@ -462,6 +670,61 @@
         "title": "PlanSummary",
         "type": "object"
       },
+      "QuietBand": {
+        "additionalProperties": false,
+        "description": "One stretch of silence. `toDays` is null on the last band, which has no upper edge.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fromDays": {
+            "title": "Fromdays",
+            "type": "integer"
+          },
+          "toDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todays"
+          }
+        },
+        "required": [
+          "fromDays",
+          "toDays",
+          "count"
+        ],
+        "title": "QuietBand",
+        "type": "object"
+      },
+      "QuietResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/quiet. `total` is the size of the `quiet` cohort over the table.",
+        "properties": {
+          "bands": {
+            "items": {
+              "$ref": "#/components/schemas/QuietBand"
+            },
+            "title": "Bands",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bands",
+          "total"
+        ],
+        "title": "QuietResponse",
+        "type": "object"
+      },
       "RedeemRequest": {
         "additionalProperties": false,
         "description": "POST /api/subscribers/{id}/redeem.",
@@ -508,6 +771,93 @@
         "title": "ReferralProgramSummary",
         "type": "object"
       },
+      "RevenueMonth": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "title": "Startsat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "amount"
+        ],
+        "title": "RevenueMonth",
+        "type": "object"
+      },
+      "RevenueResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/revenue. Minor units, in the one currency the catalogue sells.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/RevenueMonth"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "currency",
+          "months"
+        ],
+        "title": "RevenueResponse",
+        "type": "object"
+      },
+      "RoleDetail": {
+        "additionalProperties": false,
+        "description": "One role and everything the editor needs to draw it.\n\n`holders` is here so the screen can say why a role cannot be deleted before somebody presses\nthe button and is told. `permissions` is sorted, so two roles granting the same set read the\nsame way down the column.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "holders": {
+            "title": "Holders",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isSystem": {
+            "title": "Issystem",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "isSystem",
+          "permissions",
+          "holders"
+        ],
+        "title": "RoleDetail",
+        "type": "object"
+      },
       "RoleSummary": {
         "additionalProperties": false,
         "description": "A role as the panel displays it. `id` stays inside the process.",
@@ -526,6 +876,120 @@
           "name"
         ],
         "title": "RoleSummary",
+        "type": "object"
+      },
+      "RoleWriteRequest": {
+        "additionalProperties": false,
+        "description": "The editable half of a role: its name and what it grants.\n\n`permissions` is typed as the catalogue rather than as strings, so a code this application\ndoes not have is refused by the schema and named in `field` — the editor never sends one,\nand a direct call gets told which value was wrong rather than a 500 from a foreign key.",
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "enum": [
+                "subscribers.read",
+                "subscribers.write",
+                "plans.read",
+                "plans.write",
+                "promo.read",
+                "promo.write",
+                "referrals.read",
+                "referrals.write",
+                "analytics.read",
+                "audit.read",
+                "users.read",
+                "users.write",
+                "demo.control"
+              ],
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RoleWriteRequest",
+        "type": "object"
+      },
+      "RolesResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/roles: the roles, and the catalogue they may grant from.\n\nThe catalogue travels with them rather than under an endpoint of its own. One request draws\none screen, and the editor cannot then offer a checkbox for a permission the server has never\nheard of.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RoleDetail"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionSummary"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "permissions"
+        ],
+        "title": "RolesResponse",
+        "type": "object"
+      },
+      "StateCount": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "trial",
+              "active",
+              "grace",
+              "expired",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "title": "StateCount",
+        "type": "object"
+      },
+      "StatesResponse": {
+        "additionalProperties": false,
+        "description": "GET /api/analytics/states.\n\n`total` is the same number `GET /api/subscribers` reports with no filters, because both walk\nthe engine once through the same iterator. The two screens sit side by side and a reader will\ncompare them.",
+        "properties": {
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/StateCount"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "states",
+          "total"
+        ],
+        "title": "StatesResponse",
         "type": "object"
       },
       "SubscribeRequest": {
@@ -1126,6 +1590,366 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/analytics/flow": {
+      "get": {
+        "operationId": "read_flow_api_analytics_flow_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "week",
+              "enum": [
+                "week",
+                "month"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Arrivals against departures, bucket by bucket",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/funnel": {
+      "get": {
+        "operationId": "read_funnel_api_analytics_funnel_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FunnelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Where the people who arrived in a period stopped",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/quiet": {
+      "get": {
+        "operationId": "read_quiet_api_analytics_quiet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuietResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The quiet cohort, split by how long the silence has run",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/revenue": {
+      "get": {
+        "operationId": "read_revenue_api_analytics_revenue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "months",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 36,
+              "minimum": 1,
+              "title": "Months",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "What was taken, by calendar month",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/states": {
+      "get": {
+        "operationId": "read_states_api_analytics_states_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every subscription the engine holds, by the state it is in",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/audit": {
       "get": {
         "operationId": "list_page_api_audit_get",
@@ -1183,7 +2007,10 @@
                   "subscription.change_plan",
                   "subscription.redeem",
                   "subscription.payment",
-                  "subscription.assign_program"
+                  "subscription.assign_program",
+                  "role.create",
+                  "role.update",
+                  "role.delete"
                 ],
                 "type": "string"
               },
@@ -1569,6 +2396,303 @@
         "summary": "List Programs",
         "tags": [
           "referrals"
+        ]
+      }
+    },
+    "/api/roles": {
+      "get": {
+        "operationId": "list_roles_api_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every role, and the permissions a role may grant",
+        "tags": [
+          "roles"
+        ]
+      },
+      "post": {
+        "operationId": "create_role_api_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a role of your own",
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/roles/{role_id}": {
+      "delete": {
+        "operationId": "delete_role_api_roles__role_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete a role nobody holds",
+        "tags": [
+          "roles"
+        ]
+      },
+      "put": {
+        "operationId": "replace_role_api_roles__role_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Replace a role's name and what it grants",
+        "tags": [
+          "roles"
         ]
       }
     },
