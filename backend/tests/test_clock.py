@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_demo import auth, open_one
 
+from app.routers.clock import MAX_WIND
 from app.worlds.registry import World
 from support import Clock, bearer, create_account, envelope
 
@@ -151,3 +152,40 @@ def _count(page: dict[str, object], state: str) -> int:
     items = page["items"]
     assert isinstance(items, list)
     return sum(1 for row in items if row["state"] == state)
+
+
+async def test_a_world_cannot_be_wound_without_end(client: AsyncClient, base_world: World) -> None:
+    """THE VALVE THE CEILING DOES NOT COVER, WHICH A MEASUREMENT FOUND RATHER THAN A REVIEW.
+
+    The ceiling bounds how many sandboxes stand and the rate limit bounds how fast they are built.
+    Neither bounds how large one of them grows.
+
+    A year of winding takes a world from 3773 journal rows to 31026, at 1.8 seconds of the only
+    CPU per press — for as long as somebody keeps pressing.
+    """
+    body = await open_one(client)
+
+    spent = await client.post(ADVANCE, headers=auth(body), json={"days": MAX_WIND.days})
+    refused = await client.post(ADVANCE, headers=auth(body), json={"days": 1})
+
+    assert spent.status_code == 200
+    assert refused.status_code == 422
+    envelope_ = envelope(refused)
+    assert envelope_["code"] == "VALIDATION_ERROR"
+    # Named, because it is a refusal about the number in the field rather than about the request.
+    assert envelope_["field"] == "days"
+    assert "0 of its 365 days are left" in envelope_["message"]
+
+
+async def test_what_is_left_is_what_the_refusal_says(
+    client: AsyncClient, base_world: World
+) -> None:
+    """A visitor who has spent most of the allowance is told how much of it is left, not merely
+    that they may not. The number is the only thing that lets them choose a smaller step."""
+    body = await open_one(client)
+    await client.post(ADVANCE, headers=auth(body), json={"days": 300})
+
+    refused = await client.post(ADVANCE, headers=auth(body), json={"days": 100})
+
+    assert refused.status_code == 422
+    assert "65 of its 365 days are left" in envelope(refused)["message"]

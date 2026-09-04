@@ -14,7 +14,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ClockReading } from '@/api/client'
+import { ApiError, type ClockReading } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
 import ClockControl from '@/components/ClockControl.vue'
 import { forgetWorldClock } from '@/composables/useWorldClock'
@@ -135,5 +135,25 @@ describe('winding the clock', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('The world did not move.')
+  })
+
+  it('passes on what the service said when the world has been wound as far as it goes', async () => {
+    // The sentence carries the number of days left, and that number is the only thing that lets
+    // somebody choose a smaller step. A fixed "it did not move" throws it away.
+    const client = stubClient({
+      advanceClock: vi.fn().mockRejectedValue(
+        new ApiError(422, {
+          code: 'VALIDATION_ERROR',
+          message: 'This world has been wound as far as it goes. 65 of its 365 days are left.',
+          field: 'days',
+        } as never),
+      ),
+    })
+    const { wrapper } = await open(client)
+
+    await press(wrapper, 'Month')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('65 of its 365 days are left')
   })
 })

@@ -16,7 +16,8 @@ time, which is also what the engine needs: it crosses at most eight period bound
 subscription per tick, so one tick after a ninety-day jump would leave a weekly subscriber behind.
 """
 
-from typing import Annotated
+from datetime import timedelta
+from typing import Annotated, Final
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,21 @@ from app.worlds.registry import World
 _log = get_logger(__name__)
 
 router = APIRouter(prefix="/clock", tags=["clock"])
+
+MAX_WIND: Final = timedelta(days=365)
+"""How far a world may be wound in total, over every press.
+
+THE THIRD OVERLOAD VALVE, AND THE ONE A CEILING ON WORLDS DOES NOT COVER. The ceiling bounds how
+many sandboxes stand at once and the rate limit bounds how fast they are built; neither bounds how
+big one of them grows.
+
+Measured: a year of winding takes a world from 3773 journal rows to 31026 and from 351 subscribers
+to 1160, and a full-year press costs 1.8 seconds of the only CPU there is. Nothing stopped a
+visitor pressing it for their whole hour, and each press added another year of modelled life.
+
+A year is far more than a demonstration needs — twelve presses of Month, or one of the field — and
+it holds a world at about 30000 rows, so thirty-two of them at the ceiling are bounded too.
+"""
 
 
 @router.get(
@@ -69,6 +85,21 @@ async def advance(
     cohort becomes the whole table at the first press.
     """
     world = current_world()
+    asked = timedelta(days=body.days)
+    left = MAX_WIND - world.clock.offset
+    if asked > left:
+        # A refusal about the field, because that is what it is about: the body is well formed and
+        # the number in it is one this world can no longer afford. The sentence says what is left.
+        raise ApiError(
+            ErrorCode.VALIDATION_ERROR,
+            message=(
+                f"This world has been wound as far as it goes. "
+                f"{max(left.days, 0)} of its 365 days are left."
+            ),
+            field="days",
+            status_code=422,
+        )
+
     population = world.population
     if population is None:
         # A world that never seeded. The panel serves without one, and this is the one route that

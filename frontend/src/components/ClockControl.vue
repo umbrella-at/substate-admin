@@ -18,6 +18,7 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 
+import { ApiError } from '@/api/client'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
@@ -29,11 +30,13 @@ const queryClient = useQueryClient()
 const { now, offsetMs, isSandbox } = useWorldClock()
 
 const busy = ref(false)
-const failed = ref(false)
+const refusal = ref('')
 const custom = ref('')
 
 /** The three the buttons offer. A month is thirty days rather than a calendar month: the engine
  *  counts periods in days, and "a month" here is a distance rather than a date on a wall. */
+const UNMOVED = 'The world did not move. Try again in a moment.'
+
 const STEPS = [
   { days: 1, label: 'Day' },
   { days: 7, label: 'Week' },
@@ -55,7 +58,7 @@ const asked = computed(() => {
 async function wind(days: number): Promise<void> {
   if (busy.value) return
   busy.value = true
-  failed.value = false
+  refusal.value = ''
   try {
     const reached = await client.advanceClock(days)
     // Written straight in rather than refetched, so the times on screen move with the press
@@ -65,10 +68,11 @@ async function wind(days: number): Promise<void> {
       predicate: (query) => query.queryKey[0] !== 'clock',
     })
     custom.value = ''
-  } catch {
-    // One sentence for every reason. The clock is a control, not a form: there is nothing to
-    // correct and nothing a longer explanation would let anybody do differently.
-    failed.value = true
+  } catch (cause) {
+    // The service's own sentence when it wrote one. A world that has been wound as far as it goes
+    // says how much is left, and that number is the only thing that lets somebody choose a
+    // smaller step — "the world did not move" would throw it away.
+    refusal.value = cause instanceof ApiError && cause.message !== '' ? cause.message : UNMOVED
   } finally {
     busy.value = false
   }
@@ -108,8 +112,8 @@ async function wind(days: number): Promise<void> {
       </AppButton>
     </form>
 
-    <p v-if="failed" class="mt-2 text-caption text-danger-text" role="status">
-      The world did not move. Try again in a moment.
+    <p v-if="refusal !== ''" class="mt-2 text-caption text-danger-text" role="status">
+      {{ refusal }}
     </p>
   </section>
 </template>
