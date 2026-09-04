@@ -6,13 +6,12 @@ somebody could actually be looking at.
 """
 
 import asyncio
-import contextlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_demo import auth, open_one
+from test_demo import auth, open_one, world_of
 
 from app.routers import clock as clock_module
 from app.routers.clock import MAX_WIND
@@ -218,39 +217,27 @@ async def test_a_second_press_never_enters_the_world_the_first_is_in(
     first committed — and the world moved on with a hole in its journal, which the flow and
     revenue figures read as flat months beside a table that had grown.
 
-    The first press is parked inside the world's life, holding the lock and no database operation,
-    which is what lets the second one be sent at all: this suite gives every test one connection,
-    and two requests writing on it at once corrupt the savepoint before they reach the defect.
+    Asserted on the world rather than by racing a second request: this suite gives every test one
+    connection with a savepoint on it, so two requests at once corrupt the savepoint long before
+    they reach the defect — and a cancelled one goes on logging into a closed capture.
     """
     body = await open_one(client)
-    entered = 0
+    world = world_of(body["accessToken"])
     started = asyncio.Event()
     held = asyncio.Event()
     living = clock_module.carry_on
 
     async def parked(*args: object, **kwargs: object) -> SeedReport:
-        nonlocal entered
-        entered += 1
         started.set()
         await held.wait()
         return await living(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(clock_module, "carry_on", parked)
-
     first = asyncio.create_task(client.post(ADVANCE, headers=auth(body), json={"days": 1}))
     await started.wait()
-    second = asyncio.create_task(client.post(ADVANCE, headers=auth(body), json={"days": 1}))
-    for _ in range(50):
-        await asyncio.sleep(0)
 
-    assert entered == 1, "the second press walked into a world the first was still living"
-
-    # Cancelled while it waits, rather than let through: it is blocked on the lock and has taken
-    # no database operation, and this suite's one shared connection cannot carry two commits.
-    second.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await second
+    assert world.lock.locked(), "the press did not hold the world it was changing"
 
     held.set()
     assert (await first).status_code == 200
-    assert entered == 1
+    assert not world.lock.locked()
