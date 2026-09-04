@@ -35,9 +35,14 @@ const email = ref('')
 const password = ref('')
 const busy = ref(false)
 
+/** Its own flag and its own controller, and that is not tidiness: sharing `busy` would make each
+ *  button swallow the other's press, and sharing `inFlight` would let the sign-in's cleanup abort
+ *  a request the visitor started. */
+const opening = ref(false)
+
 /** What kind of refusal is on screen, not just its text. The wording and whether the fields
  *  themselves are marked invalid both follow from this, and they must not disagree. */
-type Refusal = 'credentials' | 'validation' | 'rate-limited' | 'unreachable'
+type Refusal = 'credentials' | 'validation' | 'rate-limited' | 'unreachable' | 'no-world'
 const refusal = ref<Refusal | null>(null)
 const message = ref('')
 
@@ -56,7 +61,11 @@ const ERROR_ID = 'login-error'
 /** In flight only. Abandoned if this page is navigated away from, so a slow answer cannot land on
  *  a component that no longer exists and set state nobody will see. */
 let inFlight: AbortController | null = null
-onBeforeUnmount(() => inFlight?.abort())
+let opener: AbortController | null = null
+onBeforeUnmount(() => {
+  inFlight?.abort()
+  opener?.abort()
+})
 
 const UNREACHABLE = 'The service could not be reached. Nothing was sent — try again in a moment.'
 const RATE_LIMITED = 'Too many attempts. Wait a few minutes and try again.'
@@ -87,11 +96,48 @@ function describe(cause: unknown): { refusal: Refusal; message: string } {
     return { refusal: 'credentials', message: 'Email or password is incorrect.' }
   }
 
+  // Every demonstration slot is taken. The API writes a sentence for this that says what to do
+  // about it, and replacing it with "the service could not be reached" would be a claim about the
+  // network that is not true — the service answered, at length.
+  if (cause.code === 'SANDBOX_FULL') {
+    return { refusal: 'no-world', message: cause.message }
+  }
+
   // A 5xx, or anything else the catalogue does not cover. The API's own 500 text names the request
   // id, which is the most it can say without leaking a cause — and it is the wrong sentence on the
   // one page a stranger reaches, where the useful thing to say is that the service is not
   // answering rather than how to find the failure in a journal they cannot read.
   return { refusal: 'unreachable', message: UNREACHABLE }
+}
+
+/** Open a demonstration and go straight into it. */
+
+/* The same three steps a successful sign-in takes, in the same order: adopt the pass, ask who that
+   makes us, and only then navigate. Skipping the middle one lands on a framed page whose sidebar
+   is empty — the frame draws its links from permissions nobody has fetched yet. */
+async function tryTheDemo(): Promise<void> {
+  if (opening.value || busy.value) return
+  refusal.value = null
+  message.value = ''
+  opening.value = true
+
+  const controller = new AbortController()
+  opener = controller
+
+  try {
+    const session = await client.demoSession(controller.signal)
+    client.setDemoToken(session.accessToken)
+    auth.adopt(await client.me(controller.signal))
+    await router.replace('/')
+  } catch (cause) {
+    if (controller.signal.aborted) return
+    const described = describe(cause)
+    refusal.value = described.refusal
+    message.value = described.message
+  } finally {
+    if (opener === controller) opener = null
+    opening.value = false
+  }
 }
 
 async function submit(): Promise<void> {
@@ -147,7 +193,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <main class="grid min-h-screen place-items-center p-6">
+  <main class="flex min-h-screen flex-col items-center justify-center p-6">
     <!-- The panel is what the inputs are recessed into. Without it their surface-0 fill would meet
          the surface-0 page and each field would survive as a rectangle of border. -->
     <form
@@ -200,5 +246,17 @@ async function submit(): Promise<void> {
         {{ busy ? 'Signing in…' : 'Sign in' }}
       </AppButton>
     </form>
+
+    <!-- Outside the form, and outlined rather than filled: docs/design.md allows one filled
+         element per screen, and the one here belongs to the person who came with a password. -->
+    <div class="mt-6 flex w-full max-w-form flex-col items-center gap-2">
+      <AppButton class="w-full" :busy="opening" variant="outlined" @click="tryTheDemo">
+        {{ opening ? 'Building a world…' : 'Try the demo' }}
+      </AppButton>
+      <p class="text-center text-dense text-text-muted">
+        A world of your own with nine months of invented history in it, yours for an hour. Nothing
+        in it is real and nothing you do there leaves it.
+      </p>
+    </div>
   </main>
 </template>

@@ -47,8 +47,13 @@ import { computed, h } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 import StateChip from '@/components/StateChip.vue'
+import { useWorldNow } from '@/composables/useWorldClock'
 import { exactly, formatSince } from '@/domain/elapsed'
 import { type SortField, type SubscriberSummary, type Sort } from '@/domain/subscribers'
+
+/** The world's clock, not this browser's. A wound-forward world holds activity in the browser's
+ *  future, and every one of those cells would otherwise read "just now". */
+const now = useWorldNow()
 
 const props = defineProps<{
   rows: SubscriberSummary[]
@@ -163,7 +168,7 @@ const columns = columnHelper.columns([
       }
       const at = toDate(raw)
       if (at === null) return '—'
-      return h('span', { title: exactly(at) }, formatSince(at, Date.now()))
+      return h('span', { title: exactly(at) }, formatSince(at, now.value))
     },
   }),
 ])

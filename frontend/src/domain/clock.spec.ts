@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest'
+
+import { daysWound, modelTime } from '@/domain/clock'
+
+describe('the moment a world is at', () => {
+  it('is stated in UTC, and says so', () => {
+    // Everything else the panel shows about a world is UTC. A clock in the reader's own zone next
+    // to a table in UTC is an hour of arithmetic somebody has to do to compare two numbers.
+    expect(modelTime(Date.parse('2026-09-04T06:30:00Z'))).toBe('4 Sept 2026, 06:30 UTC')
+  })
+
+  it('keeps a twenty-four hour clock', () => {
+    expect(modelTime(Date.parse('2026-09-04T18:05:00Z'))).toContain('18:05')
+  })
+})
+
+describe('how far a world has been wound', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('counts whole days and floors them', () => {
+    // Floored, not rounded: an offset of thirty days and four seconds is thirty days. Rounding
+    // would put "31 days ahead" on screen for a day that has not happened.
+    expect(daysWound(30 * DAY + 4000)).toBe(30)
+  })
+
+  it('reads an exact month as a month', () => {
+    // The reason this takes the offset rather than two clock readings. Model time is the real
+    // clock plus the offset, so reading the real clock again a millisecond later and subtracting
+    // gives just under thirty days — and a floor over that says 29.
+    expect(daysWound(30 * DAY)).toBe(30)
+  })
+
+  it('is zero for a world nobody has wound', () => {
+    expect(daysWound(0)).toBe(0)
+  })
+
+  it('never goes negative', () => {
+    // The clock refuses to go backwards, so this cannot arise from the world. It can arise from
+    // arithmetic, and "-1 days ahead" on screen would be worse than saying nothing.
+    expect(daysWound(-DAY)).toBe(0)
+  })
+})

@@ -34,9 +34,10 @@ interface Sent {
 
 const fetchMock = vi.fn<(path: string, init: Sent) => Promise<Response>>()
 const onSessionLost = vi.fn()
+const onDemoEnded = vi.fn()
 
 function client() {
-  return createClient({ onSessionLost })
+  return createClient({ onSessionLost, onDemoEnded })
 }
 
 function ok(body: unknown): Response {
@@ -65,6 +66,7 @@ function callsTo(path: string): Sent[] {
 beforeEach(() => {
   fetchMock.mockReset()
   onSessionLost.mockReset()
+  onDemoEnded.mockReset()
   vi.stubGlobal('fetch', fetchMock)
 })
 

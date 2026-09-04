@@ -25,7 +25,7 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 function render() {
-  return mount(AppShell, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  return mount(AppShell, { global: { stubs: { RouterLink: RouterLinkStub, ClockControl: true } } })
 }
 
 beforeEach(() => {

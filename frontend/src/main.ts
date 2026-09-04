@@ -39,6 +39,14 @@ const auth = useAuthStore()
 let mounted = false
 
 const client = createClient({
+  onDemoEnded: () => {
+    // Not the login page. A demonstration visitor has no account to sign back in to, and the
+    // sentence there — "sign in again to carry on where you were" — is advice they cannot take.
+    forgetSession(client, queryClient)
+    if (!mounted) return
+    if (router.currentRoute.value.name === 'demo-ended') return
+    void router.replace({ name: 'demo-ended' })
+  },
   onSessionLost: () => {
     forgetSession(client, queryClient)
     if (!mounted) return

@@ -14,6 +14,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import ClockControl from '@/components/ClockControl.vue'
 import type { PermissionCode } from '@/domain/permissions'
 import { useAuthStore } from '@/stores/auth'
 
@@ -71,6 +72,10 @@ const visible = computed(() =>
           </RouterLink>
         </li>
       </ul>
+
+      <!-- Drawn only for whoever may press it, like every link above. A control that is visible
+           and refused is an invitation to a locked door. -->
+      <ClockControl v-if="auth.can('demo.control')" />
     </nav>
 
     <div class="min-w-0 flex-1">

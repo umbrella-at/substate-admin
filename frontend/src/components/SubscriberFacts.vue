@@ -19,11 +19,14 @@ import { computed } from 'vue'
 import type { SubscriberDetail } from '@/api/client'
 import AppFact from '@/components/AppFact.vue'
 import StateChip from '@/components/StateChip.vue'
+import { useWorldNow } from '@/composables/useWorldClock'
 import { exactly, formatSince } from '@/domain/elapsed'
 import { moment, money } from '@/domain/events'
 import { boundaries, boundaryRows } from '@/domain/subscription'
 
 const props = defineProps<{ detail: SubscriberDetail }>()
+
+const now = useWorldNow()
 
 const row = computed(() => props.detail.subscriber)
 
@@ -48,12 +51,15 @@ const price = computed(() => {
 
 /** The one duration on this card, and it keeps the phrasing the table's column argued for: the
  *  question is whether this person has been seen lately, and a date makes the reader subtract. */
+
+/* Measured against the WORLD's clock: a world wound a month forward holds activity a month in this
+   browser's future, and against the browser's own every one of those reads "just now". */
 const activity = computed(() => {
   const raw = row.value.lastActiveAt
   if (raw === null || raw === undefined) return { phrase: 'Never', exact: undefined }
   const at = new Date(raw)
   if (Number.isNaN(at.getTime())) return { phrase: '—', exact: undefined }
-  return { phrase: formatSince(at, Date.now()), exact: exactly(at) }
+  return { phrase: formatSince(at, now.value), exact: exactly(at) }
 })
 
 const DASH = '—'

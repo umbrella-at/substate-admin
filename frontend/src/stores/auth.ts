@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { ApiClient, MeResponse } from '@/api/client'
+import { rememberedDemoToken, type ApiClient, type MeResponse } from '@/api/client'
 import { granted, type PermissionCode } from '@/domain/permissions'
 
 export type SessionUser = MeResponse['user']
@@ -72,12 +72,30 @@ export const useAuthStore = defineStore('auth', () => {
         }),
       ])
       if (outcome === 'renewed') adopt(await client.me())
-      else clear()
+      else await resumeDemo(client)
     } catch {
       // Anonymous is the only thing a pre-mount failure can mean, whatever kind of failure it was.
       clear()
     } finally {
       ready.value = true
+    }
+  }
+
+  /** The other way a page load can find a session: a demonstration pass this tab kept. There is
+   *  no refresh cookie behind one, so without this a reload ends it while the world is still
+   *  standing and nothing in the browser can reach it again. */
+  async function resumeDemo(client: ApiClient): Promise<void> {
+    const kept = rememberedDemoToken()
+    if (kept === null) {
+      clear()
+      return
+    }
+    client.setDemoToken(kept)
+    try {
+      adopt(await client.me())
+    } catch {
+      client.setDemoToken(null)
+      clear()
     }
   }
 
