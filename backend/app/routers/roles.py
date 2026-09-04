@@ -69,8 +69,16 @@ async def _detail(session: AsyncSession, role: Role) -> RoleDetail:
     )
 
 
-async def _load(session: AsyncSession, role_id: uuid.UUID) -> Role:
-    role = (await session.execute(select(Role).where(Role.id == role_id))).scalar_one_or_none()
+async def _load(session: AsyncSession, role_id: uuid.UUID, scope: str | None) -> Role:
+    """One role of the caller's own world, or nothing.
+
+    404 rather than 403 for a role belonging to somebody else, and that is the honest answer: a
+    role of another world is not a role this session is refused, it is one that does not exist as
+    far as this session is concerned.
+    """
+    role = (
+        await session.execute(select(Role).where(Role.id == role_id, Role.world_id == scope))
+    ).scalar_one_or_none()
     if role is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     return role
@@ -115,12 +123,21 @@ async def _write_down(
 @router.get(
     "",
     summary="Every role, and the permissions a role may grant",
-    dependencies=[RequirePermission("users.read")],
     responses=error_responses(401, 403),
 )
-async def list_roles(session: Annotated[AsyncSession, Depends(get_session)]) -> RolesResponse:
+async def list_roles(
+    identity: Annotated[Identity, RequirePermission("users.read")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RolesResponse:
+    """The caller's own world's roles. A sandbox holds editable copies of the four system ones."""
     roles = (
-        (await session.execute(select(Role).order_by(Role.is_system.desc(), Role.code)))
+        (
+            await session.execute(
+                select(Role)
+                .where(Role.world_id == identity.world_scope)
+                .order_by(Role.is_system.desc(), Role.code)
+            )
+        )
         .scalars()
         .all()
     )
@@ -145,12 +162,12 @@ async def create_role(
     identity: Annotated[Identity, RequirePermission(_WRITE)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RoleDetail:
-    role = Role(code=body.code, name=body.name, is_system=False)
+    role = Role(code=body.code, name=body.name, is_system=False, world_id=identity.world_scope)
     session.add(role)
     try:
-        # Flushed alone, before the grants: `roles` carries exactly one unique constraint, so an
-        # integrity error here can only be the code. Pre-checking with a SELECT would leave a
-        # window the constraint would then fill with a 500.
+        # Flushed alone, before the grants: both unique indexes on `roles` are over the code, one
+        # per world, so an integrity error here can only be the code. Pre-checking with a SELECT
+        # would leave a window the constraint would then fill with a 500.
         await session.flush()
     except IntegrityError as clash:
         raise ApiError(ErrorCode.ROLE_CODE_TAKEN, field="code") from clash
@@ -176,7 +193,7 @@ async def replace_role(
     identity: Annotated[Identity, RequirePermission(_WRITE)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RoleDetail:
-    role = await _load(session, role_id)
+    role = await _load(session, role_id, identity.world_scope)
     _refuse_if_system(role)
 
     role.name = body.name
@@ -201,7 +218,7 @@ async def delete_role(
     identity: Annotated[Identity, RequirePermission(_WRITE)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
-    role = await _load(session, role_id)
+    role = await _load(session, role_id, identity.world_scope)
     _refuse_if_system(role)
 
     # Checked here rather than left to the RESTRICT on `users.role_id`, which would arrive as an

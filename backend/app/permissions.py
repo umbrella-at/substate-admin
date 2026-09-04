@@ -71,15 +71,14 @@ _SUPPORT_WRITES: Final[frozenset[PermissionCode]] = frozenset({"subscribers.writ
 # not what they did.
 _VIEWER_DENIED: Final[frozenset[PermissionCode]] = frozenset({"audit.read", "users.read"})
 
-# The demo role drives everything it can see, including the time machine, and cannot create or
-# disable an account — the one action whose effects outlive the demo.
+# The demo role holds everything, because inside a sandbox it is an administrator: the world, its
+# operators and its roles are all invented, all its own, and all gone in an hour.
 #
-# It cannot read the panel's own users either, which is one code narrower than the "everything
-# except users.write" the specification writes. A demo session is handed to whoever clicks the
-# button on the login page, and `users.read` would hand that stranger the email address of every
-# real operator. The narrowing costs nothing today because nothing mints a demo session yet; once
-# something does, it is a visible removal of an ability people have seen.
-_DEMO_DENIED: Final[frozenset[PermissionCode]] = frozenset({"users.write", "users.read"})
+# It was narrower until users and roles could be filtered by world. `users.read` would have handed
+# whoever pressed the button the email address of every real operator, so it was withheld — and
+# the permission editor, one of the seven things this repository exists to demonstrate, was then
+# invisible to almost everybody who ever sees the panel. The filter is what makes the grant safe.
+_DEMO_DENIED: Final[frozenset[PermissionCode]] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

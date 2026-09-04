@@ -97,6 +97,49 @@ class TokenResponse(ApiModel):
     expires_in: int
 
 
+class DemoSessionResponse(ApiModel):
+    """The answer to POST /api/demo/session: a world of your own, and a pass into it.
+
+    No refresh cookie and no token family. The pass is minted for as long as the sandbox has left,
+    and pressing this endpoint again with it hands back a fresh one — up to the sandbox's own hard
+    ceiling, past which nothing renews and the demonstration is over.
+    """
+
+    access_token: str
+
+    # Seconds, like the login answer, and for the same reason: a browser with a wrong clock would
+    # otherwise renew in a loop or never renew at all.
+    expires_in: int
+
+    # The far end, as an instant, because it is the one thing on this screen a person reads rather
+    # than a timer counts down. It does not move.
+    ends_at: datetime
+
+
+class ClockResponse(ApiModel):
+    """Where a world's clock stands.
+
+    `now` is model time, which is real time plus an offset that only grows. Everything the panel
+    renders as "how long ago" is measured against it: against the browser's own clock, a world
+    wound a month forward would report every subscriber as active this minute.
+    """
+
+    now: datetime
+    offset_seconds: int
+
+    # Whether this world can be wound at all, which is a fact about the world rather than about
+    # the permission — an operator holds `demo.control` over a base world everybody else reads.
+    is_sandbox: bool
+
+
+class AdvanceRequest(ApiModel):
+    """How far to wind a world forward. Days, and forward only."""
+
+    # A year at the far end. The cost is linear — a day of modelled life is about half a
+    # millisecond — and the near end is one because zero is not a move.
+    days: int = Field(ge=1, le=365)
+
+
 class RoleSummary(ApiModel):
     """A role as the panel displays it. `id` stays inside the process."""
 
@@ -127,7 +170,8 @@ class MeResponse(ApiModel):
 
     kind: Literal["user", "demo"]
 
-    # Null for a session belonging to a user. Nothing in this service assigns a world.
+    # Null for an operator, and the sandbox's id for a demonstration visitor. The panel reads it
+    # to know which world's rows it is looking at, and the audit screen to know which links to draw.
     world_id: str | None = None
 
 

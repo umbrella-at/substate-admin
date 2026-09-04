@@ -90,7 +90,12 @@ def test_every_route_declares_who_may_call_it() -> None:
 
 def test_the_public_routes_are_the_ones_that_have_to_be() -> None:
     """Login and refresh are the credential exchange; logout ends a session and needs no access
-    token to do it; health is what the deploy's smoke check reads before anyone has one."""
+    token to do it; health is what the deploy's smoke check reads before anyone has one.
+
+    The demonstration door is public by necessity — the first press comes from somebody with no
+    credential at all — and what that costs is a ceiling on how many worlds may stand and a rate
+    limit on building them.
+    """
     public = {
         (_method(route), _url(route))
         for route in api_routes(app)
@@ -103,6 +108,7 @@ def test_the_public_routes_are_the_ones_that_have_to_be() -> None:
         ("POST", "/api/auth/login"),
         ("POST", "/api/auth/refresh"),
         ("POST", "/api/auth/logout"),
+        ("POST", "/api/demo/session"),
     }
 
 
@@ -163,6 +169,13 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         ("POST", "/api/roles"): "users.write",
         ("PUT", "/api/roles/{role_id}"): "users.write",
         ("DELETE", "/api/roles/{role_id}"): "users.write",
+        # Reading the clock takes a session and no more: every screen already renders times
+        # measured against it, and a panel that cannot say what time its world thinks it is falls
+        # back on the browser's — which reads "just now" for a world wound a month forward.
+        ("GET", "/api/clock"): None,
+        # Winding it is the one thing `viewer` and `support` are refused here. It changes what
+        # everybody reading that world sees.
+        ("POST", "/api/clock/advance"): "demo.control",
     }
 
 
@@ -260,12 +273,12 @@ def test_the_catalogue_and_the_system_roles_are_what_the_specification_says() ->
         "admin": 13,
         "support": 9,
         "viewer": 5,
-        "demo": 11,
+        "demo": 13,
     }
-    # The specification writes demo as "everything except users.write". It is that, narrowed by
-    # one code: a demo session is handed to whoever clicks the button on the login page, and
-    # users.read would hand that stranger every real operator's email address.
-    assert {"users.write", "users.read"}.isdisjoint(SYSTEM_ROLES["demo"].permissions)
+    # The specification writes demo as "everything except users.write", and it is now everything.
+    # Inside a sandbox the operators and the roles are invented, its own, and gone in an hour, so
+    # the world filter is what makes the grant safe rather than the grant being withheld.
+    assert SYSTEM_ROLES["demo"].permissions == SYSTEM_ROLES["admin"].permissions
     assert {"audit.read", "users.read"}.isdisjoint(SYSTEM_ROLES["viewer"].permissions)
     assert {"subscribers.write", "promo.write"} <= SYSTEM_ROLES["support"].permissions
 

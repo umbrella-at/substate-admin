@@ -26,11 +26,23 @@ from starlette.routing import BaseRoute
 from app import __version__
 from app.config import get_settings
 from app.db import dispose_engine, get_engine
+from app.demo.sandboxes import reap
 from app.errors import install_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
-from app.routers import analytics, audit, auth, health, plans, roles, subscribers, users
+from app.routers import (
+    analytics,
+    audit,
+    auth,
+    clock,
+    demo,
+    health,
+    plans,
+    roles,
+    subscribers,
+    users,
+)
 from app.worlds.bootstrap import build_base_world, set_base_world_status
-from app.worlds.journal import flush_world
+from app.worlds.journal import flush_world, purge_sandbox
 from app.worlds.registry import World, get_registry
 from app.worlds.ticker import ticking
 
@@ -76,8 +88,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with get_engine().begin() as connection:
             await flush_world(connection, world)
 
+    async def collect() -> int:
+        """Take back the sandboxes whose time is up, with their rows.
+
+        Handed to the ticker rather than run as a task of its own: two loops would interleave, and
+        a world dropped mid-round is a world the recorder above writes rows for after it is gone.
+        """
+
+        async def purge(world_id: str) -> None:
+            async with get_engine().begin() as connection:
+                await purge_sandbox(connection, world_id)
+
+        return await reap(registry, purge)
+
     try:
-        async with ticking(registry, record):
+        async with ticking(registry, record, collect):
             yield
     finally:
         # Hands the pool's connections back rather than leaving Postgres to time out backends
@@ -127,6 +152,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
+    app.include_router(demo.router, prefix=API_PREFIX)
     app.include_router(users.router, prefix=API_PREFIX)
     app.include_router(roles.router, prefix=API_PREFIX)
     app.include_router(plans.router, prefix=API_PREFIX)
@@ -134,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(subscribers.router, prefix=API_PREFIX)
     app.include_router(audit.router, prefix=API_PREFIX)
     app.include_router(analytics.router, prefix=API_PREFIX)
+    app.include_router(clock.router, prefix=API_PREFIX)
 
     return app
 

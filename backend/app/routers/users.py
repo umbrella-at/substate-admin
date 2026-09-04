@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.deps import RequirePermission
+from app.deps import Identity, RequirePermission
 from app.models import User
 from app.routers import error_responses
 from app.schemas import PageParams, UserListResponse, UserSummary
@@ -23,15 +23,23 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get(
     "",
     summary="List the operators of this panel",
-    dependencies=[RequirePermission("users.read")],
     responses=error_responses(401, 403, 422),
 )
 async def list_users(
     page: Annotated[PageParams, Query()],
+    identity: Annotated[Identity, RequirePermission("users.read")],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserListResponse:
-    """One page of users, under an ordering the client can page through safely."""
-    total = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+    """One page of users, under an ordering the client can page through safely.
+
+    Scoped to the caller's world, which for an operator is the rows carrying none. A demonstration
+    visitor sees the colleagues their sandbox invented and never an address from outside it.
+
+    That scope is also what keeps the ordering below total: an address is unique WITHIN a world,
+    so a listing spanning two of them could hold the same key twice.
+    """
+    mine = User.world_id == identity.world_scope
+    total = (await session.execute(select(func.count()).select_from(User).where(mine))).scalar_one()
 
     rows = (
         (
@@ -44,7 +52,11 @@ async def list_users(
                 # `User.role` is an inner-joined eager load, so this is one statement and the role
                 # each row reports arrives with it. LIMIT is safe over it because the relationship
                 # is many-to-one: there is no collection for the limit to truncate.
-                select(User).order_by(User.email).limit(page.page_size).offset(page.offset)
+                select(User)
+                .where(mine)
+                .order_by(User.email)
+                .limit(page.page_size)
+                .offset(page.offset)
             )
         )
         .scalars()

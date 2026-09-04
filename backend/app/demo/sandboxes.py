@@ -22,19 +22,20 @@ out: it would bound nothing these two do not, at the cost of a third place to be
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
 import structlog
 from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.demo.operators import populate
 from app.models import DemoSandbox
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, SEED, seed_world
-from app.worlds.journal import ProjectedSubscriber, purge_sandbox, write_events, write_projection
+from app.worlds.journal import ProjectedSubscriber, write_events, write_projection
 from app.worlds.registry import World, WorldRegistry
 
 _log = structlog.get_logger(__name__)
@@ -141,7 +142,12 @@ async def extend_sandbox(session: AsyncSession, world: World, *, now: datetime) 
     return expires_at
 
 
-async def reap(registry: WorldRegistry, engine: AsyncEngine, *, now: datetime | None = None) -> int:
+Purge = Callable[[str], Awaitable[None]]
+"""Deletes everything one world owns. The reaper is handed one rather than a database: the
+transaction belongs to whoever owns a connection, which in the served process is the lifespan."""
+
+
+async def reap(registry: WorldRegistry, purge: Purge, *, now: datetime | None = None) -> int:
     """Collect every sandbox whose time is up. Returns how many went.
 
     Dropped from the registry first and purged second, so that nothing can read or write for a
@@ -154,7 +160,6 @@ async def reap(registry: WorldRegistry, engine: AsyncEngine, *, now: datetime | 
     doomed = [world for world in registry.expired(moment) if world.is_sandbox]
     for world in doomed:
         registry.drop(world.id)
-        async with engine.begin() as connection:
-            await purge_sandbox(connection, world.id)
+        await purge(world.id)
         _log.info("sandbox_reaped", world_id=world.id, standing=len(registry.sandboxes()))
     return len(doomed)

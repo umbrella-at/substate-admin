@@ -96,7 +96,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One page of what operators did, newest first */
+        /**
+         * One page of what operators did, newest first
+         * @description One page of the caller's own world's trail.
+         *
+         *     SCOPED BY THE ACTOR'S WORLD, NOT BY THE ROW'S.
+         *
+         *     `audit_log.world_id` says which world an operation happened in, and it is null for an edit to
+         *     a role, which happened to the panel rather than inside anything.
+         *
+         *     Filtering on it would either hide a demo visitor's own role edits from them or, the other way
+         *     round, hand them every real operator's edits and the addresses joined alongside.
+         */
         get: operations["list_page_api_audit_get"];
         put?: never;
         post?: never;
@@ -186,6 +197,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where this world's clock stands
+         * @description Model time, and the offset it is made of.
+         *
+         *     Readable by anybody with a session rather than by whoever may wind it: every screen already
+         *     renders data measured against this clock, and a panel that cannot say what time its world
+         *     thinks it is renders "just now" against the browser's.
+         */
+        get: operations["read_clock_api_clock_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clock/advance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wind this world forward
+         * @description Run the world forward `days` days and report where its clock landed.
+         *
+         *     The two writes are the point of the endpoint as much as the clock is: the days produce events,
+         *     and the subscribers who turned up during them have to move with the world — otherwise the quiet
+         *     cohort becomes the whole table at the first press.
+         */
+        post: operations["advance_api_clock_advance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/demo/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a demonstration world, or keep the one you have
+         * @description Build a world for whoever asked, or extend the one their pass names.
+         *
+         *     Public by necessity: the first press comes from somebody with no credential at all. The
+         *     ceiling on how many worlds may stand and the rate limit below are what that costs.
+         */
+        post: operations["open_session_api_demo_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -261,7 +343,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every role, and the permissions a role may grant */
+        /**
+         * Every role, and the permissions a role may grant
+         * @description The caller's own world's roles. A sandbox holds editable copies of the four system ones.
+         */
         get: operations["list_roles_api_roles_get"];
         put?: never;
         /** Create a role of your own */
@@ -479,6 +564,12 @@ export interface paths {
         /**
          * List the operators of this panel
          * @description One page of users, under an ordering the client can page through safely.
+         *
+         *     Scoped to the caller's world, which for an operator is the rows carrying none. A demonstration
+         *     visitor sees the colleagues their sandbox invented and never an address from outside it.
+         *
+         *     That scope is also what keeps the ordering below total: an address is unique WITHIN a world,
+         *     so a listing spanning two of them could hold the same key twice.
          */
         get: operations["list_users_api_users_get"];
         put?: never;
@@ -493,6 +584,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AdvanceRequest
+         * @description How far to wind a world forward. Days, and forward only.
+         */
+        AdvanceRequest: {
+            /** Days */
+            days: number;
+        };
         /**
          * AssignProgramRequest
          * @description POST /api/subscribers/{id}/referral-program.
@@ -582,6 +681,25 @@ export interface components {
             planId: string;
         };
         /**
+         * ClockResponse
+         * @description Where a world's clock stands.
+         *
+         *     `now` is model time, which is real time plus an offset that only grows. Everything the panel
+         *     renders as "how long ago" is measured against it: against the browser's own clock, a world
+         *     wound a month forward would report every subscriber as active this minute.
+         */
+        ClockResponse: {
+            /** Issandbox */
+            isSandbox: boolean;
+            /**
+             * Now
+             * Format: date-time
+             */
+            now: string;
+            /** Offsetseconds */
+            offsetSeconds: number;
+        };
+        /**
          * CreateRoleRequest
          * @description POST /api/roles. The code is set once and never edited: it is what people call the role.
          */
@@ -592,6 +710,25 @@ export interface components {
             name: string;
             /** Permissions */
             permissions?: ("subscribers.read" | "subscribers.write" | "plans.read" | "plans.write" | "promo.read" | "promo.write" | "referrals.read" | "referrals.write" | "analytics.read" | "audit.read" | "users.read" | "users.write" | "demo.control")[];
+        };
+        /**
+         * DemoSessionResponse
+         * @description The answer to POST /api/demo/session: a world of your own, and a pass into it.
+         *
+         *     No refresh cookie and no token family. The pass is minted for as long as the sandbox has left,
+         *     and pressing this endpoint again with it hands back a fresh one — up to the sandbox's own hard
+         *     ceiling, past which nothing renews and the demonstration is over.
+         */
+        DemoSessionResponse: {
+            /** Accesstoken */
+            accessToken: string;
+            /**
+             * Endsat
+             * Format: date-time
+             */
+            endsAt: string;
+            /** Expiresin */
+            expiresIn: number;
         };
         /**
          * EngineEvent
@@ -634,7 +771,7 @@ export interface components {
          *     call site is a code that falls through it.
          * @enum {string}
          */
-        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ROLE_IS_SYSTEM" | "ROLE_IN_USE" | "ROLE_CODE_TAKEN" | "ALREADY_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
+        ErrorCode: "INVALID_CREDENTIALS" | "NOT_AUTHENTICATED" | "TOKEN_EXPIRED" | "USER_INACTIVE" | "PERMISSION_DENIED" | "REFRESH_TOKEN_INVALID" | "REFRESH_TOKEN_REUSED" | "RATE_LIMITED" | "VALIDATION_ERROR" | "NOT_FOUND" | "METHOD_NOT_ALLOWED" | "INTERNAL_ERROR" | "ROLE_IS_SYSTEM" | "ROLE_IN_USE" | "ROLE_CODE_TAKEN" | "SANDBOX_GONE" | "SANDBOX_FULL" | "ALREADY_SUBSCRIBED" | "UNKNOWN_PLAN" | "UNKNOWN_PROMO_CODE" | "PROMO_LIMIT_REACHED" | "PROMO_ALREADY_BOUND" | "UNKNOWN_REFERRAL_PROGRAM";
         /**
          * ErrorEnvelope
          * @description The body of every non-2xx response this service produces.
@@ -1629,6 +1766,142 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_clock_api_clock_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClockResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    advance_api_clock_advance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClockResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    open_session_api_demo_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoSessionResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

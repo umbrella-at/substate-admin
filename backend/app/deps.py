@@ -87,7 +87,7 @@ _BEARER_CHALLENGE: Final[Mapping[str, str]] = MappingProxyType({"WWW-Authenticat
 # auto_error=False because FastAPI's own refusal is a 403 shaped `{"detail": ...}`: the wrong
 # status for a missing credential and the wrong body for this API. Declared all the same, so the
 # published schema — and the Authorize button in the docs — describe the scheme.
-_bearer: Final = HTTPBearer(bearerFormat="JWT", auto_error=False)
+optional_bearer: Final = HTTPBearer(bearerFormat="JWT", auto_error=False)
 
 
 class Access(StrEnum):
@@ -145,6 +145,16 @@ class Identity:
     @property
     def world_id(self) -> uuid.UUID | None:
         return self.claims.world_id
+
+    @property
+    def world_scope(self) -> str | None:
+        """The value `world_id` carries on the rows this session may see.
+
+        None for an operator of this installation, and the sandbox's id for a visitor. Every query
+        over users, roles and the audit is filtered by it, which is the only thing between one
+        demonstration and the next.
+        """
+        return str(self.claims.world_id) if self.claims.world_id is not None else None
 
     def has(self, code: PermissionCode) -> bool:
         """Whether this identity holds one permission. Typed, so a typo is a type error."""
@@ -262,7 +272,9 @@ async def _read_role_permissions(session: AsyncSession) -> dict[uuid.UUID, froze
 
 
 async def _current_identity(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, params.Depends(dependency=_bearer)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, params.Depends(dependency=optional_bearer)
+    ],
     session: Annotated[AsyncSession, params.Depends(dependency=get_session)],
     now: Annotated[NowProvider, params.Depends(dependency=get_now)],
 ) -> Identity:

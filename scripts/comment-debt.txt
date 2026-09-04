@@ -15,7 +15,7 @@
 7 33 backend/app/main.py
 7 29 backend/app/models.py
 1 4 backend/app/openapi.py
-2 12 backend/app/permissions.py
+2 11 backend/app/permissions.py
 1 4 backend/app/routers/__init__.py
 2 8 backend/app/routers/audit.py
 11 53 backend/app/routers/auth.py
