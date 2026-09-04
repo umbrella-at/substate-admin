@@ -71,7 +71,7 @@ async def read_clock() -> ClockResponse:
 @router.post(
     "/advance",
     summary="Wind this world forward",
-    responses=error_responses(401, 403, 422, 503),
+    responses=error_responses(401, 403, 409, 422, 503),
 )
 async def advance(
     body: AdvanceRequest,
@@ -88,16 +88,14 @@ async def advance(
     asked = timedelta(days=body.days)
     left = MAX_WIND - world.clock.offset
     if asked > left:
-        # A refusal about the field, because that is what it is about: the body is well formed and
-        # the number in it is one this world can no longer afford. The sentence says what is left.
+        # Its own code, and 409: the body is well formed and the world is what will not have it.
+        # A 422 on `days` says "correct the number", and at the cap no number succeeds.
         raise ApiError(
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.WORLD_FULLY_WOUND,
             message=(
                 f"This world has been wound as far as it goes. "
-                f"{max(left.days, 0)} of its 365 days are left."
+                f"{max(left.days, 0)} of its {MAX_WIND.days} days are left."
             ),
-            field="days",
-            status_code=422,
         )
 
     population = world.population
@@ -110,21 +108,28 @@ async def advance(
             status_code=503,
         )
 
-    report = await carry_on(
-        world.engine, population, world.clock.advance, world.clock.now, days=body.days
-    )
+    # ONE PRESS AT A TIME PER WORLD, AND THE DRAIN IS WHY. `flush_world` empties the sink before
+    # it writes, so anything that rolls the transaction back loses those events for good.
 
-    connection = await session.connection()
-    await flush_world(connection, world)
-    await rewrite_projection(
-        connection,
-        world.id,
-        [
-            ProjectedSubscriber(user_id=uid, display_name=name, last_active_at=seen)
-            for uid, name, seen in report.subscribers_projection
-        ],
-    )
-    await session.commit()
+    # Two overlapping advances did exactly that: the second's projection rewrite hit a duplicate
+    # key — its DELETE was taken on a snapshot from before the first committed — and a month of
+    # journal went with the rollback.
+    async with world.lock:
+        report = await carry_on(
+            world.engine, population, world.clock.advance, world.clock.now, days=body.days
+        )
+
+        connection = await session.connection()
+        await flush_world(connection, world)
+        await rewrite_projection(
+            connection,
+            world.id,
+            [
+                ProjectedSubscriber(user_id=uid, display_name=name, last_active_at=seen)
+                for uid, name, seen in report.subscribers_projection
+            ],
+        )
+        await session.commit()
 
     _log.info(
         "clock_advanced",
@@ -140,6 +145,9 @@ async def advance(
 def _reading(world: World) -> ClockResponse:
     return ClockResponse(
         now=world.clock.now(),
+        # What is left of the allowance, so the panel can say so before somebody presses rather
+        # than only refuse afterwards.
+        days_left=max((MAX_WIND - world.clock.offset).days, 0),
         # Whole seconds. The panel adds this to its own clock to render model time, and it ticks
         # in the browser rather than standing still between requests.
         offset_seconds=int(world.clock.offset.total_seconds()),

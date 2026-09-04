@@ -435,6 +435,7 @@ async def _live(
     await _take_stock(engine, population, now(), report)
     report.subscribers = len(population.arrived)
     if tally is not None:
+        report.events = tally.events
         report.accruals_by_program = dict(tally.accruals_by_program)
         report.repeat_earners = tally.repeat_earners
     report.seconds = time.perf_counter() - started

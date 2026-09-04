@@ -29,8 +29,13 @@ def error_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
 
     Declaring 422 also suppresses the `HTTPValidationError` response FastAPI adds on its own to
     any route with a body or a query parameter: that shape is not what this service sends.
+
+    A route that declares 401 gets 410 with it, and not as a convenience: the identity resolver
+    answers SANDBOX_GONE for a demonstration whose world has ended, so every guarded route can
+    serve it — and a schema omitting it has no type for the failure that ends every one of them.
     """
-    return {code: dict(_ENVELOPE) for code in statuses}
+    codes = set(statuses) | ({410} if 401 in statuses else set())
+    return {code: dict(_ENVELOPE) for code in sorted(codes)}
 
 
 def current_world() -> World:

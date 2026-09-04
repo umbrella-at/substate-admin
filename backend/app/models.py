@@ -388,11 +388,14 @@ class DemoSandbox(Base):
     """One demonstration world, as far as Postgres knows about it.
 
     The world itself is in memory: an engine, a clock and a storage that no other process can see.
-    This row is what survives a restart, and the only thing it is for is that survival — it names a
-    world whose rows are still in four other tables and whose engine is gone.
+    This row is the only trace of it anything outside that process can read.
 
-    Which is why the reaper reads it and the visitor never does. Nothing on any screen is drawn
-    from this table.
+    IT IS A RECORD, NOT A SOURCE. What is live is decided by the registry, and the sweep at start-up
+    works from that — every row here belongs to a world the process has already lost, which is why
+    a restart deletes them unread rather than trying to tell a lapsed sandbox from a fresh one.
+
+    So what it is for is what can be asked of it afterwards: how many were opened, how long they
+    lived, and from how many distinct addresses. Nothing on any screen is drawn from it.
     """
 
     __tablename__ = "demo_sandboxes"

@@ -5,6 +5,7 @@ because the thing being asserted is what a visitor actually gets. A faked world 
 the route returns a token and nothing about whether the token opens somebody else's data.
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -13,13 +14,16 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
 from app.demo import sandboxes
 from app.demo.operators import INVENTED, VISITOR
+from app.demo.sandboxes import reap
 from app.models import AuditLog, DemoSandbox, Role, User
 from app.security.ratelimit import DEMO_PER_IP, LOGIN_PER_IP, get_limiter
 from app.security.tokens import decode_access_token
 from app.worlds.journal import purge_orphans, purge_sandbox
 from app.worlds.registry import BASE_WORLD_ID, World, get_registry
+from app.worlds.ticker import ticking
 from support import Clock, create_account, envelope, login
 
 SESSION = "/api/demo/session"
@@ -64,20 +68,71 @@ async def test_a_press_with_no_credential_builds_a_world_and_opens_it(
     assert world.seeded
 
 
-async def test_the_pass_lasts_as_long_as_the_world_and_not_a_minute_longer(
+async def test_the_pass_lasts_as_long_as_the_demonstration_possibly_can(
     client: AsyncClient, base_world: World
 ) -> None:
-    """A token outliving its sandbox is a session that fails on the next click; a sandbox
-    outliving its token is a slot under the ceiling nobody can reach."""
+    """TO THE CEILING, NOT TO THE SLIDING HOUR, AND THE DIFFERENCE WAS A SILENT SWAP.
+
+    The hour moves forward on every request and a minted pass cannot, so a pass cut to the hour
+    died on a world that was still standing.
+
+    The panel answers a 401 by renewing, a renewal presents the expired pass, and an expired pass
+    is one the door cannot tell from no pass — so the visitor was handed a brand-new world.
+
+    Minting to the ceiling removes the moment rather than papering it: the world always dies
+    first, and a dead world is a refusal the panel has a screen for.
+    """
     body = await open_one(client)
     world = world_of(body["accessToken"])
 
     assert world.expires_at is not None
     assert world.ceiling_at is not None
     assert int(body["expiresIn"]) == pytest.approx(  # type: ignore[call-overload]
-        sandboxes.SANDBOX_TTL.total_seconds(), abs=2
+        sandboxes.SANDBOX_CEILING.total_seconds(), abs=2
     )
+    assert int(body["expiresIn"]) > sandboxes.SANDBOX_TTL.total_seconds()
     assert datetime.fromisoformat(body["endsAt"]) == world.ceiling_at
+
+
+async def test_a_renewed_pass_still_ends_with_the_world(
+    client: AsyncClient, base_world: World
+) -> None:
+    """The renewal cuts its pass to what is left of the ceiling, not to a fresh two hours.
+
+    Asserted through the route rather than against `World.extend`: what the endpoint mints is the
+    half a unit test of the clamp cannot see, and a pass good past the ceiling is a live token for
+    a world that has been reaped.
+    """
+    first = await open_one(client)
+    world = world_of(first["accessToken"])
+    assert world.ceiling_at is not None
+
+    # Ninety minutes in: over the hour, under the ceiling.
+    world.expires_at = datetime.now(UTC) + timedelta(minutes=30)
+    world.ceiling_at = datetime.now(UTC) + timedelta(minutes=30)
+
+    second = await open_one(client, first["accessToken"])
+
+    assert int(second["expiresIn"]) == pytest.approx(30 * 60, abs=5)  # type: ignore[call-overload]
+
+
+async def test_a_press_with_a_pass_into_a_world_that_is_gone_says_so(
+    client: AsyncClient, base_world: World
+) -> None:
+    """THE ORDINARY ENDING, AND THE ONE THE DOOR USED TO ANSWER WITH A DIFFERENT WORLD.
+
+    Handing somebody a fresh sandbox in a 200 is the panel swapping their world under them: the
+    month they wound, the subscriptions they cancelled, the colleagues they edited, all replaced
+    with no message. The refusal is what the ended screen is for.
+    """
+    body = await open_one(client)
+    world = world_of(body["accessToken"])
+    world.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    response = await client.post(SESSION, headers=auth(body))
+
+    assert response.status_code == 410
+    assert envelope(response)["code"] == "SANDBOX_GONE"
 
 
 async def test_pressing_again_keeps_the_same_world(client: AsyncClient, base_world: World) -> None:
@@ -96,7 +151,7 @@ async def test_pressing_again_keeps_the_same_world(client: AsyncClient, base_wor
     assert len(get_registry().sandboxes()) == 1
 
 
-async def test_a_pass_cannot_be_renewed_past_the_ceiling(
+async def test_a_world_cannot_be_held_past_the_ceiling(
     client: AsyncClient, base_world: World, session: AsyncSession
 ) -> None:
     """Two hours is absolute. Without it, a tab left open holds a world for as long as the
@@ -323,3 +378,116 @@ async def test_a_restart_leaves_nothing_of_a_sandbox_behind(
     assert await _rows_for(session, world.id) == {"users": 0, "roles": 0, "audit": 0}
     left = (await session.execute(select(func.count()).select_from(DemoSandbox))).scalar_one()
     assert left == 0
+
+
+async def test_a_visitor_never_sees_a_real_operators_trail(
+    client: AsyncClient, base_world: World, session: AsyncSession, clock: Clock
+) -> None:
+    """THE FILTER THAT MAKES THE WIDENED DEMO ROLE SAFE, ASSERTED THROUGH THE SCREEN.
+
+    This round gave `demo` all thirteen codes, `audit.read` among them, on the argument that the
+    world filter is what makes the grant safe rather than the grant being withheld.
+
+    Removing the filter serves a stranger who pressed a button every real operator's trail, with
+    their addresses joined alongside — and the suite passed with it removed.
+    """
+    operator = await create_account(session, email="auditable@example.com", role_code="admin")
+    await audit.record(
+        session,
+        audit.Entry(
+            actor_user_id=operator.id,
+            action="role.update",
+            target_type="role",
+            target_id="admin",
+            ip_hash="x",
+            payload={},
+        ),
+        refusal=None,
+    )
+    await session.commit()
+    body = await open_one(client)
+    await _leave_a_trail(client, auth(body))
+
+    theirs = (await client.get("/api/audit", headers=auth(body))).json()
+    signed_in = await login(client, operator)
+    ours = (
+        await client.get(
+            "/api/audit", headers={"Authorization": f"Bearer {signed_in.json()['accessToken']}"}
+        )
+    ).json()
+
+    assert theirs["total"] == 1
+    assert {row["actor"]["email"] for row in theirs["items"]} == {VISITOR}
+    assert ours["total"] == 1
+    assert {row["actor"]["email"] for row in ours["items"]} == {"auditable@example.com"}
+
+
+async def test_a_role_of_another_world_is_not_there_to_edit(
+    client: AsyncClient, base_world: World, session: AsyncSession
+) -> None:
+    """The scoped lookup behind PUT and DELETE, which nothing exercised.
+
+    A demonstration visitor holds `users.write` since this round, and `_refuse_if_system` guards
+    only the four built-in roles — so an unscoped lookup by id would let a stranger rename or
+    delete this installation's own custom roles.
+    """
+    ours = Role(code=f"analysts-{uuid.uuid4().hex[:6]}", name="Analysts")
+    session.add(ours)
+    await session.flush()
+    await session.commit()
+    body = await open_one(client)
+
+    renamed = await client.put(
+        f"/api/roles/{ours.id}", headers=auth(body), json={"name": "Mine now", "permissions": []}
+    )
+    deleted = await client.delete(f"/api/roles/{ours.id}", headers=auth(body))
+
+    assert renamed.status_code == 404
+    assert deleted.status_code == 404
+
+
+async def test_using_a_sandbox_pushes_its_hour_out(client: AsyncClient, base_world: World) -> None:
+    """The sliding TTL, which is the difference between an hour of use and an hour from opening.
+
+    Nothing observed it: the extension happens in memory, inside the identity resolver, and no
+    test made a request against a world whose expiry was about to pass.
+    """
+    body = await open_one(client)
+    world = world_of(body["accessToken"])
+    world.expires_at = datetime.now(UTC) + timedelta(minutes=1)
+
+    answered = await client.get("/api/clock", headers=auth(body))
+
+    assert answered.status_code == 200
+    assert world.expires_at is not None
+    assert world.expires_at > datetime.now(UTC) + timedelta(minutes=50)
+
+
+async def test_the_ticker_is_what_collects_a_lapsed_sandbox(
+    client: AsyncClient, base_world: World
+) -> None:
+    """Through the loop that actually runs it, not through a direct call.
+
+    The reaper lives inside the tick loop so the two cannot race, and the accumulator that decides
+    when it runs, the reap-before-tick order and the failure handler were all uncovered — the one
+    reaping test called `reap` itself.
+    """
+    body = await open_one(client)
+    world = world_of(body["accessToken"])
+    world.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    collected: list[str] = []
+
+    async def purge(world_id: str) -> None:
+        collected.append(world_id)
+
+    async with ticking(
+        get_registry(),
+        None,
+        lambda: reap(get_registry(), purge),
+        interval=timedelta(seconds=0),
+        reap_every=timedelta(seconds=0),
+    ):
+        for _ in range(50):
+            await asyncio.sleep(0)
+
+    assert collected == [world.id]

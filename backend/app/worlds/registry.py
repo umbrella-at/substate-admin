@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -116,6 +117,17 @@ class World:
     towards rather than past — without it, a visitor who keeps a tab open keeps a world forever."""
 
     seeded: bool = False
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    """Held by whatever winds this world's clock, so that two presses cannot interleave.
+
+    Measured: two overlapping advances take the second's projection rewrite into a duplicate key
+    — its DELETE never saw the first's rows — and the rollback loses the events the advance had
+    already drained out of the sink.
+
+    The world moves; a month of its journal does not exist, and the flow and revenue figures read
+    flat over months the table says grew.
+    """
 
     population: Population | None = None
     """The seeder's memory of this world, kept so the clock control can go on running it.

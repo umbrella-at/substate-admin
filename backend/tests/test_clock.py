@@ -5,13 +5,18 @@ winding is the one thing the demonstration exists for and the world it winds has
 somebody could actually be looking at.
 """
 
+import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_demo import auth, open_one
 
+from app.routers import clock as clock_module
 from app.routers.clock import MAX_WIND
+from app.seed.run import SeedReport
 from app.worlds.registry import World
 from support import Clock, bearer, create_account, envelope
 
@@ -28,7 +33,10 @@ async def test_a_fresh_world_reports_the_time_it_is(client: AsyncClient, base_wo
 
     assert reading["offsetSeconds"] == 0
     assert reading["isSandbox"] is True
-    assert datetime.fromisoformat(reading["now"]) - datetime.now(UTC) < timedelta(seconds=5)
+
+    # Bounded on both sides. `now` is the field the endpoint is named for, and a one-sided
+    # comparison passes for a moment a decade in the past as happily as for the right one.
+    assert abs(datetime.fromisoformat(reading["now"]) - datetime.now(UTC)) < timedelta(seconds=5)
 
 
 async def test_winding_moves_the_clock_by_what_was_asked(
@@ -67,14 +75,17 @@ async def test_the_world_keeps_living_while_the_clock_moves(
     """
     body = await open_one(client)
     before = (await client.get("/api/subscribers", headers=auth(body))).json()
+    was = await _states(client, auth(body))
 
     await client.post(ADVANCE, headers=auth(body), json={"days": 30})
     after = (await client.get("/api/subscribers", headers=auth(body))).json()
 
     assert after["total"] > before["total"]
-    states = (await client.get("/api/analytics/states", headers=auth(body))).json()
-    standing = {entry["state"]: entry["count"] for entry in states["states"]}
-    assert standing["active"] >= _count(before, "active")
+    standing = await _states(client, auth(body))
+
+    # Against the world's own census before the press, not against one page of it: a page holds
+    # twenty-five rows, and "86 >= 16" is satisfied by the very collapse this test is named after.
+    assert standing["active"] >= was["active"]
     assert standing["expired"] < standing["active"]
 
 
@@ -146,12 +157,14 @@ async def test_reading_the_clock_takes_a_session_and_no_more(
     assert reading.json()["isSandbox"] is False
 
 
-def _count(page: dict[str, object], state: str) -> int:
-    """How many rows on the first page carry one state. A floor, not a census — enough to say the
-    population did not collapse."""
-    items = page["items"]
-    assert isinstance(items, list)
-    return sum(1 for row in items if row["state"] == state)
+async def _states(client: AsyncClient, headers: dict[str, str]) -> dict[str, int]:
+    """The whole world's census, which is what the figure reports and what the assertion needs.
+
+    A page of the table is not one: it holds twenty-five rows however large the world is, so a
+    comparison against it survives the population collapsing by two thirds.
+    """
+    answer = (await client.get("/api/analytics/states", headers=headers)).json()
+    return {entry["state"]: entry["count"] for entry in answer["states"]}
 
 
 async def test_a_world_cannot_be_wound_without_end(client: AsyncClient, base_world: World) -> None:
@@ -169,11 +182,11 @@ async def test_a_world_cannot_be_wound_without_end(client: AsyncClient, base_wor
     refused = await client.post(ADVANCE, headers=auth(body), json={"days": 1})
 
     assert spent.status_code == 200
-    assert refused.status_code == 422
+    assert refused.status_code == 409
     envelope_ = envelope(refused)
-    assert envelope_["code"] == "VALIDATION_ERROR"
-    # Named, because it is a refusal about the number in the field rather than about the request.
-    assert envelope_["field"] == "days"
+    # Its own code and 409: the body is well formed, and the world is what will not have it.
+    assert envelope_["code"] == "WORLD_FULLY_WOUND"
+    assert envelope_["field"] is None
     assert "0 of its 365 days are left" in envelope_["message"]
 
 
@@ -187,5 +200,57 @@ async def test_what_is_left_is_what_the_refusal_says(
 
     refused = await client.post(ADVANCE, headers=auth(body), json={"days": 100})
 
-    assert refused.status_code == 422
+    assert refused.status_code == 409
     assert "65 of its 365 days are left" in envelope(refused)["message"]
+    # And said before the press, too: the control can offer what the world will accept.
+    reading = (await client.get(CLOCK, headers=auth(body))).json()
+    assert reading["daysLeft"] == 65
+
+
+async def test_a_second_press_never_enters_the_world_the_first_is_in(
+    client: AsyncClient, base_world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED, NOT IMAGINED: two overlapping advances used to cost a month of history.
+
+    `flush_world` drains the sink before it writes, so a rollback loses those events for good.
+
+    The second advance's projection rewrite hit a duplicate key — its DELETE was taken before the
+    first committed — and the world moved on with a hole in its journal, which the flow and
+    revenue figures read as flat months beside a table that had grown.
+
+    The first press is parked inside the world's life, holding the lock and no database operation,
+    which is what lets the second one be sent at all: this suite gives every test one connection,
+    and two requests writing on it at once corrupt the savepoint before they reach the defect.
+    """
+    body = await open_one(client)
+    entered = 0
+    started = asyncio.Event()
+    held = asyncio.Event()
+    living = clock_module.carry_on
+
+    async def parked(*args: object, **kwargs: object) -> SeedReport:
+        nonlocal entered
+        entered += 1
+        started.set()
+        await held.wait()
+        return await living(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(clock_module, "carry_on", parked)
+
+    first = asyncio.create_task(client.post(ADVANCE, headers=auth(body), json={"days": 1}))
+    await started.wait()
+    second = asyncio.create_task(client.post(ADVANCE, headers=auth(body), json={"days": 1}))
+    for _ in range(50):
+        await asyncio.sleep(0)
+
+    assert entered == 1, "the second press walked into a world the first was still living"
+
+    # Cancelled while it waits, rather than let through: it is blocked on the lock and has taken
+    # no database operation, and this suite's one shared connection cannot carry two commits.
+    second.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await second
+
+    held.set()
+    assert (await first).status_code == 200
+    assert entered == 1

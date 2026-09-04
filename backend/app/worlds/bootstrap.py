@@ -109,6 +109,11 @@ async def build_base_world(
             states=report.states,
         )
     except Exception as failure:  # deliberately total: see the docstring
+        # Detached and drained, both. A tally left attached goes on counting into a report nobody
+        # will read; events left in the sink are written by the ticker thirty seconds later, on
+        # top of whatever the previous process left in the journal — the same feed, twice.
+        world.sink.then = None
+        world.sink.drain()
         status = BaseWorldStatus(seeded=False, error=type(failure).__name__)
         _log.error(
             "base_world_seed_failed",

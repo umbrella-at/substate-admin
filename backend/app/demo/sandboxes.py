@@ -11,8 +11,13 @@ deleted again when the world ends.
 So memory is not the constraint, and that is the finding: the ceiling below is set by the database
 churn and by the fact that seeding blocks the loop, not by the two gigabytes on the box.
 
-Thirty-two worlds is eighteen megabytes and a hundred and twenty thousand journal rows — the base
-world writes four thousand of those at every restart, so it is thirty-two restarts' worth at once.
+AND A SEEDED WORLD IS THE FLOOR, NOT THE FIGURE. The clock control lets a visitor wind their world,
+and a year of winding takes it to 31000 journal rows and 1160 subscribers — eight times what it was
+built with. That is what `MAX_WIND` exists to bound, and what this ceiling has to be read against.
+
+Thirty-two worlds wound to their limit is about a million journal rows and fifty megabytes of heap:
+larger than the base world by two orders of magnitude, still inside the box, and reachable only by
+thirty-two visitors who each spend their hour pressing the button.
 
 The ceiling is the bound that matters; the rate limit on creation is what stops one address from
 spending it in a second. A third valve counting live worlds per address was considered and left
@@ -50,6 +55,15 @@ MAX_SANDBOXES: Final = 32
 """How many may stand at once. See the module docstring for what one costs and why this number."""
 
 
+_unpurged: set[str] = set()
+"""Worlds dropped from the registry whose rows are not deleted yet.
+
+A purge runs in its own transaction and can fail — an unreachable database, a row written by a
+request that beat the reaper to it. Without this the world is already out of the registry, so
+nothing ever tries again and its four thousand journal rows wait for the next restart.
+"""
+
+
 class SandboxesAreFull(Exception):
     """The ceiling is reached. The caller answers with the base world on offer instead."""
 
@@ -82,6 +96,12 @@ async def open_sandbox(
         offset=timedelta(days=-HISTORY_DAYS),
         default_program=USERS_PROGRAM,
     )
+    # The request's clock, not the registry's. Everything else about this session — the token's
+    # expiry, the rate-limit decision — is measured against the one that was passed in, and a
+    # sandbox whose life is measured against a different one disagrees with its own pass.
+    world.created_at = now
+    world.expires_at = now + SANDBOX_TTL
+    world.ceiling_at = now + SANDBOX_CEILING
     try:
         report, population = await seed_world(
             world.engine, world.clock.advance, world.clock.now, days=HISTORY_DAYS
@@ -157,9 +177,18 @@ async def reap(registry: WorldRegistry, purge: Purge, *, now: datetime | None = 
     start collects — the alternative is a visitor reading a table halfway through being emptied.
     """
     moment = now if now is not None else datetime.now(UTC)
-    doomed = [world for world in registry.expired(moment) if world.is_sandbox]
-    for world in doomed:
-        registry.drop(world.id)
-        await purge(world.id)
-        _log.info("sandbox_reaped", world_id=world.id, standing=len(registry.sandboxes()))
-    return len(doomed)
+    doomed = [world.id for world in registry.expired(moment) if world.is_sandbox]
+    for world_id in doomed:
+        registry.drop(world_id)
+        _unpurged.add(world_id)
+
+    collected = 0
+    # Whatever a previous pass could not finish comes with this one. Dropping from the registry
+    # and purging are two steps, and a world that failed the second was never coming back to
+    # `expired()` — its rows would have waited for a restart that might be days away.
+    for world_id in sorted(_unpurged):
+        await purge(world_id)
+        _unpurged.discard(world_id)
+        collected += 1
+        _log.info("sandbox_reaped", world_id=world_id, standing=len(registry.sandboxes()))
+    return collected

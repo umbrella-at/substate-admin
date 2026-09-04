@@ -131,6 +131,10 @@ class ClockResponse(ApiModel):
     # the permission — an operator holds `demo.control` over a base world everybody else reads.
     is_sandbox: bool
 
+    # How much of the winding allowance the world has left. Reported rather than left to a refusal
+    # so a control can say what it will accept before it is pressed.
+    days_left: int
+
 
 class AdvanceRequest(ApiModel):
     """How far to wind a world forward. Days, and forward only."""

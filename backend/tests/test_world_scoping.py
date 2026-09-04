@@ -11,6 +11,7 @@ operators on one address — and `one_or_none()` on the login path turns the sec
 
 import uuid
 from collections.abc import Iterator
+from typing import get_args
 
 import pytest
 from fastapi.dependencies.models import Dependant
@@ -114,16 +115,40 @@ async def test_one_sandbox_cannot_hold_a_role_code_twice(session: AsyncSession) 
 
 
 def _model_names(annotation: object) -> set[str]:
-    """Every name a pydantic model accepts, its aliases included, at any depth."""
-    if not (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
-        return set()
+    """Every name a pydantic model accepts, its aliases included, at any depth.
+
+    Through containers as well as through bare classes. A filter object arrives as `Inner | None`
+    or `list[Inner]` far more often than as `Inner`, and a recursion that opened only the bare
+    class stopped at exactly the shape the guard below exists to catch.
+    """
     found: set[str] = set()
-    for name, field in annotation.model_fields.items():
-        found.add(name)
-        if field.alias is not None:
-            found.add(field.alias)
-        found |= _model_names(field.annotation)
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        for name, field in annotation.model_fields.items():
+            found.add(name)
+            if field.alias is not None:
+                found.add(field.alias)
+            found |= _model_names(field.annotation)
+        return found
+    for inside in get_args(annotation):
+        found |= _model_names(inside)
     return found
+
+
+def test_a_world_named_inside_a_list_or_an_optional_is_still_found() -> None:
+    """The guard's own reach, asserted — because the guard is the only thing watching.
+
+    `isinstance(list[Inner], type)` is False, and so is `isinstance(Inner | None, type)`. A
+    recursion gated on that alone reports green for the one shape a nested filter actually takes.
+    """
+
+    class Inner(BaseModel):
+        world_id: str | None = None
+
+    class Wrapped(BaseModel):
+        one: Inner | None = None
+        many: list[Inner] = []
+
+    assert "world_id" in _model_names(Wrapped)
 
 
 def _accepted(route: APIRoute) -> set[str]:
