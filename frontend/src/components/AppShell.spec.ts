@@ -5,11 +5,13 @@
  * is bounced, and learns that the panel is unreliable rather than that they lack a permission.
  */
 
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { apiClientKey } from '@/api/provide'
 import AppShell from '@/components/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -24,8 +26,18 @@ vi.mock('vue-router', async (importOriginal) => ({
   }),
 }))
 
+/** The frame reads the world's clock for every screen inside it, so mounting it needs the query
+ *  plumbing and a client that can answer. What the reading says is asserted elsewhere. */
+const stillThinking = { clock: () => new Promise(() => {}) }
+
 function render() {
-  return mount(AppShell, { global: { stubs: { RouterLink: RouterLinkStub, ClockControl: true } } })
+  return mount(AppShell, {
+    global: {
+      plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
+      provide: { [apiClientKey as unknown as string]: stillThinking },
+      stubs: { RouterLink: RouterLinkStub, ClockControl: true },
+    },
+  })
 }
 
 beforeEach(() => {

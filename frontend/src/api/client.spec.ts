@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, createClient, type ErrorCode } from '@/api/client'
+import { ApiError, createClient, rememberedDemoToken, type ErrorCode } from '@/api/client'
 
 const REFRESH = '/api/auth/refresh'
 const LOGIN = '/api/auth/login'
@@ -418,5 +418,90 @@ describe('the request it actually sends', () => {
 
     expect((failure as ApiError).field).toBe('email')
     expect((failure as ApiError).message).toBe('Not an email address.')
+  })
+})
+
+describe('a demonstration session', () => {
+  it('renews through the demonstration door rather than the refresh cookie', async () => {
+    // The two renewals are not interchangeable: a visitor has no refresh cookie, and POSTing
+    // /auth/refresh for them ends a live demonstration mid-click.
+    const api = client()
+    api.setDemoToken('a-pass')
+    fetchMock
+      .mockResolvedValueOnce(refused(401, 'TOKEN_EXPIRED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'a-fresher-pass', expiresIn: 60, endsAt: 'x' }))
+      .mockResolvedValueOnce(ok({ ok: true }))
+
+    await api.request('/api/subscribers')
+
+    const paths = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(paths[1]).toBe('/api/demo/session')
+    expect(paths).not.toContain('/api/auth/refresh')
+  })
+
+  it('opens one world when several requests expire at once', async () => {
+    // Measured against the real service: four concurrent renewals opened four sandboxes, each
+    // one a 274-day seed, a slot under the ceiling and a share of the address's allowance.
+    const api = client()
+    api.setDemoToken('a-pass')
+    fetchMock.mockImplementation(async (path: unknown) => {
+      if (String(path) === '/api/demo/session') {
+        return ok({ accessToken: 'one-fresh-pass', expiresIn: 60, endsAt: 'x' })
+      }
+      return fetchMock.mock.calls.filter((call) => String(call[0]) !== '/api/demo/session').length >
+        3
+        ? ok({ ok: true })
+        : refused(401, 'TOKEN_EXPIRED')
+    })
+
+    await Promise.all([
+      api.request('/api/subscribers').catch(() => undefined),
+      api.request('/api/users').catch(() => undefined),
+      api.request('/api/roles').catch(() => undefined),
+    ])
+
+    const opened = fetchMock.mock.calls.filter((call) => String(call[0]) === '/api/demo/session')
+    expect(opened).toHaveLength(1)
+  })
+
+  it('says the demonstration ended rather than that the session did', async () => {
+    // A visitor has no account, so "sign in again to carry on where you were" is advice they
+    // cannot take. The two endings take two different paths on purpose.
+    const api = client()
+    api.setDemoToken('a-pass')
+    fetchMock.mockResolvedValueOnce(refused(410, 'SANDBOX_GONE'))
+
+    await expect(api.request('/api/subscribers')).rejects.toBeInstanceOf(ApiError)
+
+    expect(onDemoEnded).toHaveBeenCalledTimes(1)
+    expect(onSessionLost).not.toHaveBeenCalled()
+    expect(api.accessToken).toBeNull()
+  })
+
+  it('says the demonstration ended when the door itself says the world is gone', async () => {
+    // The renewal is the one request that does not go through `request`, so the 410 it can answer
+    // needs its own branch — without it, a visitor who pressed nothing is sent to the login form.
+    const api = client()
+    api.setDemoToken('a-pass')
+    fetchMock
+      .mockResolvedValueOnce(refused(401, 'TOKEN_EXPIRED'))
+      .mockResolvedValueOnce(refused(410, 'SANDBOX_GONE'))
+
+    await expect(api.request('/api/subscribers')).rejects.toBeInstanceOf(ApiError)
+
+    expect(onDemoEnded).toHaveBeenCalledTimes(1)
+    expect(onSessionLost).not.toHaveBeenCalled()
+  })
+
+  it('keeps the pass where a reload can find it, and drops it when a real session starts', () => {
+    // There is no refresh cookie behind a demonstration, so without this F5 ends it while the
+    // world is still standing and nothing in the browser can reach it again.
+    const api = client()
+
+    api.setDemoToken('a-pass')
+    expect(rememberedDemoToken()).toBe('a-pass')
+
+    api.setAccessToken('an-operators-token')
+    expect(rememberedDemoToken()).toBeNull()
   })
 })

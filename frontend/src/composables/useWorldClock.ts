@@ -22,9 +22,10 @@ import type { ClockReading } from '@/api/client'
 import { useApiClient } from '@/api/provide'
 import { useAuthStore } from '@/stores/auth'
 
-/** One second. The relative phrases change by the minute at best, so this is not for them — it is
- *  the panel's own clock reading, which a person watching it expects to move. */
-const BEAT_MS = 1_000
+/** Ten seconds. The relative phrases change by the minute at best, and the panel's own reading is
+ *  hours and minutes — so a faster beat buys a later minute boundary by a few seconds and costs a
+ *  re-render of every table row that shows a time, once a second, in every tab. */
+const BEAT_MS = 10_000
 
 /** Module-level, so a table of twelve rows and the panel in the sidebar share one interval and one
  *  value rather than each running a timer that says something very slightly different. */
@@ -76,8 +77,10 @@ export function useWorldClock() {
     // session refetches whatever is still observing, and a request with no token behind it turns
     // a deliberate ending into a session-expired banner.
     enabled: computed(() => auth.isAuthenticated),
-    // The offset moves only when somebody winds it, and whoever does invalidates this key.
-    staleTime: Number.POSITIVE_INFINITY,
+    // Long, not forever. The offset moves only when somebody winds it, and whoever does writes
+    // the answer straight in — but `Infinity` also means a read that failed is never attempted
+    // again, and the panel then presents the browser's clock as the world's for the session.
+    staleTime: 5 * 60_000,
   })
 
   watch(

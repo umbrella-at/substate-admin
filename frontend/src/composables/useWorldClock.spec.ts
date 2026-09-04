@@ -81,6 +81,7 @@ describe('activity against a world that has been wound', () => {
         now: new Date(REAL_NOW + 30 * DAY).toISOString(),
         offsetSeconds: 30 * 24 * 60 * 60,
         isSandbox: true,
+        daysLeft: 335,
       }),
     }
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })

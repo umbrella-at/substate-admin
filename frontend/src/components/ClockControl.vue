@@ -27,7 +27,7 @@ import { daysWound, modelClock, modelDate } from '@/domain/clock'
 
 const client = useApiClient()
 const queryClient = useQueryClient()
-const { now, offsetMs, isSandbox } = useWorldClock()
+const { now, offsetMs, isSandbox, data: reading, isError } = useWorldClock()
 
 const busy = ref(false)
 const refusal = ref('')
@@ -51,9 +51,13 @@ const ahead = computed(() => daysWound(offsetMs.value))
  *  The API refuses the same range; this is what stops a press that was never going to work. */
 const asked = computed(() => {
   const days = Number(custom.value.trim())
-  if (!Number.isInteger(days) || days < 1 || days > 365) return null
+  if (!Number.isInteger(days) || days < 1 || days > left.value) return null
   return days
 })
+
+/** How much of the winding allowance the world has left, as the service reports it. Until the
+ *  reading arrives, the whole of it: the refusal is the authority, this only saves a press. */
+const left = computed(() => reading.value?.daysLeft ?? 365)
 
 async function wind(days: number): Promise<void> {
   if (busy.value) return
@@ -99,6 +103,7 @@ async function wind(days: number): Promise<void> {
         :key="step.days"
         variant="outlined"
         :busy="busy"
+        :disabled="step.days > left"
         @click="wind(step.days)"
       >
         {{ step.label }}
@@ -114,6 +119,12 @@ async function wind(days: number): Promise<void> {
 
     <p v-if="refusal !== ''" class="mt-2 text-caption text-danger-text" role="status">
       {{ refusal }}
+    </p>
+
+    <!-- A reading that never arrived is not a world at zero, and the difference matters: every
+         relative time on every screen is measured against this. -->
+    <p v-else-if="isError" class="mt-2 text-caption text-warning-text" role="status">
+      This world's clock could not be read, so the times on screen are your own.
     </p>
   </section>
 </template>

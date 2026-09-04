@@ -20,11 +20,17 @@ import ClockControl from '@/components/ClockControl.vue'
 import { forgetWorldClock } from '@/composables/useWorldClock'
 import { useAuthStore } from '@/stores/auth'
 
-const AT_ZERO: ClockReading = { now: '2026-09-04T06:00:00Z', offsetSeconds: 0, isSandbox: true }
+const AT_ZERO: ClockReading = {
+  now: '2026-09-04T06:00:00Z',
+  offsetSeconds: 0,
+  isSandbox: true,
+  daysLeft: 365,
+}
 const A_MONTH_ON: ClockReading = {
   now: '2026-10-04T06:00:00Z',
   offsetSeconds: 30 * 24 * 60 * 60,
   isSandbox: true,
+  daysLeft: 335,
 }
 
 function stubClient(overrides: Record<string, unknown> = {}) {
