@@ -34,7 +34,7 @@ async def world() -> tuple[World, dict[str, tuple[str, object]]]:
         offset=timedelta(days=-HISTORY_DAYS),
         default_program=USERS_PROGRAM,
     )
-    report = await seed_world(
+    report, _ = await seed_world(
         built.engine, built.clock.advance, built.clock.now, tally=tally, days=HISTORY_DAYS
     )
     built.seeded = True

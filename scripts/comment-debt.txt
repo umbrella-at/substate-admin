@@ -30,7 +30,7 @@
 17 99 backend/app/security/refresh.py
 2 8 backend/app/security/tokens.py
 6 28 backend/app/seed/catalogue.py
-12 77 backend/app/seed/run.py
+12 54 backend/app/seed/run.py
 2 10 backend/app/subscribers/events.py
 4 17 backend/app/subscribers/operations.py
 1 5 backend/app/worlds/bootstrap.py

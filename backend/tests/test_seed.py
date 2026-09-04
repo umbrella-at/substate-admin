@@ -60,7 +60,7 @@ async def run_once(
     engine = SubscriptionEngine(
         MemoryStorage(), clock=clock, on_event=tally, default_program=USERS_PROGRAM
     )
-    report = await seed_world(engine, clock.advance, clock.now, seed=seed, tally=tally)
+    report, _ = await seed_world(engine, clock.advance, clock.now, seed=seed, tally=tally)
     return report, clock, tally
 
 
@@ -279,7 +279,7 @@ async def test_nobody_was_active_before_they_existed() -> None:
     engine = SubscriptionEngine(
         MemoryStorage(), clock=clock, on_event=watch, default_program=USERS_PROGRAM
     )
-    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
+    report, _ = await seed_world(engine, clock.advance, clock.now, tally=tally)
 
     impossible = [
         (user_id, first_event[user_id] - seen)

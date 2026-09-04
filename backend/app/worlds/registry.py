@@ -8,10 +8,16 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from substate import Event, MemoryStorage, ReferralProgram, SubscriptionEngine
 
 from app.worlds.clock import OffsetClock
+
+if TYPE_CHECKING:
+    # Type-only, because the seeder imports the subscriber query, which imports this module. The
+    # world holds the population; it does not know how one is produced.
+    from app.seed.run import Population
 
 BASE_WORLD_ID = "base"
 
@@ -105,6 +111,13 @@ class World:
     created_at: datetime
     expires_at: datetime | None = None
     seeded: bool = False
+
+    population: Population | None = None
+    """The seeder's memory of this world, kept so the clock control can go on running it.
+
+    None until the world has been seeded, and for a world that failed to seed. Everything that
+    winds the clock has to hold that possibility rather than assume a history.
+    """
 
     @property
     def subscribers(self) -> set[str]:

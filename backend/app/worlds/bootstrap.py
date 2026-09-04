@@ -16,7 +16,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.seed.catalogue import USERS_PROGRAM
-from app.seed.run import HISTORY_DAYS, EventTally, SeedReport, seed_world
+from app.seed.run import HISTORY_DAYS, EventTally, seed_world
 from app.worlds.journal import (
     ProjectedSubscriber,
     purge_orphans,
@@ -67,7 +67,7 @@ async def build_base_world(
         default_program=USERS_PROGRAM,
     )
     try:
-        report: SeedReport = await seed_world(
+        report, population = await seed_world(
             world.engine, world.clock.advance, world.clock.now, days=days, tally=tally
         )
         if not world.clock.is_live:
@@ -93,6 +93,7 @@ async def build_base_world(
         # every tick and every operation into a report nobody asks for again.
         world.sink.then = None
         world.seeded = True
+        world.population = population
         status = BaseWorldStatus(
             seeded=True,
             subscribers=report.subscribers,

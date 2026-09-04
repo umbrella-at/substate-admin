@@ -28,6 +28,7 @@ from substate import (
     SubstateError,
 )
 
+from app.seed.activity import LIVE, QUIET_AFTER, last_seen_at, window_for
 from app.seed.catalogue import (
     PARTNERS_PROGRAM,
     PLAN_BY_ID,
@@ -274,6 +275,82 @@ def display_name(rng: random.Random) -> str:
     return f"{rng.choice(_FIRST)} {rng.choice(_LAST)}"
 
 
+@dataclass(slots=True)
+class Population:
+    """What the seeder remembers about a world, so that the world can go on living.
+
+    A history is not a thing that happened once. The time machine winds the same world forward,
+    and everything below is what the next day needs in order to be the same kind of day as the
+    last one: who exists, when they arrived, who has already been decided about, and the streams
+    the decisions come out of.
+
+    Held rather than reconstructed, because it cannot be reconstructed. `streams.activity` is
+    drawn once or twice per subscriber depending on their state, so its position is not a function
+    of anything the database holds; and a fresh stream would replay the seeder's own draws.
+    """
+
+    streams: Streams
+    behaviour: Behaviour
+
+    horizon: int
+    """The length of the original history, and the denominator of the arrival ramp.
+
+    Past it the ramp stops rather than continuing upward: it is the story of a service growing
+    into its first nine months, not a promise to double every nine after that.
+    """
+
+    day: int = 0
+    """How many days this world has lived. The arrival ramp and every subscriber's age read it."""
+
+    names: dict[str, str] = field(default_factory=dict)
+    arrived: list[str] = field(default_factory=list)
+    """Everyone who has ever subscribed, in the order they turned up."""
+
+    joined_on: dict[str, int] = field(default_factory=dict)
+    """Which day each subscriber arrived on. Activity is bounded by it, see app.seed.activity.
+
+    The DAY, not the timestamp. `OffsetClock` reads the real clock and adds an offset, so two
+    calls to `now()` in one run are microseconds apart and the same call in two runs is not — a
+    stored instant would carry that jitter into every age.
+    """
+
+    partners: set[str] = field(default_factory=set)
+
+    ruled_on: dict[str, datetime] = field(default_factory=dict)
+    """The renewal each subscriber has already been decided about, keyed by its due date.
+
+    Without this a subscriber gets a fresh roll on every day their renewal is imminent — the day
+    before it falls due and the day it passes before the tick — so `renewal = 0.89` would actually
+    mean a 99% chance of paying eventually, and the parameter would not describe what it is named
+    after. That is the whole reason the standing GRACE population came out at two instead of ten.
+    """
+
+    last_active: dict[str, datetime] = field(default_factory=dict)
+    """The projection, in memory, so that an advance can move it forward instead of rebuilding it
+    from a table that does not hold enough to rebuild it from."""
+
+    quiet: set[str] = field(default_factory=set)
+    decided: set[str] = field(default_factory=set)
+    """Who has already been judged one of the quiet ones, and who has been judged at all.
+
+    Membership is drawn once and kept. Re-drawing it on every advance would rescue everybody who
+    had gone quiet within a few presses of the clock, and the cohort would drain to nothing while
+    every individual draw looked correct.
+    """
+
+    @classmethod
+    def new(cls, *, seed: int, behaviour: Behaviour, horizon: int) -> Population:
+        return cls(streams=Streams.of(seed), behaviour=behaviour, horizon=horizon)
+
+    def age_of(self, user_id: str) -> timedelta:
+        """How long this subscriber has existed, in whole days.
+
+        `day - 1 - joined_on`: the clock advances at the top of each pass, so somebody who arrived
+        on the last pass arrives at the instant the history ends and has an age of zero.
+        """
+        return timedelta(days=self.day - 1 - self.joined_on[user_id])
+
+
 async def seed_world(
     engine: SubscriptionEngine,
     advance: Callable[[timedelta], datetime],
@@ -283,17 +360,19 @@ async def seed_world(
     days: int = HISTORY_DAYS,
     behaviour: Behaviour | None = None,
     tally: EventTally | None = None,
-) -> SeedReport:
-    """Run the world forward `days` of model time and report what it became.
+) -> tuple[SeedReport, Population]:
+    """Run a new world forward `days` of model time and report what it became.
 
     `advance` and `now` are the world's clock, passed in rather than reached for: the caller owns
     it, because the base world and a sandbox move theirs for different reasons, and a seeder that
     read `engine._clock` would be coupled to the engine's private shape for no gain.
+
+    The population comes back with the report because the world is not finished — the time machine
+    winds it further, and `carry_on` is that same run continuing.
     """
-    started = time.perf_counter()
-    streams = Streams.of(seed)
-    how = behaviour if behaviour is not None else Behaviour()
-    report = SeedReport()
+    population = Population.new(
+        seed=seed, behaviour=behaviour if behaviour is not None else Behaviour(), horizon=days
+    )
 
     for plan in PLANS:
         engine.register_plan(plan)
@@ -306,192 +385,208 @@ async def seed_world(
         with suppress(DuplicateReferralProgram):
             engine.register_referral_program(program)
 
-    names: dict[str, str] = {}
-    living: list[str] = []
-    joined_on: dict[str, int] = {}
-    """Which simulated day each subscriber arrived on. Activity has to be bounded by it, see below.
+    report = await _live(engine, population, advance, now, days=days, tally=tally)
+    return report, population
 
-    The DAY, not the timestamp. `OffsetClock` reads the real clock and adds a fixed offset, so two
-    calls to `now()` in the same run are microseconds apart and the same call in two runs is not —
-    a stored instant would carry that jitter into every age, and the run would stop being
-    reproducible for reasons nothing in the model chose. The simulation moves a day at a time and
-    the day is the same number every run."""
-    partners: set[str] = set()
-    ruled_on: dict[str, datetime] = {}
-    """The renewal each subscriber has already been decided about, keyed by its due date.
 
-    Without this a subscriber gets a fresh roll on every day their renewal is imminent — the day
-    before it falls due and the day it passes before the tick — so `renewal = 0.78` would actually
-    mean a 95% chance of paying eventually, and the parameter would not describe what it is named
-    after. That is not a rounding difference: it is the whole reason the standing GRACE population
-    came out at two instead of ten."""
+async def carry_on(
+    engine: SubscriptionEngine,
+    population: Population,
+    advance: Callable[[timedelta], datetime],
+    now: Callable[[], datetime],
+    *,
+    days: int,
+) -> SeedReport:
+    """Wind a seeded world forward `days` more days of the same modelled life.
 
-    for day in range(days):
-        advance(timedelta(days=1))
+    THIS IS WHY THE CLOCK CONTROL SHOWS A SERVICE RATHER THAN A GRAVEYARD.
 
-        rate = how.signups_at_start + (how.signups_at_end - how.signups_at_start) * (day / days)
-        arrivals = int(rate) + (1 if streams.arrivals.random() < rate % 1 else 0)
-        for _ in range(arrivals):
-            user_id = f"sub-{len(names):04d}"
-            plan = streams.arrivals.choices(PLANS, weights=PLAN_WEIGHTS, k=1)[0]
-            names[user_id] = display_name(streams.names)
-            referrer = (
-                streams.referrals.choice(living)
-                if living and streams.referrals.random() < how.referral_use
-                else None
-            )
-            if (
-                referrer is not None
-                and referrer not in partners
-                and streams.partners.random() < how.partner_share
-            ):
-                # Somebody with an audience. Assigned once, and from then on their referrals earn
-                # on every renewal rather than once.
-                with suppress(SubstateError):
-                    await engine.assign_program(referrer, PARTNERS_PROGRAM.id)
-                    partners.add(referrer)
-            try:
-                await engine.subscribe(user_id, plan.id, referrer_id=referrer)
-            except SubstateError:
-                # A refusal is part of the model, not a fault: the engine declining a signup is
-                # one of the answers this history is supposed to contain.
-                continue
-            living.append(user_id)
-            joined_on[user_id] = day
-            if streams.promos.random() < how.promo_use:
-                with suppress(SubstateError):
-                    # A spent code, or one already bound to this subscriber, is a real answer.
-                    await engine.redeem(user_id, streams.promos.choice(PROMO_CODES).code)
+    A world that is only ticked forward has nobody paying in it: the engine expires whoever falls
+    due, and nothing renews, arrives or comes back. Measured on the base world, one month of that
+    takes ACTIVE from 248 to 86 and EXPIRED from 45 to 211; three months leaves 32 subscribers
+    still paying out of 351.
 
-        for user_id in list(living):
-            subscription = await engine.get_subscription(user_id)
-            if subscription is None:
-                continue
-            state = subscription.state
-            if state is State.CANCELLED:
-                continue
+    Running the same behaviour instead keeps the shape: the population continues to grow and churn
+    the way it did over its first nine months, which is what the visitor pressed the button to
+    look at. It also catches the world up a day at a time, and the engine crosses at most eight
+    period boundaries per subscription per tick — so a single tick after a ninety-day jump would
+    leave a weekly subscriber behind, still moving minutes later.
+    """
+    return await _live(engine, population, advance, now, days=days)
 
-            chance = {
-                State.TRIAL: how.trial_conversion
-                / max(PLAN_BY_ID[subscription.plan_id].trial_days, 1),
-                State.ACTIVE: how.renewal,
-                State.GRACE: how.grace_rescue,
-                State.EXPIRED: how.revival,
-            }.get(state, 0.0)
 
-            # Cancelling is a decision about the subscription, not about a renewal, so it is
-            # available on any day rather than only on the one the money is due.
-            if state is State.ACTIVE and streams.cancels.random() < how.cancellation:
-                with suppress(SubstateError):
-                    await engine.cancel(user_id)
-                continue
+async def _live(
+    engine: SubscriptionEngine,
+    population: Population,
+    advance: Callable[[timedelta], datetime],
+    now: Callable[[], datetime],
+    *,
+    days: int,
+    tally: EventTally | None = None,
+) -> SeedReport:
+    """`days` days of this world's life, and a report of where it stands afterwards."""
+    started = time.perf_counter()
+    report = SeedReport()
 
-            due = subscription.due_at
-            if state is State.ACTIVE:
-                # One decision per renewal, taken when it falls due.
-                if due is None or due - now() >= timedelta(days=1):
-                    continue
-                if ruled_on.get(user_id) == due:
-                    continue
-                ruled_on[user_id] = due
+    for _ in range(days):
+        await _one_day(engine, population, advance, now)
+    report.ticks = days
 
-            if streams.payments.random() < chance:
-                plan = PLAN_BY_ID[subscription.plan_id]
-                with suppress(SubstateError):
-                    await engine.apply_payment(
-                        Payment(
-                            provider="seed",
-                            external_id=f"{user_id}-{day}",
-                            user_id=user_id,
-                            amount=plan.price,
-                        )
-                    )
-
-        await engine.tick()
-        report.ticks += 1
-
-    QUIET_AFTER = timedelta(days=30)
-    """The cohort threshold, from the specification: an active subscription whose owner has not
-    turned up in a month."""
-
-    FRESHEST = timedelta(hours=1)
-    """How recent the most recently active subscriber is allowed to be. See below."""
-
-    moment = now()
-    for user_id in living:
-        subscription = await engine.get_subscription(user_id)
-        if subscription is None:
-            continue
-        report.states[subscription.state.value] = report.states.get(subscription.state.value, 0) + 1
-        report.plans[subscription.plan_id] = report.plans.get(subscription.plan_id, 0) + 1
-
-        # `last_active_at` is drawn from its own stream and is deliberately NOT derived from the
-        # payment dates. If it were, a threshold of thirty days against a monthly plan would
-        # collect everybody who simply had not logged in since their last renewal, and "went
-        # quiet" would come to mean "pays monthly" — a cohort that is true of most of the table
-        # and therefore says nothing about anyone.
-        if subscription.state is State.CANCELLED:
-            window = (timedelta(days=30), timedelta(days=240))
-        elif subscription.state is State.EXPIRED:
-            window = (timedelta(days=14), timedelta(days=150))
-        elif streams.activity.random() < how.quiet_share:
-            # Still paying, stopped coming. The people the quiet cohort exists to find.
-            window = (timedelta(days=35), timedelta(days=120))
-        else:
-            window = (FRESHEST, timedelta(days=22))
-
-        # BOUNDED BY THE SUBSCRIBER'S OWN AGE, WHICH IS THE LARGER OF THE TWO HONESTY PROBLEMS
-        # THIS COLUMN HAS.
-        #
-        # Each window above is a fixed span measured back from the end of the run, and arrivals
-        # ramp up over the history, so most subscribers are younger than the window they are drawn
-        # from. Left alone that produced activity from before the person existed: measured on this
-        # seed, 87 of 351 rows, the worst by 181 days, and nineteen of the twenty-four trials — a
-        # fourteen-day trial two days old reporting its owner last seen three months ago, in the
-        # Quiet cohort, which is a named list somebody is invited to click. A date column hid
-        # that; a column that says "3 months ago" next to a trial that started on Tuesday does not.
-        #
-        # The window is therefore clipped to the time the subscriber has existed. Where the whole
-        # window falls outside that life it collapses to its end, which reads as "last seen when
-        # they signed up" — true, and the most that can be said.
-        low, high = window
-        # `days - 1 - day`: the clock advances at the top of each pass, so somebody who arrived on
-        # the last pass arrives at the instant the history ends and has an age of zero.
-        high = min(high, timedelta(days=days - 1 - joined_on[user_id]))
-        low = min(low, high)
-        gap = low + (high - low) * streams.activity.random()
-
-        # NEVER FRESHER THAN AN HOUR, AND THE FLOOR IS THE POINT.
-        #
-        # These timestamps are written once, when the world is built, and then stand still while
-        # the panel is looked at. The column renders them as "how long ago", so a subscriber
-        # seeded at four minutes reads as "4 minutes ago" on the first screen and "44 minutes ago"
-        # half an hour later, having done nothing — the demonstration claiming an activity it has
-        # no source for, in a number that visibly decays. An hour is where that claim stops being
-        # made: the value still ages, but by a unit slow enough that a session's worth of drift is
-        # indistinguishable from the truth.
-        #
-        # The floor wins over the clip when the two disagree, which they do only for somebody who
-        # arrived in the last hour of the history — two subscribers on this seed. They are then
-        # credited with activity up to an hour before they signed up. That is the residue of this
-        # rule, stated so nobody has to find it: two rows wrong by an hour, where leaving the clip
-        # out was 87 rows wrong by up to 181 days.
-        last_seen = moment - max(gap, FRESHEST)
-
-        if subscription.state in (State.TRIAL, State.ACTIVE, State.GRACE) and (
-            moment - last_seen > QUIET_AFTER
-        ):
-            report.quiet += 1
-
-        report.subscribers_projection.append((user_id, names.get(user_id, user_id), last_seen))
-
-    report.subscribers = len(living)
-    report.ended_at = moment
+    await _take_stock(engine, population, now(), report)
+    report.subscribers = len(population.arrived)
     if tally is not None:
         report.accruals_by_program = dict(tally.accruals_by_program)
         report.repeat_earners = tally.repeat_earners
     report.seconds = time.perf_counter() - started
     return report
+
+
+async def _one_day(
+    engine: SubscriptionEngine,
+    population: Population,
+    advance: Callable[[timedelta], datetime],
+    now: Callable[[], datetime],
+) -> None:
+    """One day of the modelled service: who arrives, what everybody decides, and a tick."""
+    advance(timedelta(days=1))
+    streams = population.streams
+    how = population.behaviour
+    day = population.day
+
+    # The ramp stops at the horizon rather than continuing to climb. Past its first nine months
+    # the service keeps acquiring at the rate it reached, which is a claim; growing without bound
+    # because the arithmetic happens to allow it would be an accident.
+    progress = min(day / population.horizon, 1.0) if population.horizon else 1.0
+    rate = how.signups_at_start + (how.signups_at_end - how.signups_at_start) * progress
+    arrivals = int(rate) + (1 if streams.arrivals.random() < rate % 1 else 0)
+    for _ in range(arrivals):
+        user_id = f"sub-{len(population.names):04d}"
+        plan = streams.arrivals.choices(PLANS, weights=PLAN_WEIGHTS, k=1)[0]
+        population.names[user_id] = display_name(streams.names)
+        referrer = (
+            streams.referrals.choice(population.arrived)
+            if population.arrived and streams.referrals.random() < how.referral_use
+            else None
+        )
+        if (
+            referrer is not None
+            and referrer not in population.partners
+            and streams.partners.random() < how.partner_share
+        ):
+            # Somebody with an audience. Assigned once, and from then on their referrals earn
+            # on every renewal rather than once.
+            with suppress(SubstateError):
+                await engine.assign_program(referrer, PARTNERS_PROGRAM.id)
+                population.partners.add(referrer)
+        try:
+            await engine.subscribe(user_id, plan.id, referrer_id=referrer)
+        except SubstateError:
+            # A refusal is part of the model, not a fault: the engine declining a signup is
+            # one of the answers this history is supposed to contain.
+            continue
+        population.arrived.append(user_id)
+        population.joined_on[user_id] = day
+        if streams.promos.random() < how.promo_use:
+            with suppress(SubstateError):
+                # A spent code, or one already bound to this subscriber, is a real answer.
+                await engine.redeem(user_id, streams.promos.choice(PROMO_CODES).code)
+
+    for user_id in list(population.arrived):
+        subscription = await engine.get_subscription(user_id)
+        if subscription is None:
+            continue
+        state = subscription.state
+        if state is State.CANCELLED:
+            continue
+
+        chance = {
+            State.TRIAL: how.trial_conversion / max(PLAN_BY_ID[subscription.plan_id].trial_days, 1),
+            State.ACTIVE: how.renewal,
+            State.GRACE: how.grace_rescue,
+            State.EXPIRED: how.revival,
+        }.get(state, 0.0)
+
+        # Cancelling is a decision about the subscription, not about a renewal, so it is
+        # available on any day rather than only on the one the money is due.
+        if state is State.ACTIVE and streams.cancels.random() < how.cancellation:
+            with suppress(SubstateError):
+                await engine.cancel(user_id)
+            continue
+
+        due = subscription.due_at
+        if state is State.ACTIVE:
+            # One decision per renewal, taken when it falls due.
+            if due is None or due - now() >= timedelta(days=1):
+                continue
+            if population.ruled_on.get(user_id) == due:
+                continue
+            population.ruled_on[user_id] = due
+
+        if streams.payments.random() < chance:
+            plan = PLAN_BY_ID[subscription.plan_id]
+            with suppress(SubstateError):
+                await engine.apply_payment(
+                    Payment(
+                        provider="seed",
+                        external_id=f"{user_id}-{day}",
+                        user_id=user_id,
+                        amount=plan.price,
+                    )
+                )
+
+    await engine.tick()
+    population.day += 1
+
+
+async def _take_stock(
+    engine: SubscriptionEngine,
+    population: Population,
+    moment: datetime,
+    report: SeedReport,
+) -> None:
+    """Where every subscriber stands, and when each of them was last here.
+
+    `last_active_at` is drawn from its own stream and is deliberately NOT derived from the payment
+    dates. If it were, a threshold of thirty days against a monthly plan would collect everybody
+    who simply had not logged in since their last renewal, and "went quiet" would come to mean
+    "pays monthly" — a cohort that is true of most of the table and therefore says nothing.
+
+    A subscriber who already has a mark and whose subscription has ended keeps it: they stopped
+    turning up when it ended. Everybody else is re-drawn and moved forward only if the draw beats
+    what they had, which is the rule that survives the clock being wound twice.
+    """
+    for user_id in population.arrived:
+        subscription = await engine.get_subscription(user_id)
+        if subscription is None:
+            continue
+        state = subscription.state
+        report.states[state.value] = report.states.get(state.value, 0) + 1
+        report.plans[subscription.plan_id] = report.plans.get(subscription.plan_id, 0) + 1
+
+        known = population.last_active.get(user_id)
+        if known is None or state in LIVE:
+            if state in LIVE and user_id not in population.decided:
+                population.decided.add(user_id)
+                if population.streams.activity.random() < population.behaviour.quiet_share:
+                    # Still paying, stopped coming. The people the quiet cohort exists to find.
+                    population.quiet.add(user_id)
+            drawn = last_seen_at(
+                population.streams.activity,
+                window_for(state, quiet=user_id in population.quiet),
+                moment=moment,
+                age=population.age_of(user_id),
+            )
+            population.last_active[user_id] = drawn if known is None else max(known, drawn)
+
+        last_seen = population.last_active[user_id]
+        if state in LIVE and moment - last_seen > QUIET_AFTER:
+            report.quiet += 1
+
+        report.subscribers_projection.append(
+            (user_id, population.names.get(user_id, user_id), last_seen)
+        )
+
+    report.ended_at = moment
 
 
 def names_for(seed: int, count: int) -> dict[str, str]:
