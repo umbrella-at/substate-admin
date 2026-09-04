@@ -65,7 +65,7 @@
 10 84 deploy/provision.sh
 2 14 docker-compose.yml
 2 18 frontend/capture/subscriber.capture.ts
-2 25 frontend/capture/subscribers.capture.ts
+2 22 frontend/capture/subscribers.capture.ts
 3 56 frontend/e2e/session.spec.ts
 2 15 frontend/e2e/subscriber.spec.ts
 4 30 frontend/e2e/subscribers.spec.ts

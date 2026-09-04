@@ -15,13 +15,16 @@ from substate import Accrual, Period, Plan, PromoCode, PromoKind, ReferralProgra
 # payment, and `Payment` has no currency field at all — so it is the panel that has to keep it
 # honest.
 PLANS: Final[tuple[Plan, ...]] = (
+    # Six days of courtesy, not two. The weekly plan renews thirty-nine times a year, so it makes
+    # most of the missed payments here and held them the shortest — which is why standing GRACE
+    # averaged three and emptied on one day in forty. Six is still under the period.
     Plan(
         id="weekly",
         price=200,
         currency="USD",
         period=Period.days(7),
         trial_days=0,
-        grace_days=2,
+        grace_days=6,
     ),
     Plan(
         id="monthly",

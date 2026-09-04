@@ -161,6 +161,16 @@ renewed twice, and seven in ten had lapsed at least once.
 model and train you to edit the test instead of thinking; ranges catch the thing that matters,
 which is a population drifting out of the shape that makes the screen worth looking at.
 
+**And a range is asserted of a size, not of a draw** — which took a red build to notice. Standing
+grace is the one population in single digits, so its value on any given day is a sample: the world
+is built ending *now*, and the same seed lands on a different calendar every day. Measured over 120
+consecutive landing days it ran 0 to 8 around a mean of 3.1, so the floor of three the test held it
+to was below its own mean and failed on 38% of days — and the demonstration's *call today* filter
+was empty on one day in forty. The weekly plan, which renews thirty-nine times a year and so
+produces most of the missed payments, held them for two days; six days of courtesy puts the mean at
+5.6 and leaves the filter empty on none of those 120 days. The test now asserts the mean over a
+week of landing days, which is what the calibration was ever a statement about.
+
 Comments in the code say what breaks if the line beside them changes. The reasoning behind a
 decision is in the pull request that made it.
 
