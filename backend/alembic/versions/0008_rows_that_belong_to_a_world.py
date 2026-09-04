@@ -90,6 +90,16 @@ def downgrade() -> None:
 
     # Rows belonging to a sandbox cannot survive a column that no longer exists, and leaving them
     # would make the constraint below fail on a duplicate address nobody can see.
+
+    # The audit goes first, and that is not tidiness: `audit_log.actor_user_id` is ON DELETE
+    # RESTRICT, so a downgrade run after any visitor did anything fails on the foreign key.
+    # Found by doing exactly that.
+    op.execute(
+        sa.text(
+            "DELETE FROM admin.audit_log WHERE actor_user_id IN "
+            "(SELECT id FROM admin.users WHERE world_id IS NOT NULL)"
+        )
+    )
     op.execute(sa.text("DELETE FROM admin.users WHERE world_id IS NOT NULL"))
     op.execute(sa.text("DELETE FROM admin.roles WHERE world_id IS NOT NULL"))
 
