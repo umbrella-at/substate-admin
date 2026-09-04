@@ -18,7 +18,7 @@ from app.demo.operators import INVENTED, VISITOR
 from app.models import AuditLog, DemoSandbox, Role, User
 from app.security.ratelimit import DEMO_PER_IP, LOGIN_PER_IP, get_limiter
 from app.security.tokens import decode_access_token
-from app.worlds.journal import purge_sandbox
+from app.worlds.journal import purge_orphans, purge_sandbox
 from app.worlds.registry import BASE_WORLD_ID, World, get_registry
 from support import Clock, create_account, envelope, login
 
@@ -301,3 +301,25 @@ async def test_the_sandbox_id_is_not_something_a_caller_can_choose(
     assert claims.typ == "demo"
     assert claims.world_id is not None
     assert uuid.UUID(str(claims.world_id))
+
+
+async def test_a_restart_leaves_nothing_of_a_sandbox_behind(
+    client: AsyncClient, base_world: World, session: AsyncSession
+) -> None:
+    """What a deploy does to every world at once, and the sweep that follows it.
+
+    Sandboxes live in memory, so a restart loses all of them and every row they own becomes an
+    orphan. The journal sweep at the next start is the only thing that ever collects those — and
+    before this it swept two tables of five, leaving operators and roles to pile up per deploy.
+    """
+    body = await open_one(client)
+    world = world_of(body["accessToken"])
+    await _leave_a_trail(client, auth(body))
+
+    # The process comes back holding one world, and it is not this one.
+    swept = await purge_orphans(await session.connection(), [BASE_WORLD_ID])
+
+    assert swept > 0
+    assert await _rows_for(session, world.id) == {"users": 0, "roles": 0, "audit": 0}
+    left = (await session.execute(select(func.count()).select_from(DemoSandbox))).scalar_one()
+    assert left == 0
