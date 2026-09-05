@@ -41,10 +41,12 @@ import {
   type Outcome,
 } from '@/domain/audit'
 import { useWorld } from '@/composables/useWorld'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const client = useApiClient()
+const auth = useAuthStore()
 
 const query = computed<AuditQuery>(() => auditQueryFromRoute(route.query))
 
@@ -58,16 +60,17 @@ const total = computed(() => result.data.value?.total ?? 0)
 const pageSize = computed(() => result.data.value?.pageSize ?? 25)
 const pageCount = computed(() => (total.value === 0 ? 0 : Math.ceil(total.value / pageSize.value)))
 
-/** Which world the panel is looking at, as the service names it. A row from another one points at
- *  a subscriber who was reset away, so its target is text rather than a link — and the id is asked
- *  for rather than assumed, because a copy of a backend constant is a copy that goes stale on the
- *  day sandboxes make it wrong.
- *
- *  Null while the answer has not arrived, which the table reads as "do not link". That is the
- *  right way round: an unlinked id is readable, and a link built on a guess is a 404 for whoever
- *  follows it. */
+/** Which world the panel is looking at. A row from another one points at a subscriber who was
+ *  reset away, so its target is text rather than a link. */
+
+/* THE SESSION'S OWN WORLD FIRST, AND THAT IS WHAT SANDBOXES CHANGED. `/api/health` is public and
+   always names the base world, so a demonstration visitor asking it would be told their own rows
+   belong to somewhere else — and every link on their audit screen would quietly stop existing. */
+
+/* Null while neither answer has arrived, which the table reads as "do not link". That is the
+   right way round: an unlinked id is readable, and a link built on a guess is a 404. */
 const { data: health } = useWorld()
-const liveWorld = computed(() => health.value?.world.id ?? null)
+const liveWorld = computed(() => auth.worldId ?? health.value?.world.id ?? null)
 
 function go(next: AuditQuery): void {
   void router.push({ query: auditQueryToRoute(next) })

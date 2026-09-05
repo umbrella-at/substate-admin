@@ -18,6 +18,7 @@ edit answers with permissions the database no longer grants.
 """
 
 import uuid
+from datetime import timedelta
 from typing import Final
 
 import pytest
@@ -41,7 +42,7 @@ from app.deps import (
 )
 from app.main import API_PREFIX, api_routes, app
 from app.permissions import ROLE_CODES, SYSTEM_ROLES, RoleCode, system_role
-from app.worlds.registry import World
+from app.worlds.registry import World, get_registry
 from support import Clock, bearer, create_account, envelope, role_id_for
 
 
@@ -89,7 +90,12 @@ def test_every_route_declares_who_may_call_it() -> None:
 
 def test_the_public_routes_are_the_ones_that_have_to_be() -> None:
     """Login and refresh are the credential exchange; logout ends a session and needs no access
-    token to do it; health is what the deploy's smoke check reads before anyone has one."""
+    token to do it; health is what the deploy's smoke check reads before anyone has one.
+
+    The demonstration door is public by necessity — the first press comes from somebody with no
+    credential at all — and what that costs is a ceiling on how many worlds may stand and a rate
+    limit on building them.
+    """
     public = {
         (_method(route), _url(route))
         for route in api_routes(app)
@@ -102,6 +108,7 @@ def test_the_public_routes_are_the_ones_that_have_to_be() -> None:
         ("POST", "/api/auth/login"),
         ("POST", "/api/auth/refresh"),
         ("POST", "/api/auth/logout"),
+        ("POST", "/api/demo/session"),
     }
 
 
@@ -162,6 +169,13 @@ def test_each_guarded_route_demands_what_it_is_supposed_to() -> None:
         ("POST", "/api/roles"): "users.write",
         ("PUT", "/api/roles/{role_id}"): "users.write",
         ("DELETE", "/api/roles/{role_id}"): "users.write",
+        # Reading the clock takes a session and no more: every screen already renders times
+        # measured against it, and a panel that cannot say what time its world thinks it is falls
+        # back on the browser's — which reads "just now" for a world wound a month forward.
+        ("GET", "/api/clock"): None,
+        # Winding it is the one thing `viewer` and `support` are refused here. It changes what
+        # everybody reading that world sees.
+        ("POST", "/api/clock/advance"): "demo.control",
     }
 
 
@@ -204,15 +218,19 @@ async def test_the_permission_matrix(
 @pytest.mark.parametrize(
     ("route", "declaration"), _guarded(), ids=[f"{_method(r)} {_url(r)}" for r, _ in _guarded()]
 )
-async def test_a_demo_token_reaches_no_guarded_route(
+async def test_a_demo_token_whose_world_is_gone_reaches_no_guarded_route(
     client: AsyncClient,
     session: AsyncSession,
     clock: Clock,
     route: APIRoute,
     declaration: RouteDeclaration,
 ) -> None:
-    """A demo token names a world and drives its clock. Every route here is about a real account,
-    and the refusal is by token type rather than by which role happens to hold demo.control."""
+    """The ordinary end of every demonstration, on every route at once.
+
+    Worlds live in memory, so an hour passing and a deploy restarting the process are the same
+    event from outside — and the answer is the same on all of them, before the subject is even
+    looked up.
+    """
     account = await create_account(session, email="demo-session@example.com", role_code="demo")
     method = _method(route)
 
@@ -221,6 +239,27 @@ async def test_a_demo_token_reaches_no_guarded_route(
         _url(route),
         headers=bearer(account, now=clock.now, typ="demo", world_id=uuid.uuid4()),
         json=None if method == "GET" else {},
+    )
+
+    assert response.status_code == 410
+    assert envelope(response)["code"] == "SANDBOX_GONE"
+
+
+async def test_a_demo_token_cannot_name_an_operator_of_this_installation(
+    client: AsyncClient, session: AsyncSession, clock: Clock
+) -> None:
+    """THE ISOLATION, ASSERTED FROM THE SIDE IT WOULD BE BROKEN FROM.
+
+    A demo token is signed by this service, so nothing about the signature says which rows it may
+    reach. The subject is looked up together with the world, and an operator of this installation
+    carries no world — so a demo token naming one finds nothing and is refused.
+    """
+    world = get_registry().create(str(uuid.uuid4()), ttl=timedelta(minutes=60))
+    operator = await create_account(session, email="real@example.com", role_code="admin")
+
+    response = await client.get(
+        "/api/subscribers",
+        headers=bearer(operator, now=clock.now, typ="demo", world_id=uuid.UUID(world.id)),
     )
 
     assert response.status_code == 401
@@ -234,12 +273,12 @@ def test_the_catalogue_and_the_system_roles_are_what_the_specification_says() ->
         "admin": 13,
         "support": 9,
         "viewer": 5,
-        "demo": 11,
+        "demo": 13,
     }
-    # The specification writes demo as "everything except users.write". It is that, narrowed by
-    # one code: a demo session is handed to whoever clicks the button on the login page, and
-    # users.read would hand that stranger every real operator's email address.
-    assert {"users.write", "users.read"}.isdisjoint(SYSTEM_ROLES["demo"].permissions)
+    # The specification writes demo as "everything except users.write", and it is now everything.
+    # Inside a sandbox the operators and the roles are invented, its own, and gone in an hour, so
+    # the world filter is what makes the grant safe rather than the grant being withheld.
+    assert SYSTEM_ROLES["demo"].permissions == SYSTEM_ROLES["admin"].permissions
     assert {"audit.read", "users.read"}.isdisjoint(SYSTEM_ROLES["viewer"].permissions)
     assert {"subscribers.write", "promo.write"} <= SYSTEM_ROLES["support"].permissions
 

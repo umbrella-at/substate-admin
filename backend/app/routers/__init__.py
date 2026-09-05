@@ -17,8 +17,9 @@ from typing import Any, Final
 
 from fastapi import status
 
+from app.deps import world_of_request
 from app.errors import ApiError, ErrorCode, ErrorEnvelope
-from app.worlds.registry import BASE_WORLD_ID, World, WorldRegistry, get_registry
+from app.worlds.registry import World
 
 _ENVELOPE: Final[dict[str, Any]] = {"model": ErrorEnvelope}
 
@@ -28,19 +29,26 @@ def error_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
 
     Declaring 422 also suppresses the `HTTPValidationError` response FastAPI adds on its own to
     any route with a body or a query parameter: that shape is not what this service sends.
+
+    A route that declares 401 gets 410 with it, and not as a convenience: the identity resolver
+    answers SANDBOX_GONE for a demonstration whose world has ended, so every guarded route can
+    serve it — and a schema omitting it has no type for the failure that ends every one of them.
     """
-    return {code: dict(_ENVELOPE) for code in statuses}
+    codes = set(statuses) | ({410} if 401 in statuses else set())
+    return {code: dict(_ENVELOPE) for code in sorted(codes)}
 
 
 def current_world() -> World:
-    """The world this request reads. Always the base world today.
+    """The world this request reads: a visitor's own sandbox, or the base world for an operator.
 
-    A function rather than a constant because it will eventually be read out of the token, and
-    every caller already goes through it — which is why the world key went on everything from the
-    first day rather than the last.
+    Decided once, where the token is read, and carried on the request rather than looked up again
+    here — a second lookup would be a second answer to which world the panel is showing, and the
+    one thing a sandbox may never do is answer with somebody else's.
+
+    None means the base world failed to build, which is a bad shop window rather than an outage:
+    the panel serves, signing in works, and only the routes that need a world say so.
     """
-    registry: WorldRegistry = get_registry()
-    world = registry.get(BASE_WORLD_ID)
+    world = world_of_request()
     if world is None:
         raise ApiError(
             ErrorCode.INTERNAL_ERROR,

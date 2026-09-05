@@ -7,7 +7,7 @@
 /* No filled control here. The rule about one filled element is about actions, the figures spend
    the accent, and a screen with nothing to press should not carry a loud button. */
 
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
@@ -18,6 +18,7 @@ import LineFigure from '@/components/LineFigure.vue'
 import WorldNotBuilt from '@/components/WorldNotBuilt.vue'
 import { useAnalytics } from '@/composables/useAnalytics'
 import { useWorld } from '@/composables/useWorld'
+import { useWorldClock } from '@/composables/useWorldClock'
 import {
   amount,
   bandLabel,
@@ -44,13 +45,30 @@ const period = computed<Preset>(() => periodFromRoute(route.query['period']))
 /** One moment for all the figures on one paint: a `now` that moved between two of them would put
  *  them on two periods invisibly. Refreshed when the period changes, because a tab left open for a
  *  day was otherwise asking about the thirty days ending yesterday. */
-const now = ref(new Date())
+
+/* Asked for here rather than taken from the frame: these five figures are the ones a wrong moment
+   ruins, and a screen that is right only when its parent happened to fetch something is a screen
+   with a dependency nobody can see. The query is shared, so asking twice costs one request. */
+
+/* THE WORLD'S MOMENT, NOT THE BROWSER'S, AND THE CLOCK CONTROL IS WHY. A world wound a month
+   forward has a last-thirty-days that ended a month ago in this browser, so the funnel, the flow
+   and the revenue would describe the month before the visitor arrived, beside a table that moved. */
+const { now: worldNow } = useWorldClock()
+const now = ref(new Date(worldNow.value))
+watch(worldNow, (moment) => {
+  // Only when the world itself moves, not with the beat. A window that slid every ten seconds
+  // would refetch five figures for a boundary nobody crossed.
+  if (Math.abs(moment - now.value.getTime()) > A_DAY) now.value = new Date(moment)
+})
+
+/** A day, which is the coarsest thing any of these periods measures in. */
+const A_DAY = 24 * 60 * 60 * 1000
 
 const { funnel, flow, states, quiet, revenue } = useAnalytics(period, now)
 const { isUnbuilt: worldIsUnbuilt } = useWorld()
 
 function choose(next: Preset): void {
-  now.value = new Date()
+  now.value = new Date(worldNow.value)
   void router.push({ query: periodToRoute(next) })
 }
 

@@ -152,18 +152,18 @@ async def test_me_refuses_a_token_that_has_expired(
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-async def test_me_refuses_a_demo_token(
+async def test_me_refuses_a_demo_token_whose_world_has_gone(
     client: AsyncClient, session: AsyncSession, clock: Clock
 ) -> None:
-    """No route mints one. Refusing by type is what keeps that true if one is ever minted."""
+    """A demo session IS its world: no world, no session, and one answer for both endings."""
     account = await create_account(session, email="demo@example.com", role_code="demo")
 
     response = await client.get(
         ME, headers=bearer(account, now=clock.now, typ="demo", world_id=uuid.uuid4())
     )
 
-    assert response.status_code == 401
-    assert envelope(response)["code"] == "NOT_AUTHENTICATED"
+    assert response.status_code == 410
+    assert envelope(response)["code"] == "SANDBOX_GONE"
 
 
 async def test_me_refuses_a_token_signed_with_another_key(

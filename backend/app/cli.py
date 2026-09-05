@@ -166,11 +166,19 @@ async def create_user(
     """
     folded = validate_password(password, email=email)
 
-    role = (await session.execute(select(Role).where(Role.code == role_code))).scalars().first()
+    role = (
+        (await session.execute(select(Role).where(Role.code == role_code, Role.world_id.is_(None))))
+        .scalars()
+        .first()
+    )
     if role is None:
         raise CommandError(_unknown_role_message(role_code, await _known_role_codes(session)))
 
-    existing = (await session.execute(select(User).where(User.email == email))).scalars().first()
+    existing = (
+        (await session.execute(select(User).where(User.email == email, User.world_id.is_(None))))
+        .scalars()
+        .first()
+    )
     if existing is not None:
         if not set_password:
             raise CommandError(
@@ -228,7 +236,11 @@ async def create_role(
             f"The catalogue holds: {', '.join(PERMISSION_CODES)}."
         )
 
-    role = (await session.execute(select(Role).where(Role.code == code))).scalars().first()
+    role = (
+        (await session.execute(select(Role).where(Role.code == code, Role.world_id.is_(None))))
+        .scalars()
+        .first()
+    )
     created = role is None
     if role is None:
         role = Role(code=code, name=name, is_system=False)
@@ -300,8 +312,17 @@ async def _sync_catalogue(
 
 
 async def _sync_role(session: AsyncSession, spec: SystemRole) -> RoleSync:
-    """Bring one system role, and only its own grants, to what the catalogue says."""
-    role = (await session.execute(select(Role).where(Role.code == spec.code))).scalars().first()
+    """Bring one system role, and only its own grants, to what the catalogue says.
+
+    `world_id IS NULL` is the role of this installation. A sandbox holds copies of all four under
+    the same codes, and without the predicate a deploy would force-sync whichever row came back
+    first — reporting success while the real `admin` kept whatever it had.
+    """
+    role = (
+        (await session.execute(select(Role).where(Role.code == spec.code, Role.world_id.is_(None))))
+        .scalars()
+        .first()
+    )
     created = role is None
     renamed = False
     adopted = False
@@ -376,7 +397,9 @@ def render_pruned(deleted: int) -> list[str]:
 
 
 async def _known_role_codes(session: AsyncSession) -> tuple[str, ...]:
-    result = await session.execute(select(Role.code).order_by(Role.code))
+    result = await session.execute(
+        select(Role.code).where(Role.world_id.is_(None)).order_by(Role.code)
+    )
     return tuple(result.scalars())
 
 

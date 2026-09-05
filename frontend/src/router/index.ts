@@ -100,6 +100,14 @@ export const router = createRouter({
       component: () => import('@/views/AuditView.vue'),
     },
     {
+      // Reachable by somebody who is no longer signed in to anything, which is the whole point:
+      // the sandbox they held is gone and there was never an account behind it.
+      path: '/demo-ended',
+      name: 'demo-ended',
+      meta: { requiresAuth: false },
+      component: () => import('@/views/DemoEndedView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       meta: { requiresAuth: false },

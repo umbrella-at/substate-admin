@@ -1,0 +1,184 @@
+"""A world of somebody's own: how one is built, how long it lives, and what dies with it.
+
+WHAT A SANDBOX COSTS, MEASURED RATHER THAN GUESSED.
+
+Half a megabyte of memory, held flat over thirty worlds in one process. A seventh of a second of
+one CPU to seed, which is a seventh of a second the single worker is not answering anybody else.
+
+About four thousand journal rows and three hundred and fifty projection rows, written by COPY and
+deleted again when the world ends.
+
+So memory is not the constraint, and that is the finding: the ceiling below is set by the database
+churn and by the fact that seeding blocks the loop, not by the two gigabytes on the box.
+
+AND A SEEDED WORLD IS THE FLOOR, NOT THE FIGURE. The clock control lets a visitor wind their world,
+and a year of winding takes it to 31000 journal rows and 1160 subscribers — eight times what it was
+built with. That is what `MAX_WIND` exists to bound, and what this ceiling has to be read against.
+
+Thirty-two worlds wound to their limit is about a million journal rows and fifty megabytes of heap:
+larger than the base world by two orders of magnitude, still inside the box, and reachable only by
+thirty-two visitors who each spend their hour pressing the button.
+
+The ceiling is the bound that matters; the rate limit on creation is what stops one address from
+spending it in a second. A third valve counting live worlds per address was considered and left
+out: it would bound nothing these two do not, at the cost of a third place to be wrong.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Final
+
+import structlog
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.demo.operators import populate
+from app.models import DemoSandbox
+from app.seed.catalogue import USERS_PROGRAM
+from app.seed.run import HISTORY_DAYS, SEED, seed_world
+from app.worlds.journal import ProjectedSubscriber, write_events, write_projection
+from app.worlds.registry import World, WorldRegistry
+
+_log = structlog.get_logger(__name__)
+
+SANDBOX_TTL: Final = timedelta(minutes=60)
+"""How long a sandbox has left after the last time it was used."""
+
+SANDBOX_CEILING: Final = timedelta(hours=2)
+"""And how long it may have from the moment it was built, whatever it does with the hour above."""
+
+MAX_SANDBOXES: Final = 32
+"""How many may stand at once. See the module docstring for what one costs and why this number."""
+
+
+class SandboxesAreFull(Exception):
+    """The ceiling is reached. The caller answers with the base world on offer instead."""
+
+
+@dataclass(frozen=True, slots=True)
+class Sandbox:
+    """A world somebody may drive, and the account they drive it as."""
+
+    world: World
+    user_id: uuid.UUID
+    expires_at: datetime
+
+
+async def open_sandbox(
+    session: AsyncSession, registry: WorldRegistry, *, ip_hash: str, now: datetime
+) -> Sandbox:
+    """Build a world, run its history through it, and give it operators of its own.
+
+    Everything here rides on the caller's transaction, including the two COPYs — so a sandbox that
+    fails halfway leaves no rows at all, rather than a journal with nobody to read it. The world
+    itself is not transactional, which is what the registry drop below is for.
+    """
+    if len(registry.sandboxes()) >= MAX_SANDBOXES:
+        raise SandboxesAreFull
+
+    world = registry.create(
+        str(uuid.uuid4()),
+        ttl=SANDBOX_TTL,
+        ceiling=SANDBOX_CEILING,
+        offset=timedelta(days=-HISTORY_DAYS),
+        default_program=USERS_PROGRAM,
+    )
+    # The request's clock, not the registry's. Everything else about this session — the token's
+    # expiry, the rate-limit decision — is measured against the one that was passed in, and a
+    # sandbox whose life is measured against a different one disagrees with its own pass.
+    world.created_at = now
+    world.expires_at = now + SANDBOX_TTL
+    world.ceiling_at = now + SANDBOX_CEILING
+    try:
+        report, population = await seed_world(
+            world.engine, world.clock.advance, world.clock.now, days=HISTORY_DAYS
+        )
+        world.population = population
+        world.seeded = True
+
+        connection = await session.connection()
+        await write_events(connection, world.id, world.sink.drain())
+        await write_projection(
+            connection,
+            world.id,
+            [
+                ProjectedSubscriber(user_id=uid, display_name=name, last_active_at=seen)
+                for uid, name, seen in report.subscribers_projection
+            ],
+        )
+        session.add(
+            DemoSandbox(
+                world_id=world.id,
+                expires_at=world.expires_at,
+                ceiling_at=world.ceiling_at,
+                ip_hash=ip_hash,
+            )
+        )
+        user_id = await populate(session, world_id=world.id, seed=SEED)
+    except Exception:
+        # A world left in the registry after a failed build is one nobody can reach and nothing
+        # will collect until its hour is up, and it spends a slot under the ceiling meanwhile.
+        registry.drop(world.id)
+        raise
+
+    expires_at = world.expires_at
+    if expires_at is None:  # pragma: no cover - create() was given a ttl twenty lines above
+        raise RuntimeError("a sandbox was built without an expiry")
+
+    _log.info(
+        "sandbox_opened",
+        world_id=world.id,
+        subscribers=report.subscribers,
+        seconds=round(report.seconds, 3),
+        standing=len(registry.sandboxes()),
+    )
+    return Sandbox(world=world, user_id=user_id, expires_at=expires_at)
+
+
+async def extend_sandbox(session: AsyncSession, world: World, *, now: datetime) -> datetime:
+    """Push a sandbox's expiry out, and record where it was pushed to.
+
+    The row is the half of this that outlives the process, and it is written here rather than on
+    every request: extending in the identity resolver would be a write riding on whatever
+    transaction the request happened to have, rolled back by every refusal.
+    """
+    expires_at = world.extend(ttl=SANDBOX_TTL, now=now)
+    await session.execute(
+        update(DemoSandbox).where(DemoSandbox.world_id == world.id).values(expires_at=expires_at)
+    )
+    return expires_at
+
+
+Purge = Callable[[str], Awaitable[None]]
+"""Deletes everything one world owns. The reaper is handed one rather than a database: the
+transaction belongs to whoever owns a connection, which in the served process is the lifespan."""
+
+
+async def reap(registry: WorldRegistry, purge: Purge, *, now: datetime | None = None) -> int:
+    """Collect every sandbox whose time is up. Returns how many went.
+
+    Dropped from the registry first and purged second, so that nothing can read or write for a
+    world while its rows are being deleted.
+
+    A purge that fails then leaves rows behind and no world, which the orphan sweep at the next
+    start collects — the alternative is a visitor reading a table halfway through being emptied.
+    """
+    moment = now if now is not None else datetime.now(UTC)
+    for world in registry.expired(moment):
+        if world.is_sandbox:
+            registry.drop(world.id)
+
+    collected = 0
+    # Whatever a previous pass could not finish comes with this one. Dropping from the registry
+    # and purging are two steps, and a world that failed the second was never coming back to
+    # `expired()` — its rows would have waited for a restart that might be days away.
+    for world_id in registry.unpurged():
+        await purge(world_id)
+        registry.purged(world_id)
+        collected += 1
+        _log.info("sandbox_reaped", world_id=world_id, standing=len(registry.sandboxes()))
+    return collected

@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import type { ApiClient, MeResponse } from '@/api/client'
+import { rememberedDemoToken, type ApiClient, type MeResponse } from '@/api/client'
 import { granted, type PermissionCode } from '@/domain/permissions'
 
 export type SessionUser = MeResponse['user']
@@ -23,6 +23,11 @@ export const useAuthStore = defineStore('auth', () => {
   const role = ref<SessionRole | null>(null)
   const permissions = ref<ReadonlySet<string>>(new Set())
   const kind = ref<MeResponse['kind'] | null>(null)
+
+  /** The world this session reads: a sandbox's id for a demonstration visitor, null for an
+   *  operator, who reads the one `/api/health` names. Anything that has to know which world a row
+   *  belongs to asks here first. */
+  const worldId = ref<string | null>(null)
 
   /** False until the opening refresh has been answered one way or the other. The router guard
    *  waits on it; without that wait the first navigation of a reload reads an empty store and
@@ -39,6 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = me.user
     role.value = me.role
     kind.value = me.kind
+    worldId.value = me.worldId ?? null
     permissions.value = new Set(me.permissions)
   }
 
@@ -46,6 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     role.value = null
     kind.value = null
+    worldId.value = null
     permissions.value = new Set()
   }
 
@@ -72,7 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
         }),
       ])
       if (outcome === 'renewed') adopt(await client.me())
-      else clear()
+      else await resumeDemo(client)
     } catch {
       // Anonymous is the only thing a pre-mount failure can mean, whatever kind of failure it was.
       clear()
@@ -81,5 +88,35 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, role, permissions, kind, ready, isAuthenticated, can, adopt, clear, bootstrap }
+  /** The other way a page load can find a session: a demonstration pass this tab kept. There is
+   *  no refresh cookie behind one, so without this a reload ends it while the world is still
+   *  standing and nothing in the browser can reach it again. */
+  async function resumeDemo(client: ApiClient): Promise<void> {
+    const kept = rememberedDemoToken()
+    if (kept === null) {
+      clear()
+      return
+    }
+    client.setDemoToken(kept)
+    try {
+      adopt(await client.me())
+    } catch {
+      client.setDemoToken(null)
+      clear()
+    }
+  }
+
+  return {
+    user,
+    role,
+    permissions,
+    kind,
+    worldId,
+    ready,
+    isAuthenticated,
+    can,
+    adopt,
+    clear,
+    bootstrap,
+  }
 })

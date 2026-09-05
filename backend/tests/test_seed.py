@@ -60,7 +60,7 @@ async def run_once(
     engine = SubscriptionEngine(
         MemoryStorage(), clock=clock, on_event=tally, default_program=USERS_PROGRAM
     )
-    report = await seed_world(engine, clock.advance, clock.now, seed=seed, tally=tally)
+    report, _ = await seed_world(engine, clock.advance, clock.now, seed=seed, tally=tally)
     return report, clock, tally
 
 
@@ -279,7 +279,7 @@ async def test_nobody_was_active_before_they_existed() -> None:
     engine = SubscriptionEngine(
         MemoryStorage(), clock=clock, on_event=watch, default_program=USERS_PROGRAM
     )
-    report = await seed_world(engine, clock.advance, clock.now, tally=tally)
+    report, _ = await seed_world(engine, clock.advance, clock.now, tally=tally)
 
     impossible = [
         (user_id, first_event[user_id] - seen)
@@ -316,3 +316,17 @@ async def test_every_subscriber_has_a_name_and_a_last_seen(
 
     assert len(report.subscribers_projection) == report.subscribers
     assert all(name and seen is not None for _, name, seen in report.subscribers_projection)
+
+
+async def test_the_report_counts_the_events_the_run_produced(
+    seeded: tuple[SeedReport, OffsetClock, EventTally],
+) -> None:
+    """`events` was declared and never assigned, so it read zero for a run that made thousands.
+
+    It survived because both callers sidestepped it — one logs the COPY's own count, the other the
+    subscriber count — which is exactly how a field stays wrong.
+    """
+    report, _, tally = seeded
+
+    assert report.events == tally.events
+    assert report.events > 0

@@ -3,11 +3,13 @@
  * than redirecting; this is the half that reads the mark, and it was written by nothing before.
  */
 
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h, ref } from 'vue'
 
+import { apiClientKey } from '@/api/provide'
 import App from '@/App.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -27,8 +29,18 @@ vi.mock('vue-router', async (importOriginal) => ({
   RouterView: { render: () => h('main', 'the page itself') },
 }))
 
+/** The frame reads the world's clock for every screen inside it, so mounting it needs the query
+ *  plumbing and a client that can answer. What the reading says is asserted elsewhere. */
+const stillThinking = { clock: () => new Promise(() => {}) }
+
 function render() {
-  return mount(App, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  return mount(App, {
+    global: {
+      plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
+      provide: { [apiClientKey as unknown as string]: stillThinking },
+      stubs: { RouterLink: RouterLinkStub, ClockControl: true },
+    },
+  })
 }
 
 beforeEach(() => {

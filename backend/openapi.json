@@ -1,6 +1,23 @@
 {
   "components": {
     "schemas": {
+      "AdvanceRequest": {
+        "additionalProperties": false,
+        "description": "How far to wind a world forward. Days, and forward only.",
+        "properties": {
+          "days": {
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "title": "AdvanceRequest",
+        "type": "object"
+      },
       "AssignProgramRequest": {
         "additionalProperties": false,
         "description": "POST /api/subscribers/{id}/referral-program.",
@@ -181,6 +198,37 @@
         "title": "ChangePlanRequest",
         "type": "object"
       },
+      "ClockResponse": {
+        "additionalProperties": false,
+        "description": "Where a world's clock stands.\n\n`now` is model time, which is real time plus an offset that only grows. Everything the panel\nrenders as \"how long ago\" is measured against it: against the browser's own clock, a world\nwound a month forward would report every subscriber as active this minute.",
+        "properties": {
+          "daysLeft": {
+            "title": "Daysleft",
+            "type": "integer"
+          },
+          "isSandbox": {
+            "title": "Issandbox",
+            "type": "boolean"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "offsetSeconds": {
+            "title": "Offsetseconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "now",
+          "offsetSeconds",
+          "isSandbox",
+          "daysLeft"
+        ],
+        "title": "ClockResponse",
+        "type": "object"
+      },
       "CreateRoleRequest": {
         "additionalProperties": false,
         "description": "POST /api/roles. The code is set once and never edited: it is what people call the role.",
@@ -226,6 +274,32 @@
           "code"
         ],
         "title": "CreateRoleRequest",
+        "type": "object"
+      },
+      "DemoSessionResponse": {
+        "additionalProperties": false,
+        "description": "The answer to POST /api/demo/session: a world of your own, and a pass into it.\n\nNo refresh cookie and no token family. The pass is minted for as long as the sandbox has left,\nand pressing this endpoint again with it hands back a fresh one — up to the sandbox's own hard\nceiling, past which nothing renews and the demonstration is over.",
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "endsAt": {
+            "format": "date-time",
+            "title": "Endsat",
+            "type": "string"
+          },
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresIn",
+          "endsAt"
+        ],
+        "title": "DemoSessionResponse",
         "type": "object"
       },
       "EngineEvent": {
@@ -302,6 +376,9 @@
           "ROLE_IS_SYSTEM",
           "ROLE_IN_USE",
           "ROLE_CODE_TAKEN",
+          "SANDBOX_GONE",
+          "SANDBOX_FULL",
+          "WORLD_FULLY_WOUND",
           "ALREADY_SUBSCRIBED",
           "UNKNOWN_PLAN",
           "UNKNOWN_PROMO_CODE",
@@ -1674,6 +1751,16 @@
             },
             "description": "Forbidden"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1766,6 +1853,16 @@
             },
             "description": "Forbidden"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1821,6 +1918,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -1882,6 +1989,16 @@
             },
             "description": "Forbidden"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1937,6 +2054,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -1952,6 +2079,7 @@
     },
     "/api/audit": {
       "get": {
+        "description": "One page of the caller's own world's trail.\n\nSCOPED BY THE ACTOR'S WORLD, NOT BY THE ROW'S.\n\n`audit_log.world_id` says which world an operation happened in, and it is null for an edit to\na role, which happened to the panel rather than inside anything.\n\nFiltering on it would either hide a demo visitor's own role edits from them or, the other way\nround, hand them every real operator's edits and the addresses joined alongside.",
         "operationId": "list_page_api_audit_get",
         "parameters": [
           {
@@ -2087,6 +2215,16 @@
             },
             "description": "Forbidden"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2143,6 +2281,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -2210,6 +2358,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -2248,6 +2406,16 @@
             },
             "description": "Unauthorized"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -2262,6 +2430,218 @@
         "summary": "Rotate the refresh cookie and mint a new access token",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/clock": {
+      "get": {
+        "description": "Model time, and the offset it is made of.\n\nReadable by anybody with a session rather than by whoever may wind it: every screen already\nrenders data measured against this clock, and a panel that cannot say what time its world\nthinks it is renders \"just now\" against the browser's.",
+        "operationId": "read_clock_api_clock_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Where this world's clock stands",
+        "tags": [
+          "clock"
+        ]
+      }
+    },
+    "/api/clock/advance": {
+      "post": {
+        "description": "Run the world forward `days` days and report where its clock landed.\n\nThe two writes are the point of the endpoint as much as the clock is: the days produce events,\nand the subscribers who turned up during them have to move with the world — otherwise the quiet\ncohort becomes the whole table at the first press.",
+        "operationId": "advance_api_clock_advance_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Wind this world forward",
+        "tags": [
+          "clock"
+        ]
+      }
+    },
+    "/api/demo/session": {
+      "post": {
+        "description": "Build a world for whoever asked, or extend the one their pass names.\n\nPublic by necessity: the first press comes from somebody with no credential at all. The\nceiling on how many worlds may stand and the rate limit below are what that costs.",
+        "operationId": "open_session_api_demo_session_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {}
+        ],
+        "summary": "Open a demonstration world, or keep the one you have",
+        "tags": [
+          "demo"
         ]
       }
     },
@@ -2335,6 +2715,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -2386,6 +2776,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -2401,6 +2801,7 @@
     },
     "/api/roles": {
       "get": {
+        "description": "The caller's own world's roles. A sandbox holds editable copies of the four system ones.",
         "operationId": "list_roles_api_roles_get",
         "responses": {
           "200": {
@@ -2432,6 +2833,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           }
         },
         "security": [
@@ -2496,6 +2907,16 @@
               }
             },
             "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -2577,6 +2998,16 @@
               }
             },
             "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -2673,6 +3104,16 @@
               }
             },
             "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -2835,6 +3276,16 @@
             },
             "description": "Forbidden"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2911,6 +3362,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -2989,6 +3450,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -3077,6 +3548,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -3179,6 +3660,16 @@
             },
             "description": "Not Found"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3266,6 +3757,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -3365,6 +3866,16 @@
             },
             "description": "Conflict"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3452,6 +3963,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {
@@ -3551,6 +4072,16 @@
             },
             "description": "Conflict"
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3575,7 +4106,7 @@
     },
     "/api/users": {
       "get": {
-        "description": "One page of users, under an ordering the client can page through safely.",
+        "description": "One page of users, under an ordering the client can page through safely.\n\nScoped to the caller's world, which for an operator is the rows carrying none. A demonstration\nvisitor sees the colleagues their sandbox invented and never an address from outside it.\n\nThat scope is also what keeps the ordering below total: an address is unique WITHIN a world,\nso a listing spanning two of them could hold the same key twice.",
         "operationId": "list_users_api_users_get",
         "parameters": [
           {
@@ -3633,6 +4164,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "422": {
             "content": {

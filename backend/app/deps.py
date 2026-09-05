@@ -18,6 +18,7 @@ role drops it.
 
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.routing import BaseRoute, Route
 
 from app.db import NowProvider, get_now, get_session
+from app.demo.sandboxes import SANDBOX_TTL
 from app.errors import ApiError, ErrorCode
 from app.logging import bind_request_context, get_logger
 from app.models import Role, RolePermission, User
@@ -43,8 +45,23 @@ from app.security.tokens import (
     AccessTokenInvalid,
     decode_access_token,
 )
+from app.worlds.registry import BASE_WORLD_ID, World, get_registry
 
 _log = get_logger(__name__)
+
+_world: ContextVar[World | None] = ContextVar("world_of_request", default=None)
+"""The world this request reads, decided once, where the token is read.
+
+A context variable rather than a parameter on eleven route bodies, and the same mechanism the
+request's log context already uses: the answer is a fact about the request, and every route that
+needs it needs the same one. `app.routers.current_world` is what reads it.
+"""
+
+
+def world_of_request() -> World | None:
+    """The world the current request resolved to, or None outside one."""
+    return _world.get()
+
 
 # Long enough that a burst of requests from one panel costs one read of a table that changes
 # perhaps twice a year, short enough that a role edited by hand in psql — which cannot call
@@ -70,7 +87,7 @@ _BEARER_CHALLENGE: Final[Mapping[str, str]] = MappingProxyType({"WWW-Authenticat
 # auto_error=False because FastAPI's own refusal is a 403 shaped `{"detail": ...}`: the wrong
 # status for a missing credential and the wrong body for this API. Declared all the same, so the
 # published schema — and the Authorize button in the docs — describe the scheme.
-_bearer: Final = HTTPBearer(bearerFormat="JWT", auto_error=False)
+optional_bearer: Final = HTTPBearer(bearerFormat="JWT", auto_error=False)
 
 
 class Access(StrEnum):
@@ -104,6 +121,14 @@ class Identity:
 
     claims: AccessTokenClaims
 
+    world: World | None
+    """The world this session reads: a visitor's own sandbox, or the base world for an operator.
+
+    None only when the base world failed to build, which is a bad shop window rather than an
+    outage — signing in still works, and `app.routers.current_world` is what answers 503 to the
+    routes that actually need a world.
+    """
+
     @property
     def role(self) -> Role:
         return self.user.role
@@ -112,9 +137,8 @@ class Identity:
     def kind(self) -> Literal["user", "demo"]:
         """What sort of session this is, for GET /api/auth/me.
 
-        Always "user" today: every dependency below refuses a token whose `typ` is not "access",
-        so a demo token never reaches a route. Derived from the verified claim rather than written
-        as a constant in the route that reports it, because the claim is where the answer is.
+        Derived from the verified claim rather than written as a constant in the route that
+        reports it, because the claim is where the answer is.
         """
         return "demo" if self.claims.typ == "demo" else "user"
 
@@ -122,20 +146,40 @@ class Identity:
     def world_id(self) -> uuid.UUID | None:
         return self.claims.world_id
 
+    @property
+    def world_scope(self) -> str | None:
+        """The value `world_id` carries on the rows this session may see.
+
+        None for an operator of this installation, and the sandbox's id for a visitor. Every query
+        over users, roles and the audit is filtered by it, which is the only thing between one
+        demonstration and the next.
+        """
+        return str(self.claims.world_id) if self.claims.world_id is not None else None
+
     def has(self, code: PermissionCode) -> bool:
         """Whether this identity holds one permission. Typed, so a typo is a type error."""
         return code in self.permissions
 
 
-async def load_user(session: AsyncSession, user_id: uuid.UUID) -> User | None:
+async def load_user(
+    session: AsyncSession, user_id: uuid.UUID, *, world_id: str | None = None
+) -> User | None:
     """The statement every authenticated request pays for, and the only one a warm process runs.
 
     `User.role` is an inner-joined eager load, so this is a single SELECT across users and roles:
     `is_active`, the role's code and the role's id all arrive together. Nothing about it is
     cached. A user disabled a second ago must stop working on the very next request, which is the
     whole reason the token carries neither permissions nor an active flag.
+
+    THE WORLD IS PART OF THE LOOKUP, NOT A CHECK AFTERWARDS.
+
+    A token this service signed names a subject and, for a demo session, a world. Looking the
+    subject up on its own would let a demo token point at any row in the table — another sandbox's
+    operator, or a real one — and come back holding that row's grants.
     """
-    result = await session.execute(select(User).where(User.id == user_id))
+    result = await session.execute(
+        select(User).where(User.id == user_id, User.world_id == world_id)
+    )
     return result.scalars().one_or_none()
 
 
@@ -228,7 +272,9 @@ async def _read_role_permissions(session: AsyncSession) -> dict[uuid.UUID, froze
 
 
 async def _current_identity(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, params.Depends(dependency=_bearer)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, params.Depends(dependency=optional_bearer)
+    ],
     session: Annotated[AsyncSession, params.Depends(dependency=get_session)],
     now: Annotated[NowProvider, params.Depends(dependency=get_now)],
 ) -> Identity:
@@ -236,7 +282,13 @@ async def _current_identity(
 
     Shared by `Authenticated()` and `RequirePermission()` and depended on by nothing else, so the
     order below is the order every guarded request is checked in: credential, signature, token
-    type, subject, account, grants.
+    type, world, subject, account, grants.
+
+    The world comes before the subject on purpose: a demo token outliving its sandbox is the
+    ordinary end of every demonstration.
+
+    Asking for its operator first would answer "this user no longer exists" — a 401 that says
+    nothing, logged as the rare case of an account deleted under a live session.
     """
     if credentials is None:
         raise ApiError(ErrorCode.NOT_AUTHENTICATED, headers=_BEARER_CHALLENGE)
@@ -254,14 +306,11 @@ async def _current_identity(
     # before the checks below rather than after them, so that a refusal is attributable too.
     bind_request_context(user_id=claims.subject)
 
-    if claims.typ != "access":
-        # A demo token names a world and drives its clock; nothing here is a demo endpoint, and
-        # every route below is about a real account. Refusing by type is what keeps that true if
-        # one is ever minted.
-        _log.warning("token_type_refused", typ=claims.typ)
-        raise ApiError(ErrorCode.NOT_AUTHENTICATED, headers=_BEARER_CHALLENGE)
+    world = _world_for(claims, now=now())
+    _world.set(world)
+    scope = str(claims.world_id) if claims.world_id is not None else None
 
-    user = await load_user(session, claims.subject)
+    user = await load_user(session, claims.subject, world_id=scope)
     if user is None:
         # A signed token for a row that no longer exists. Worth a line: the only way to get one is
         # a user deleted while holding a live session.
@@ -274,7 +323,34 @@ async def _current_identity(
         raise ApiError(ErrorCode.USER_INACTIVE)
 
     permissions = await load_role_permissions(session, role_id=user.role_id, now=now())
-    return Identity(user=user, permissions=permissions, claims=claims)
+    return Identity(user=user, permissions=permissions, claims=claims, world=world)
+
+
+def _world_for(claims: AccessTokenClaims, *, now: datetime) -> World | None:
+    """Which world this token reads, and whether it still exists.
+
+    An operator reads the base world, and a missing one is not a reason to refuse them: signing in
+    and reading the audit work without a shop window, and `current_world` answers 503 to the routes
+    that do need it.
+
+    A demo token is the other way round. Its world IS the session — gone means the session is over,
+    whether the hour ran out or the process restarted under it, and both endings are one answer.
+    No bearer challenge: the credential was fine, and presenting another will not bring it back.
+    """
+    registry = get_registry()
+    if claims.typ != "demo" or claims.world_id is None:
+        return registry.get(BASE_WORLD_ID)
+
+    world = registry.get(str(claims.world_id))
+    if world is None or not world.alive_at(now):
+        _log.info("sandbox_gone", world_id=str(claims.world_id))
+        raise ApiError(ErrorCode.SANDBOX_GONE)
+
+    # Used, so still wanted. In memory only: a write here would ride on whatever transaction the
+    # request has and be rolled back by every refusal, and the row that outlives the process is
+    # written where the token is re-minted.
+    world.extend(ttl=SANDBOX_TTL, now=now)
+    return world
 
 
 class _Declared:

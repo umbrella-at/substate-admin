@@ -13,6 +13,8 @@ type ErrorBody = components['schemas']['ErrorBody']
 export type ErrorCode = components['schemas']['ErrorCode']
 export type TokenResponse = components['schemas']['TokenResponse']
 export type MeResponse = components['schemas']['MeResponse']
+export type DemoSession = components['schemas']['DemoSessionResponse']
+export type ClockReading = components['schemas']['ClockResponse']
 export type SubscriberPage = components['schemas']['SubscriberPage']
 export type SubscriberDetail = components['schemas']['SubscriberDetail']
 export type SubscriberEventPage = components['schemas']['SubscriberEventPage']
@@ -36,7 +38,9 @@ export type PermissionSummary = components['schemas']['PermissionSummary']
 /** The three things asking for a new access token can mean, and they must stay three. Collapsing
  *  the last two into one boolean is what turns a two-second deploy restart into every open tab
  *  being signed out of a session the server still considers perfectly valid. */
-export type RefreshOutcome = 'renewed' | 'refused' | 'undeliverable'
+export type RefreshOutcome = 'renewed' | 'refused' | 'undeliverable' | 'ended'
+/** `ended` belongs to a demonstration and to nothing else: the world is gone, which is not a
+ *  session that was lost, and the two take two different screens. */
 
 /** A failure the API described. Anything else — a dropped connection, a timeout — stays a
  *  TypeError or an AbortError, because those mean something different and must not be mistaken
@@ -65,10 +69,43 @@ export interface RequestOptions {
 
 const BASE = '/api'
 
-/** Endpoints the refresh machinery must never be applied to. `login` answers 401 when the password
- *  is wrong, and `refresh` answers 401 when the session is over; retrying either through a refresh
- *  would be a loop whose base case is the thing that just failed. */
-const NO_REFRESH = new Set([`${BASE}/auth/login`, `${BASE}/auth/refresh`, `${BASE}/auth/logout`])
+/** Endpoints the renewal machinery must never be applied to: each of them is itself an answer
+ *  about a session, so retrying one through a renewal is a loop whose base case is the thing that
+ *  just failed. `demo/session` is here because it IS the renewal. */
+const NO_REFRESH = new Set([
+  `${BASE}/auth/login`,
+  `${BASE}/auth/refresh`,
+  `${BASE}/auth/logout`,
+  `${BASE}/demo/session`,
+])
+
+/** Where a demonstration's pass is kept between page loads. An operator's token lives in memory
+ *  and nowhere else, because storage outlives the tab and anything injected into the page can read
+ *  it — this is the one exception, and a narrow one. */
+
+/* What it buys: a demonstration pass opens invented people, dies within the hour and reaches
+   nothing real. Without it F5 ends the demonstration, because there is no refresh cookie to
+   rebuild the session from and the wound-forward world becomes unreachable while still standing. */
+const DEMO_TOKEN_KEY = 'substate.demo'
+
+function remember(token: string | null): void {
+  try {
+    if (token === null) globalThis.sessionStorage.removeItem(DEMO_TOKEN_KEY)
+    else globalThis.sessionStorage.setItem(DEMO_TOKEN_KEY, token)
+  } catch {
+    // Private browsing, or storage the visitor has switched off. A demonstration that does not
+    // survive a reload is worse than one that does, and better than one that will not open.
+  }
+}
+
+/** The pass this tab was holding before it was reloaded, if it was holding one. */
+export function rememberedDemoToken(): string | null {
+  try {
+    return globalThis.sessionStorage.getItem(DEMO_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
 
 /** The six paths under a subscriber that change something. A union rather than a string, so a
  *  typo is a build failure instead of a 404 nobody sees until the button is pressed. */
@@ -83,6 +120,10 @@ export type OperationPath =
 export interface ClientHooks {
   /** Called once when the session is definitively over. The app clears its state and navigates. */
   onSessionLost: (reason: ApiError) => void
+
+  /** The visitor's sandbox is gone: the hour ran out, or a deploy restarted the process under
+   *  them. A different ending from a session lost, and a different thing to say about it. */
+  onDemoEnded: () => void
 }
 
 export function createClient(hooks: ClientHooks) {
@@ -95,8 +136,24 @@ export function createClient(hooks: ClientHooks) {
    *  two simultaneous refreshes would be one success and one apparent reuse. */
   let refreshInFlight: Promise<RefreshOutcome> | null = null
 
+  /** Whether the token above is a demonstration pass. It decides which renewal a 401 gets: an
+   *  operator's session is rebuilt from the refresh cookie, and a visitor has none. */
+  let demo = false
+
+  /** The single shared demonstration renewal, for the reason `refreshInFlight` exists. */
+  let renewalInFlight: Promise<RefreshOutcome> | null = null
+
   function setAccessToken(token: string | null): void {
     accessToken = token
+    demo = false
+    remember(null)
+  }
+
+  /** Adopt a demonstration pass, and keep it where a reload can find it again. */
+  function setDemoToken(token: string | null): void {
+    accessToken = token
+    demo = token !== null
+    remember(token)
   }
 
   async function parse(response: Response): Promise<unknown> {
@@ -152,7 +209,10 @@ export function createClient(hooks: ClientHooks) {
           accessToken = null
           return 'refused'
         }
-        accessToken = payload.accessToken
+        // Through the setter, not by assignment: an operator's token must also clear the demo
+        // flag and the stored pass, or a tab that once opened a demonstration renews this
+        // operator's next expiry against the demonstration door.
+        setAccessToken(payload.accessToken)
         return 'renewed'
       } catch {
         // The question never reached the server, so nothing was answered. Leave the token where
@@ -164,6 +224,50 @@ export function createClient(hooks: ClientHooks) {
     })()
 
     return refreshInFlight
+  }
+
+  /** A fresh pass for the sandbox this tab is already in. Not a refresh by any of the machinery
+   *  that word means here — no cookie, no family, no rotation, nothing to revoke: the server
+   *  extends the world, mints a pass for what is left of it, and refuses at the ceiling. */
+  async function renewDemo(signal?: AbortSignal): Promise<RefreshOutcome> {
+    try {
+      const response = await raw(`${BASE}/demo/session`, { method: 'POST', signal })
+      if (response.status === 410) {
+        // The world ended while the pass was still good. Not a session lost — there was never an
+        // account — so it says so, and the caller below does not report it a second time.
+        setDemoToken(null)
+        hooks.onDemoEnded()
+        return 'ended'
+      }
+      if (!response.ok) {
+        setDemoToken(null)
+        return 'refused'
+      }
+      const payload = (await parse(response)) as DemoSession | null
+      if (payload === null) {
+        setDemoToken(null)
+        return 'refused'
+      }
+      setDemoToken(payload.accessToken)
+      return 'renewed'
+    } catch {
+      return 'undeliverable'
+    }
+  }
+
+  /** Whichever renewal this session has. A demonstration has no refresh cookie to exchange, and
+   *  an operator has no sandbox to extend. */
+
+  /* Single-flight, like `refresh`, and for a sharper reason: one expiry produces one 401 per
+     query on screen, and every one that reaches the door alone opens a world of its own — seeded,
+     counted against the ceiling and against the address's allowance. Measured: four, four. */
+  function renew(signal?: AbortSignal): Promise<RefreshOutcome> {
+    if (!demo) return refresh(signal)
+    if (renewalInFlight !== null) return renewalInFlight
+    renewalInFlight = renewDemo(signal).finally(() => {
+      renewalInFlight = null
+    })
+    return renewalInFlight
   }
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -182,12 +286,26 @@ export function createClient(hooks: ClientHooks) {
       options.retried !== true &&
       !NO_REFRESH.has(path)
 
+    // A world that has ended is not a session that was lost. The visitor still holds a perfectly
+    // good pass; what it named is gone, and telling them to sign in again is advice they cannot
+    // take — they never had an account.
+    if (error.code === 'SANDBOX_GONE') {
+      setDemoToken(null)
+      hooks.onDemoEnded()
+      throw error
+    }
+
     if (!refreshable) {
       if (error.status === 401 && !NO_REFRESH.has(path)) hooks.onSessionLost(error)
       throw error
     }
 
-    const outcome = await refresh(options.signal)
+    const outcome = await renew(options.signal)
+    if (outcome === 'ended') {
+      // Already answered, on the screen a demonstration ends on. Reporting a lost session here
+      // as well would race that navigation with a trip to the login form.
+      throw error
+    }
     if (outcome === 'refused') {
       hooks.onSessionLost(error)
       throw error
@@ -202,11 +320,27 @@ export function createClient(hooks: ClientHooks) {
 
   return {
     setAccessToken,
+    setDemoToken,
     get accessToken() {
       return accessToken
     },
+    get isDemo() {
+      return demo
+    },
     refresh,
     request,
+
+    /** Open a demonstration, or keep the one this tab already holds. The pass in the header, if
+     *  there is one, is what makes it the second rather than the first. */
+    demoSession: (signal?: AbortSignal) =>
+      request<DemoSession>(`${BASE}/demo/session`, { method: 'POST', signal }),
+
+    clock: (signal?: AbortSignal) => request<ClockReading>(`${BASE}/clock`, { signal }),
+
+    // No signal: winding a clock is a write, and cancelling it discards the answer rather than
+    // the advance — the world has already moved.
+    advanceClock: (days: number) =>
+      request<ClockReading>(`${BASE}/clock/advance`, { method: 'POST', body: { days } }),
 
     login: (email: string, password: string, signal?: AbortSignal) =>
       request<TokenResponse>(`${BASE}/auth/login`, {

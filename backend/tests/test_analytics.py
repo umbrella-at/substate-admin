@@ -74,7 +74,7 @@ async def seeded(connection: AsyncConnection) -> AsyncIterator[World]:
         offset=timedelta(days=-HISTORY_DAYS),
         default_program=USERS_PROGRAM,
     )
-    report = await seed_world(world.engine, world.clock.advance, world.clock.now, tally=tally)
+    report, _ = await seed_world(world.engine, world.clock.advance, world.clock.now, tally=tally)
     await write_events(connection, BASE_WORLD_ID, world.sink.drain())
     await write_projection(
         connection,

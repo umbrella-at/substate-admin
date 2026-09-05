@@ -33,7 +33,15 @@ from substate import (
 
 from app.worlds.bootstrap import build_base_world
 from app.worlds.journal import flush_world, purge_world
-from app.worlds.registry import BASE_WORLD_ID, EventSink, World, WorldRegistry, collecting
+from app.worlds.registry import (
+    BASE_WORLD_ID,
+    EventSink,
+    World,
+    WorldRegistry,
+    collecting,
+    get_registry,
+    reset_registry,
+)
 from app.worlds.ticker import run_ticker, tick_once
 
 MONTHLY = Plan(
@@ -289,3 +297,22 @@ async def test_events_from_another_task_are_not_reported_as_this_call() -> None:
     # Both are still in the journal's queue: the other task's event is somebody's row, it is only
     # not this call's answer.
     assert {event.user_id for event in world.sink.pending} == {"sub-0001", "sub-0002"}
+
+
+async def test_a_world_that_failed_to_seed_leaves_nothing_for_the_ticker_to_write() -> None:
+    """A failed build is a bad shop window, not an outage — but the events it produced are still
+    in the sink, and the ticker writes whatever is there thirty seconds later.
+
+    On top of whatever the previous process left in the journal, at the wrong timestamps: the same
+    feed, twice, and nothing in the log to say why.
+    """
+    reset_registry()
+    registry = get_registry()
+    engine = create_async_engine("postgresql+psycopg://nobody@127.0.0.1:5999/nothing")
+
+    world, status = await build_base_world(registry, engine, days=20)
+
+    assert status.seeded is False
+    assert world.sink.pending == []
+    assert world.sink.then is None
+    reset_registry()

@@ -15,7 +15,7 @@
 7 33 backend/app/main.py
 7 29 backend/app/models.py
 1 4 backend/app/openapi.py
-2 12 backend/app/permissions.py
+2 11 backend/app/permissions.py
 1 4 backend/app/routers/__init__.py
 2 8 backend/app/routers/audit.py
 11 53 backend/app/routers/auth.py
@@ -30,7 +30,7 @@
 17 99 backend/app/security/refresh.py
 2 8 backend/app/security/tokens.py
 6 28 backend/app/seed/catalogue.py
-12 77 backend/app/seed/run.py
+12 54 backend/app/seed/run.py
 2 10 backend/app/subscribers/events.py
 4 17 backend/app/subscribers/operations.py
 1 5 backend/app/worlds/bootstrap.py
@@ -139,7 +139,7 @@
 2 15 frontend/src/stores/auth.spec.ts
 2 18 frontend/src/stores/auth.ts
 1 6 frontend/src/views/AuditView.spec.ts
-3 26 frontend/src/views/AuditView.vue
+2 18 frontend/src/views/AuditView.vue
 1 11 frontend/src/views/DashboardView.spec.ts
 3 20 frontend/src/views/DashboardView.vue
 2 14 frontend/src/views/LoginView.spec.ts

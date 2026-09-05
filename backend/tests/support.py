@@ -89,7 +89,9 @@ class Account:
 
 async def role_id_for(session: AsyncSession, code: str) -> uuid.UUID:
     """The id of a seeded role. Fails loudly rather than returning None: the roles are fixtures."""
-    found = (await session.execute(select(Role.id).where(Role.code == code))).scalar_one_or_none()
+    found = (
+        await session.execute(select(Role.id).where(Role.code == code, Role.world_id.is_(None)))
+    ).scalar_one_or_none()
     assert found is not None, f"no role {code!r} — the session-scoped seed did not run"
     return found
 

@@ -14,11 +14,18 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import ClockControl from '@/components/ClockControl.vue'
+import { useWorldClock } from '@/composables/useWorldClock'
 import type { PermissionCode } from '@/domain/permissions'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
+
+/* READ HERE, NOT IN THE CONTROL, because the control is drawn only for whoever may press it.
+   `support` and `viewer` hold no `demo.control` — so once anybody winds the base world, their
+   Last active column measures against their own browser and reads "just now" for everybody. */
+useWorldClock()
 
 interface Destination {
   name: string
@@ -71,6 +78,10 @@ const visible = computed(() =>
           </RouterLink>
         </li>
       </ul>
+
+      <!-- Drawn only for whoever may press it, like every link above. A control that is visible
+           and refused is an invitation to a locked door. -->
+      <ClockControl v-if="auth.can('demo.control')" />
     </nav>
 
     <div class="min-w-0 flex-1">

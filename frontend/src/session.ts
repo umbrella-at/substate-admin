@@ -14,6 +14,7 @@
 import type { QueryClient } from '@tanstack/vue-query'
 
 import type { ApiClient } from '@/api/client'
+import { forgetWorldClock } from '@/composables/useWorldClock'
 import { useAuthStore } from '@/stores/auth'
 
 /** Drop every trace of the current session from this tab. Local only: it makes no requests, so it
@@ -22,6 +23,9 @@ export function forgetSession(client: ApiClient, queryClient: QueryClient): void
   useAuthStore().clear()
   client.setAccessToken(null)
   queryClient.clear()
+  // The world goes with the session. A demonstration wound a month forward leaves an offset that
+  // would otherwise date every row on the first screen of whoever signs in next.
+  forgetWorldClock()
 }
 
 /** The explicit `Sign out`. Tells the server first so the refresh family is revoked rather than

@@ -17,7 +17,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.deps import RequirePermission
+from app.deps import Identity, RequirePermission
 from app.models import AuditLog, User
 from app.routers import error_responses
 from app.schemas import AuditActor, AuditEntry, AuditPage, AuditQueryParams
@@ -49,13 +49,23 @@ def _narrowed[S: Select[Any]](statement: S, query: AuditQueryParams) -> S:
 @router.get(
     "",
     summary="One page of what operators did, newest first",
-    dependencies=[RequirePermission("audit.read")],
     responses=error_responses(401, 403, 422),
 )
 async def list_page(
     query: Annotated[AuditQueryParams, Query()],
+    identity: Annotated[Identity, RequirePermission("audit.read")],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuditPage:
+    """One page of the caller's own world's trail.
+
+    SCOPED BY THE ACTOR'S WORLD, NOT BY THE ROW'S.
+
+    `audit_log.world_id` says which world an operation happened in, and it is null for an edit to
+    a role, which happened to the panel rather than inside anything.
+
+    Filtering on it would either hide a demo visitor's own role edits from them or, the other way
+    round, hand them every real operator's edits and the addresses joined alongside.
+    """
     statement = _narrowed(
         select(
             AuditLog.id,
@@ -72,7 +82,7 @@ async def list_page(
             func.count().over().label("total"),
         ).join(User, User.id == AuditLog.actor_user_id),
         query,
-    )
+    ).where(User.world_id == identity.world_scope)
     # Tie-broken by `seq`, the order the rows were written in. A burst of operations shares a
     # transaction and therefore an `occurred_at`, and the random uuid this used to fall back on
     # ordered them arbitrarily — as well as letting one row appear on two pages and on neither.
@@ -102,14 +112,24 @@ async def list_page(
         ],
         # A page past the end carries no rows and therefore no window count. Zero would say the
         # log is empty, and the pager would erase the way back.
-        total=rows[0].total if rows else await _count(session, query),
+        total=rows[0].total if rows else await _count(session, query, identity.world_scope),
         page=query.page,
         page_size=query.page_size,
     )
 
 
-async def _count(session: AsyncSession, query: AuditQueryParams) -> int:
-    """How many rows match. Only asked when the page came back empty."""
-    statement = _narrowed(select(func.count()).select_from(AuditLog), query)
+async def _count(session: AsyncSession, query: AuditQueryParams, scope: str | None) -> int:
+    """How many rows match. Only asked when the page came back empty.
+
+    It carries the join the page carries, because the world filter lives on the actor. Without it
+    a demo visitor paging past the end would be told how many rows the whole table holds.
+    """
+    statement = _narrowed(
+        select(func.count())
+        .select_from(AuditLog)
+        .join(User, User.id == AuditLog.actor_user_id)
+        .where(User.world_id == scope),
+        query,
+    )
     found: int = (await session.execute(statement)).scalar_one()
     return found

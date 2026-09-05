@@ -15,7 +15,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, type MeResponse, type TokenResponse } from '@/api/client'
+import { ApiError, type DemoSession, type MeResponse, type TokenResponse } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
 import LoginView from '@/views/LoginView.vue'
 
@@ -44,13 +44,38 @@ const ME: MeResponse = {
   },
 }
 
-function stubClient(overrides: Partial<Record<'login' | 'me', unknown>> = {}) {
+function stubClient(overrides: Partial<Record<'login' | 'me' | 'demoSession', unknown>> = {}) {
   return {
     login: vi.fn<() => Promise<TokenResponse>>(),
     me: vi.fn<() => Promise<MeResponse>>().mockResolvedValue(ME),
+    demoSession: vi
+      .fn<() => Promise<DemoSession>>()
+      .mockResolvedValue({ accessToken: 'demo-pass', expiresIn: 3600, endsAt: END }),
     setAccessToken: vi.fn(),
+    setDemoToken: vi.fn(),
     ...overrides,
   }
+}
+
+const END = '2026-09-04T12:00:00Z'
+
+/** The second button on the page, which is not the form's. */
+function demoButton(wrapper: ReturnType<typeof mount>) {
+  const found = wrapper.findAll('button').find((button) => button.text().includes('Try the demo'))
+  if (found === undefined) throw new Error('the demonstration button is not on the page')
+  return found
+}
+
+async function tryTheDemo(client: ReturnType<typeof stubClient>) {
+  const wrapper = mount(LoginView, {
+    global: {
+      plugins: [createPinia()],
+      provide: { [apiClientKey as unknown as string]: client },
+    },
+  })
+  await demoButton(wrapper).trigger('click')
+  await flushPromises()
+  return wrapper
 }
 
 async function signIn(client: ReturnType<typeof stubClient>) {
@@ -210,5 +235,48 @@ describe('after a successful sign-in', () => {
     expect(client.setAccessToken).toHaveBeenCalledWith('token')
     expect(client.me).toHaveBeenCalled()
     expect(replace).toHaveBeenCalledWith('/')
+  })
+})
+
+describe('trying the demonstration', () => {
+  it('opens a world and goes into it, adopting the session before navigating', async () => {
+    const client = stubClient()
+
+    await tryTheDemo(client)
+
+    expect(client.setDemoToken).toHaveBeenCalledWith('demo-pass')
+    // The order is the assertion. Navigating first lands on a framed page whose sidebar is empty,
+    // because the frame draws its links from permissions nobody has fetched yet.
+    expect(client.me).toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledWith('/')
+  })
+
+  it('says what the service said when there is no world to be had', async () => {
+    const client = stubClient({
+      demoSession: vi
+        .fn()
+        .mockRejectedValue(
+          apiError(503, 'SANDBOX_FULL', 'Every demonstration slot is in use just now.'),
+        ),
+    })
+
+    const wrapper = await tryTheDemo(client)
+
+    // Not "the service could not be reached": the service answered, at length, and replacing its
+    // sentence with a claim about the network would be a claim that is not true.
+    expect(wrapper.text()).toContain('Every demonstration slot is in use just now.')
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('does not take the password fields down with it', async () => {
+    const client = stubClient({
+      demoSession: vi.fn().mockRejectedValue(apiError(503, 'SANDBOX_FULL', 'No slots.')),
+    })
+
+    const wrapper = await tryTheDemo(client)
+
+    // The refusal is about worlds, not about what was typed. Painting the fields would tell
+    // somebody their address is wrong when nobody looked at it.
+    expect(wrapper.findAll('[aria-invalid="true"]')).toHaveLength(0)
   })
 })
