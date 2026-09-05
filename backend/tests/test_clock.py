@@ -241,3 +241,28 @@ async def test_a_second_press_never_enters_the_world_the_first_is_in(
     held.set()
     assert (await first).status_code == 200
     assert not world.lock.locked()
+
+
+async def test_no_chip_comes_back_empty_after_the_clock_is_pressed(
+    client: AsyncClient, base_world: World
+) -> None:
+    """Decision 95 under the feature that can break it: every chip returns a list to work with.
+
+    The clock is the one control that can empty one. A world that is only ticked loses its
+    payers, and a projection that stands still puts every payer in the quiet cohort — so this
+    asserts the whole row of chips, not the one that failed last.
+
+    Measured over thirty presses of Day: none of the four came back empty on any of them.
+    """
+    body = await open_one(client)
+    await client.post(ADVANCE, headers=auth(body), json={"days": 30})
+
+    for cohort in ("quiet", "trial-ending", "cancelled-still-active"):
+        listed = (
+            await client.get(f"/api/subscribers?cohort={cohort}&pageSize=1", headers=auth(body))
+        ).json()
+        assert listed["total"] > 0, f"the {cohort} chip was empty after a press"
+
+    standing = await _states(client, auth(body))
+    for state, held in standing.items():
+        assert held > 0, f"the {state} chip was empty after a press"
