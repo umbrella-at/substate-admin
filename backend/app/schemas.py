@@ -464,7 +464,7 @@ class SubscriberQueryParams(ApiModel):
         default_factory=list
     )
     plan_id: list[str] = Field(default_factory=list)
-    cohort: Literal["quiet", "trial-ending", "cancelled-still-active"] | None = None
+    cohort: Literal["quiet", "trial-ending", "cancelled-losing-access"] | None = None
     q: str | None = Field(default=None, max_length=200)
 
     @field_validator("sort")

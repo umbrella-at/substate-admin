@@ -3216,7 +3216,7 @@
                   "enum": [
                     "quiet",
                     "trial-ending",
-                    "cancelled-still-active"
+                    "cancelled-losing-access"
                   ],
                   "type": "string"
                 },

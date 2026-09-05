@@ -29,6 +29,16 @@ who simply had not signed in since their last renewal would land in the cohort, 
 would come to mean "pays monthly" — true of most of the table and therefore useless.
 """
 
+LOSING_ACCESS_WITHIN: Final = timedelta(days=7)
+"""How soon a cancelled subscriber has to be losing access to be worth a call today.
+
+A week, and the number is measured rather than chosen: over 120 landing days the window holds 1 to
+12 people and is never empty, where three days would be empty on six of those days.
+
+Fourteen and thirty are never empty either and hold more — but "this week" is the question somebody
+actually acts on, and a list of thirty is a report rather than a call sheet.
+"""
+
 MAX_PAGE_SIZE: Final = 100
 DEFAULT_PAGE_SIZE: Final = 25
 
@@ -41,11 +51,21 @@ class Cohort(StrEnum):
 
     Every one is a question the state filter cannot ask, and that is the entry condition: a
     cohort whose predicate is `row.state is X` is a second vocabulary for `?state=x`.
+
+    THE THIRD ONE FAILED THAT CONDITION WITHOUT LOOKING LIKE IT, AND IT TOOK A MEASUREMENT TO SEE.
+
+    It asked for a cancelled subscription still inside the period it was paid for — which reads
+    like a narrowing and is not one. The engine moves a cancelled subscription to EXPIRED at the
+    moment its period runs out, so `state is CANCELLED` already means the period is live.
+
+    Measured: over nine landing days and after winding a world 30, 90 and 180 days, not one
+    cancelled row was ever past its period. The chip returned exactly what `?state=cancelled`
+    returned, which is what happened to `in-grace` before it and why that one was removed.
     """
 
     QUIET = "quiet"
     TRIAL_ENDING = "trial-ending"
-    CANCELLED_STILL_ACTIVE = "cancelled-still-active"
+    CANCELLED_LOSING_ACCESS = "cancelled-losing-access"
 
 
 class SortField(StrEnum):
@@ -210,9 +230,11 @@ def in_cohort(row: SubscriberRow, cohort: Cohort, now: datetime) -> bool:
                 and row.trial_ends_at is not None
                 and now <= row.trial_ends_at <= now + timedelta(days=3)
             )
-        case Cohort.CANCELLED_STILL_ACTIVE:
+        case Cohort.CANCELLED_LOSING_ACCESS:
             return (
-                row.state is State.CANCELLED and row.expires_at is not None and row.expires_at > now
+                row.state is State.CANCELLED
+                and row.expires_at is not None
+                and now <= row.expires_at <= now + LOSING_ACCESS_WITHIN
             )
 
 

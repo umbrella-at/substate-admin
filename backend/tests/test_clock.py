@@ -257,7 +257,7 @@ async def test_no_chip_comes_back_empty_after_the_clock_is_pressed(
     body = await open_one(client)
     await client.post(ADVANCE, headers=auth(body), json={"days": 30})
 
-    for cohort in ("quiet", "trial-ending", "cancelled-still-active"):
+    for cohort in ("quiet", "trial-ending", "cancelled-losing-access"):
         listed = (
             await client.get(f"/api/subscribers?cohort={cohort}&pageSize=1", headers=auth(body))
         ).json()

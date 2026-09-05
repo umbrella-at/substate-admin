@@ -251,7 +251,7 @@ async def test_every_chip_and_filter_returns_a_list_across_a_week_of_landing_day
     """
 
     """Measured over 120 landing days. Seven of the eight hold somebody on every one of them —
-    quiet 30 to 54, cancelled-still-active 26 to 47, grace 1 to 11 — so for those the strong claim
+    quiet 30 to 54, cancelled-losing-access 1 to 12, grace 1 to 11 — so for those the strong claim
     is the true one and it is made per day.
 
     `trial-ending` is the exception and it is small by construction: a three-day window on a
@@ -264,10 +264,10 @@ async def test_every_chip_and_filter_returns_a_list_across_a_week_of_landing_day
     steady = [name for name in _CHIPS if name != Cohort.TRIAL_ENDING.value]
 
     for name in steady:
-        held = [day[name] for day in days]
+        held = [len(day[name]) for day in days]
         assert all(count > 0 for count in held), f"the {name} filter was empty on a day: {held}"
 
-    ending = [day[Cohort.TRIAL_ENDING.value] for day in days]
+    ending = [len(day[Cohort.TRIAL_ENDING.value]) for day in days]
     # A handful: standing trials times the window over the trial length, which the arrival ramp
     # pulls below the naive five because there are always more young trials than old ones.
     assert 1 <= sum(ending) / len(ending) <= 8, f"trial-ending averaged {ending}"
@@ -281,11 +281,14 @@ LANDING_DAYS = 7
 the world is built ending now, so one landing day is one sample."""
 
 
-async def _landed(ending_days_ago: int) -> dict[str, int]:
-    """Every chip's count on one landing day, from one walk of the table rather than nine.
+async def _landed(ending_days_ago: int) -> dict[str, set[str]]:
+    """Who each chip returns on one landing day, from one walk of the table rather than nine.
 
-    Through `in_cohort` and the row the table draws, so this counts what a visitor pressing the
-    chip would get rather than what the seeder thought it had made.
+    Sets rather than counts, because the test below asks whether two chips return the same
+    people and a count cannot answer that.
+
+    Through `in_cohort` and the row the table draws, so this is what a visitor pressing the
+    chip gets rather than what the seeder thought it had made.
     """
     tally = EventTally()
     built = WorldRegistry().create(
@@ -314,12 +317,13 @@ async def _landed(ending_days_ago: int) -> dict[str, int]:
             break
         page += 1
 
-    counted = dict.fromkeys(_CHIPS, 0)
+    held: dict[str, set[str]] = {name: set() for name in _CHIPS}
     for row in rows:
-        counted[row.state.value] += 1
+        held[row.state.value].add(row.user_id)
         for cohort in Cohort:
-            counted[cohort.value] += in_cohort(row, cohort, moment)
-    return counted
+            if in_cohort(row, cohort, moment):
+                held[cohort.value].add(row.user_id)
+    return held
 
 
 def test_the_default_order_is_the_one_the_table_draws_an_arrow_for() -> None:
@@ -343,3 +347,23 @@ async def test_search_matches_a_name_somebody_can_see(world) -> None:
         or fragment.casefold() in row.user_id.casefold()
         for row in answer.items
     )
+
+
+async def test_no_cohort_is_a_second_vocabulary_for_a_state() -> None:
+    """The entry condition the cohorts state for themselves, asserted instead of assumed.
+
+    `in-grace` was removed in an earlier round for being `state is GRACE` under another name, and
+    `cancelled-still-active` was the same failure wearing a narrowing.
+
+    The engine ends CANCELLED at the exact moment a paid period runs out, so "still inside the
+    period" excluded nobody: two controls, side by side, returning one list. Nothing was watching
+    for that, which is why it lasted a round.
+    """
+    for landing in range(LANDING_DAYS):
+        held = await _landed(landing)
+        for cohort in Cohort:
+            for state in State:
+                assert held[cohort.value] != held[state.value], (
+                    f"on landing day -{landing}, {cohort.value} returned the same people"
+                    f" as ?state={state.value}"
+                )

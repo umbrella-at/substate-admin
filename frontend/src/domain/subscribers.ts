@@ -40,10 +40,17 @@ export const STATES: readonly SubscriptionState[] = [
  *  whose predicate on the API side was literally `state is GRACE` — the same question as the
  *  checkbox two controls to its left, in a second vocabulary. Two controls doing one thing, side
  *  by side, make everybody who sees them work out whether the difference means something. */
+
+/* The third one was the same failure wearing a narrowing. "Cancelled, still active" asked for a
+   cancelled subscription inside its paid period — and the engine ends CANCELLED at exactly that
+   moment, so the chip returned every cancelled row and nothing else. */
+
+/* It now asks who loses access within the week, which is a call sheet the checkboxes cannot
+   produce: measured at 1 to 12 people over 120 landing days, never empty. */
 export const COHORTS: readonly { value: Cohort; label: string }[] = [
   { value: 'trial-ending', label: 'Trial ending' },
   { value: 'quiet', label: 'Quiet' },
-  { value: 'cancelled-still-active', label: 'Cancelled, still active' },
+  { value: 'cancelled-losing-access', label: 'Cancelled, losing access' },
 ] as const
 
 /** The columns the backend will sort by. Kept as a list here so an unknown `sort=` in a
