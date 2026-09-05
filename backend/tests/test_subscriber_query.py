@@ -9,14 +9,17 @@ absent values at all, so reversing the order never had anything to float to the 
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from substate import State
 
+from app.schemas import SubscriberQueryParams
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, seed_world
 from app.subscribers.query import (
+    MAX_PAGE_SIZE,
     Cohort,
     SubscriberQuery,
     in_cohort,
@@ -24,6 +27,8 @@ from app.subscribers.query import (
     parse_sort,
 )
 from app.worlds.registry import World, WorldRegistry
+
+A_YEAR = 365
 
 
 @pytest.fixture
@@ -367,3 +372,61 @@ async def test_no_cohort_is_a_second_vocabulary_for_a_state() -> None:
                     f"on landing day -{landing}, {cohort.value} returned the same people"
                     f" as ?state={state.value}"
                 )
+
+
+@pytest.mark.parametrize(
+    ("page", "page_size"),
+    [(1, 0), (1, MAX_PAGE_SIZE + 1), (1, -5), (0, 25), (-1, 25)],
+)
+async def test_both_doors_refuse_the_same_page(world, page: int, page_size: int) -> None:
+    """The inner door is no softer than the outer one, asserted as the pair it is.
+
+    The route bounds both numbers, so a request out of range is a 422 and never reaches the
+    function. Everything that does is a test, a capture or a measurement — and those are the
+    callers a silent correction hurts most, because nothing else is watching them.
+
+    It cost a round: a census asked for a thousand rows, was handed a hundred without a word, and
+    reported a population it had never counted.
+    """
+    built, projection = world
+
+    with pytest.raises(ValidationError):
+        SubscriberQueryParams(page=page, page_size=page_size)
+
+    with pytest.raises(ValueError, match="page"):
+        await list_subscribers(built, projection, SubscriberQuery(page=page, page_size=page_size))
+
+
+@pytest.mark.parametrize("page_size", [1, MAX_PAGE_SIZE])
+async def test_the_edges_of_a_page_are_served_rather_than_refused(world, page_size: int) -> None:
+    """The other half of a refusal: a bound that also turns away what it should accept is a
+    stricter door, not a matching one."""
+    built, projection = world
+
+    answer = await list_subscribers(built, projection, SubscriberQuery(page_size=page_size))
+
+    assert len(answer.items) == page_size
+    assert answer.page_size == page_size
+
+
+async def test_the_clock_it_reads_by_default_is_the_worlds_and_not_the_walls(world) -> None:
+    """A world the clock control has wound is not at the same instant as the process.
+
+    Nothing over HTTP can omit the moment — the route reads it off the world — so the default is
+    for tests, captures and measurements, and it used to hand them `datetime.now(UTC)`.
+
+    On a world wound a year forward that dates every cohort predicate to where the machine stands,
+    and the answer disagrees with the figure drawn beside it.
+    """
+    built, projection = world
+    built.clock.advance(timedelta(days=A_YEAR))
+    quiet = SubscriberQuery(cohort=Cohort.QUIET, page_size=1)
+
+    by_default = await list_subscribers(built, projection, quiet)
+    by_the_world = await list_subscribers(built, projection, quiet, now=built.clock.now())
+    by_the_wall = await list_subscribers(built, projection, quiet, now=datetime.now(UTC))
+
+    assert by_default.total == by_the_world.total
+    # Not merely "they agree": with a wall clock a year behind the world, everyone who fell silent
+    # inside the wound stretch is missing, so the two answers have to be different numbers.
+    assert by_default.total != by_the_wall.total

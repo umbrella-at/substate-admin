@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
@@ -274,8 +274,23 @@ async def list_subscribers(
 
     `projection` is the world's `subscriber_view` rows, already loaded: display name and last
     activity by user id.
+
+    A PAGE THIS CANNOT SERVE IS REFUSED, NOT QUIETLY CORRECTED.
+
+    `SubscriberQueryParams` bounds both numbers, so a request out of range is a 422 and never
+    arrives here. Everything that does arrive with one is a test, a capture or a measurement — the
+    callers a silent correction hurts most, because nothing else is watching them.
+
+    It cost a round: a census asked for a thousand rows, was handed the first hundred without a
+    word, and reported a population it had never counted. Bounds the wrapper keeps for reasons of
+    its own are not copied — only what would otherwise be corrected here.
     """
-    moment = now if now is not None else datetime.now(UTC)
+    if not 1 <= query.page_size <= MAX_PAGE_SIZE:
+        raise ValueError(f"a page holds 1 to {MAX_PAGE_SIZE} rows, not {query.page_size}")
+    if query.page < 1:
+        raise ValueError(f"pages are numbered from 1, so there is no page {query.page}")
+
+    moment = now if now is not None else world.clock.now()
     field, descending = parse_sort(query.sort)
 
     rows: list[SubscriberRow] = []
@@ -296,8 +311,10 @@ async def list_subscribers(
     rows = present + absent
 
     total = len(rows)
-    size = max(1, min(query.page_size, MAX_PAGE_SIZE))
-    start = (max(1, query.page) - 1) * size
+    start = (query.page - 1) * query.page_size
     return Page(
-        items=tuple(rows[start : start + size]), total=total, page=query.page, page_size=size
+        items=tuple(rows[start : start + query.page_size]),
+        total=total,
+        page=query.page,
+        page_size=query.page_size,
     )

@@ -18,7 +18,7 @@ from typing import Any, Final, Literal, cast, get_args
 import jwt
 
 from app.config import get_settings
-from app.db import NowProvider, utc_now
+from app.db import NowProvider
 
 # "access" is a person who logged in. "demo" names a world and is refused by every dependency that
 # guards a permission; no route mints one today, and validating the shape here is what stops one
@@ -113,12 +113,16 @@ def encode_access_token(
     return IssuedAccessToken(token=token, issued_at=issued_at, expires_at=expires_at, jti=jti)
 
 
-def decode_access_token(token: str, *, now: NowProvider = utc_now) -> AccessTokenClaims:
+def decode_access_token(token: str, *, now: NowProvider) -> AccessTokenClaims:
     """Verify a bearer token and return its claims.
 
     Raises AccessTokenExpired for a good token that has run out, AccessTokenInvalid for anything
     else. Those two are the whole vocabulary: the caller needs to know whether refreshing would
     help, and nothing finer than that may reach a response body.
+
+    The clock is named by the caller and never defaulted. Every request path injects one
+    through `get_now`, and a fallback to the process clock would be the more permissive of the
+    two whenever the injected clock is ahead — accepting a token the API is already refusing.
     """
     try:
         payload: dict[str, Any] = jwt.decode(

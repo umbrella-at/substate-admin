@@ -162,7 +162,7 @@ class Identity:
 
 
 async def load_user(
-    session: AsyncSession, user_id: uuid.UUID, *, world_id: str | None = None
+    session: AsyncSession, user_id: uuid.UUID, *, world_id: str | None
 ) -> User | None:
     """The statement every authenticated request pays for, and the only one a warm process runs.
 
@@ -176,6 +176,10 @@ async def load_user(
     A token this service signed names a subject and, for a demo session, a world. Looking the
     subject up on its own would let a demo token point at any row in the table — another sandbox's
     operator, or a real one — and come back holding that row's grants.
+
+    The world has no default because `None` is not "unspecified" here, it is a particular
+    world: the operators of this installation. A caller who forgot the keyword would be given
+    them, and a sandbox visitor would come back either missing or holding a real role.
     """
     result = await session.execute(
         select(User).where(User.id == user_id, User.world_id == world_id)

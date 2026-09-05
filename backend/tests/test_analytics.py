@@ -18,10 +18,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta, timezone
 from itertools import pairwise
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import BigInteger, func, select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from substate import (
@@ -35,6 +36,7 @@ from substate import (
 
 from app.analytics import movements, standing
 from app.models import EventJournal
+from app.schemas import FlowParams, PeriodParams, RevenueParams
 from app.seed.catalogue import PLANS, USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, seed_world
 from app.subscribers.query import STATE_URGENCY
@@ -588,3 +590,79 @@ def test_a_month_step_lands_on_the_first_whatever_the_month_is_long(
 ) -> None:
     """February and a year boundary, because both are where day arithmetic goes wrong."""
     assert movements.next_bucket(start, "month") == expected
+
+
+class TestTheFigureRefusesWhatItsWrapperRefuses:
+    """`PeriodParams`, `FlowParams` and `RevenueParams` reject these before a handler is entered.
+
+    Behind them the same values used to be answered: a naive end floored in the host's zone, a
+    backwards period as an empty series, an unknown grain walked by weeks while Postgres grouped
+    by days, and a window of no months quietly served as one.
+    """
+
+    async def test_a_period_needs_an_instant_at_both_ends(self, session: AsyncSession) -> None:
+        aware = datetime(2026, 2, 1, tzinfo=UTC)
+        naive = datetime(2026, 1, 1)
+        with pytest.raises(ValidationError):
+            PeriodParams(**{"from": naive, "to": aware})
+        with pytest.raises(ValueError, match="time zone"):
+            await movements.flow(session, OTHER_WORLD, naive, aware, "week")
+        with pytest.raises(ValueError, match="time zone"):
+            await movements.flow(session, OTHER_WORLD, aware, naive, "week")
+
+    async def test_a_period_runs_forwards(self, session: AsyncSession) -> None:
+        since = datetime(2026, 2, 1, tzinfo=UTC)
+        with pytest.raises(ValidationError):
+            PeriodParams(**{"from": since, "to": since - timedelta(days=1)})
+        with pytest.raises(ValueError, match="forwards"):
+            await movements.flow(session, OTHER_WORLD, since, since - timedelta(days=1), "week")
+        with pytest.raises(ValueError, match="forwards"):
+            await movements.flow(session, OTHER_WORLD, since, since, "week")
+
+    @pytest.mark.parametrize("granularity", ["day", "quarter", "year", ""])
+    async def test_a_grain_this_cannot_walk_is_refused(
+        self, session: AsyncSession, granularity: str
+    ) -> None:
+        """`date_trunc` accepts all of these, and the walk here would step by weeks regardless —
+        so every bucket that did not land on a Monday came back zero."""
+        with pytest.raises(ValidationError):
+            FlowParams(granularity=granularity)
+        at = datetime(2026, 2, 3, tzinfo=UTC)
+        with pytest.raises(ValueError, match="weeks or months"):
+            movements.floor_to(at, cast(Any, granularity))
+        with pytest.raises(ValueError, match="weeks or months"):
+            movements.next_bucket(at, cast(Any, granularity))
+
+    @pytest.mark.parametrize("months", [0, -5])
+    async def test_a_window_of_no_months_is_refused(
+        self, session: AsyncSession, months: int
+    ) -> None:
+        """The loop's range was empty, so it returned the current month and called that success."""
+        with pytest.raises(ValidationError):
+            RevenueParams(months=months)
+        with pytest.raises(ValueError, match="at least one month"):
+            await movements.revenue(session, BASE_WORLD_ID, datetime.now(UTC), months)
+
+    @pytest.mark.parametrize("granularity", ["week", "month"])
+    async def test_the_grains_it_does_walk_are_served(self, granularity: str) -> None:
+        at = datetime(2026, 2, 3, tzinfo=UTC)
+        assert movements.next_bucket(movements.floor_to(at, granularity), granularity) > at
+
+
+async def test_the_quiet_figure_dates_the_silence_by_the_worlds_clock_by_default(
+    three_quiet_subscribers: tuple[World, standing.Projection, datetime],
+) -> None:
+    """The route reads the moment off the world, so the default is for the callers nobody watches.
+
+    It used to be `datetime.now(UTC)`. Wound 200 days on, the three silences are 240, 260 and 400
+    days long and belong in one band; the wall clock still reads 40, 60 and 200 and spreads them
+    across three. Both are well-formed answers and only one is about this world.
+    """
+    world, projection, wall = three_quiet_subscribers
+    world.clock.advance(timedelta(days=200))
+
+    by_default = await standing.quiet(world, projection)
+    by_the_wall = await standing.quiet(world, projection, now=wall)
+
+    assert [band.count for band in by_default.bands] == [0, 0, 3]
+    assert [band.count for band in by_the_wall.bands] == [1, 1, 1]

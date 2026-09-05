@@ -77,6 +77,31 @@ class Revenue:
     months: tuple[RevenueMonth, ...]
 
 
+def _aware(moment: datetime, called: str) -> datetime:
+    """The same instant in UTC, or a refusal if the caller never named one.
+
+    `PeriodParams` types both ends `AwareDatetime`, so a naive value is a 422 and never arrives.
+    Converting one here would assume the host's zone — the answer would then depend on which
+    machine asked, which is the failure this module has already paid for once.
+    """
+    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
+        raise ValueError(f"{called} has no time zone, so it names no instant")
+    return moment.astimezone(UTC)
+
+
+def _only_a_grain_we_bucket(granularity: Grain) -> None:
+    """Refuse a grain this walks by weeks while `date_trunc` groups by something else.
+
+    `Grain` says week or month and `FlowParams` refuses the rest, but the string also goes
+    straight to Postgres, which happily accepts `day`, `quarter` and `year`.
+
+    Falling through to the week branch would key the rows one way and read them another, so every
+    bucket that did not land on a Monday came back zero.
+    """
+    if granularity != "week":
+        raise ValueError(f"buckets are weeks or months, not {granularity!r}")
+
+
 def floor_to(moment: datetime, granularity: Grain) -> datetime:
     """The start of the bucket a moment falls in, matching Postgres `date_trunc`.
 
@@ -84,9 +109,10 @@ def floor_to(moment: datetime, granularity: Grain) -> datetime:
     a `from` carrying any other offset produced keys that matched none of Postgres's — and the
     figure answered 200 with a dense series of zeros over a journal full of events.
     """
-    at = moment.astimezone(UTC)
+    at = _aware(moment, "moment")
     if granularity == "month":
         return at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    _only_a_grain_we_bucket(granularity)
     midnight = at.replace(hour=0, minute=0, second=0, microsecond=0)
     return midnight - timedelta(days=midnight.weekday())
 
@@ -95,6 +121,7 @@ def next_bucket(start: datetime, granularity: Grain) -> datetime:
     """The bucket after this one. A month step lands on the first, whatever the month's length."""
     if granularity == "month":
         return (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    _only_a_grain_we_bucket(granularity)
     return start + timedelta(days=7)
 
 
@@ -185,7 +212,9 @@ async def flow(
     session: AsyncSession, world_id: str, since: datetime, until: datetime, granularity: Grain
 ) -> Flow:
     """Arrivals against departures, one point per bucket."""
-    since, until = since.astimezone(UTC), until.astimezone(UTC)
+    since, until = _aware(since, "since"), _aware(until, "until")
+    if since >= until:
+        raise ValueError("a period runs forwards, so since must be before until")
     departure = or_(
         EventJournal.type == CANCELLED,
         and_(
@@ -229,6 +258,9 @@ async def flow(
 
 async def revenue(session: AsyncSession, world_id: str, now: datetime, months: int) -> Revenue:
     """What arrived, by calendar month, ending with the month `now` falls in."""
+    if months < 1:
+        raise ValueError(f"a window covers at least one month, not {months}")
+
     this_month = floor_to(now, "month")
     first = this_month
     for _ in range(months - 1):
