@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from substate import (
     Event,
@@ -27,6 +28,7 @@ from substate import (
 
 from app.schemas import PageParams
 from app.subscribers.events import list_events
+from app.subscribers.query import MAX_PAGE_SIZE
 from app.worlds.journal import flush_world, write_events
 from app.worlds.registry import World
 from support import Clock, bearer, create_account, envelope
@@ -237,3 +239,34 @@ async def test_the_page_size_has_a_ceiling(
 
     assert response.status_code == 422
     assert envelope(response)["field"] == "pageSize"
+
+
+@pytest.mark.parametrize(
+    ("page", "page_size"),
+    [(1, 0), (1, MAX_PAGE_SIZE + 1), (1, -5), (0, 25), (-1, 25)],
+)
+async def test_the_feed_refuses_the_page_its_wrapper_refuses(
+    session: AsyncSession, world: World, page: int, page_size: int
+) -> None:
+    """The same numbers are a 422 at the door and a ValueError behind it.
+
+    `PageParams` is asserted here beside the function it guards, because the claim is that the two
+    agree — a clamp inside would have handed a capture the first hundred rows without a word.
+    """
+    with pytest.raises(ValidationError):
+        PageParams(page=page, page_size=page_size)
+    with pytest.raises(ValueError, match="page"):
+        await list_events(session, world.id, SUBSCRIBER, page=page, page_size=page_size)
+
+
+@pytest.mark.parametrize("page_size", [1, MAX_PAGE_SIZE])
+async def test_the_edges_of_a_feed_page_are_served(
+    connection: AsyncConnection, session: AsyncSession, world: World, page_size: int
+) -> None:
+    """The bounds are inclusive on both sides, so refusing them would be its own bug."""
+    await _history(connection, world, MAX_PAGE_SIZE)
+
+    page = await list_events(session, world.id, SUBSCRIBER, page_size=page_size)
+
+    assert len(page.items) == page_size
+    assert page.page_size == page_size

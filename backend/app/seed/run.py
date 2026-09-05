@@ -424,7 +424,19 @@ async def _live(
     days: int,
     tally: EventTally | None = None,
 ) -> SeedReport:
-    """`days` days of this world's life, and a report of where it stands afterwards."""
+    """`days` days of this world's life, and a report of where it stands afterwards.
+
+    A WIND THIS CANNOT PERFORM IS REFUSED, NOT QUIETLY SKIPPED.
+
+    `AdvanceRequest` bounds the number and the route refuses a wind past the ceiling, so a day
+    count out of range is a 422 and never arrives.
+
+    An empty range left the clock where it was and still returned a full report — while
+    `_take_stock` drew from the activity stream, so the history stopped reproducing.
+    """
+    if days < 1:
+        raise ValueError(f"a wind moves the clock forwards, so it is at least one day, not {days}")
+
     started = time.perf_counter()
     report = SeedReport()
 

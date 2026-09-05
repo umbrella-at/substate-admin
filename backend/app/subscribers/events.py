@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import EventJournal
+from app.subscribers.query import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,15 +45,27 @@ class EventPage:
 
 
 async def list_events(
-    session: AsyncSession, world_id: str, user_id: str, *, page: int = 1, page_size: int = 25
+    session: AsyncSession,
+    world_id: str,
+    user_id: str,
+    *,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> EventPage:
     """One page of what happened to this subscriber, newest first.
 
-    The size the caller asks for is `PageParams`', which is bounded where it is declared; it is
-    clamped again here so that a caller who is not a route cannot ask for the whole journal.
+    A PAGE THIS CANNOT SERVE IS REFUSED, NOT QUIETLY CORRECTED.
+
+    `PageParams` bounds both numbers, so a request out of range is a 422 and never arrives
+    here. What does arrive with one is a test, a capture or a measurement, and those are the
+    callers a silent correction hurts most, because nothing else is watching them.
     """
-    size = max(1, min(page_size, 100))
-    offset = (max(1, page) - 1) * size
+    if not 1 <= page_size <= MAX_PAGE_SIZE:
+        raise ValueError(f"a page holds 1 to {MAX_PAGE_SIZE} rows, not {page_size}")
+    if page < 1:
+        raise ValueError(f"pages are numbered from 1, so there is no page {page}")
+
+    offset = (page - 1) * page_size
 
     rows = (
         await session.execute(
@@ -65,7 +78,7 @@ async def list_events(
             )
             .where(EventJournal.world_id == world_id, EventJournal.user_id == user_id)
             .order_by(EventJournal.occurred_at.desc(), EventJournal.seq.desc())
-            .limit(size)
+            .limit(page_size)
             .offset(offset)
         )
     ).all()
@@ -84,7 +97,7 @@ async def list_events(
         # subscriber has no history, so the pager would erase itself rather than offer the way back.
         total=rows[0].total if rows else await _count(session, world_id, user_id),
         page=page,
-        page_size=size,
+        page_size=page_size,
     )
 
 

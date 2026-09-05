@@ -19,6 +19,7 @@ import jwt
 import pytest
 
 from app.config import get_settings
+from app.db import utc_now
 from app.security.tokens import (
     ACCESS_TOKEN_TTL,
     ALGORITHM,
@@ -132,7 +133,7 @@ def test_a_token_expired_against_the_real_clock_is_expired_too() -> None:
     stale = _signed(exp=int((_now() - timedelta(seconds=1)).timestamp()))
 
     with pytest.raises(AccessTokenExpired):
-        decode_access_token(stale)
+        decode_access_token(stale, now=utc_now)
 
 
 def test_the_algorithm_is_never_taken_from_the_token() -> None:
@@ -140,25 +141,25 @@ def test_the_algorithm_is_never_taken_from_the_token() -> None:
     unsigned = jwt.encode(_claims(), key=None, algorithm="none")
 
     with pytest.raises(AccessTokenInvalid):
-        decode_access_token(unsigned)
+        decode_access_token(unsigned, now=utc_now)
 
 
 def test_a_token_signed_with_another_key_is_refused() -> None:
     forged = jwt.encode(_claims(), "a-key-this-service-does-not-hold", algorithm=ALGORITHM)
 
     with pytest.raises(AccessTokenInvalid):
-        decode_access_token(forged)
+        decode_access_token(forged, now=utc_now)
 
 
 @pytest.mark.parametrize("claim", ["sub", "iat", "exp", "typ"])
 def test_a_claim_this_application_reads_may_not_be_missing(claim: str) -> None:
     with pytest.raises(AccessTokenInvalid):
-        decode_access_token(_signed(**{claim: None}))
+        decode_access_token(_signed(**{claim: None}), now=utc_now)
 
 
 def test_a_token_with_no_jti_is_still_valid() -> None:
     """`jti` is minted and never consulted: there is no deny-list for it to be looked up in."""
-    claims = decode_access_token(_signed(jti=None))
+    claims = decode_access_token(_signed(jti=None), now=utc_now)
 
     assert claims.jti is None
 
@@ -188,10 +189,10 @@ def test_a_token_with_no_jti_is_still_valid() -> None:
 def test_a_claim_set_this_application_never_mints_is_refused(spoilt: dict[str, Any]) -> None:
     """Every token here carries this service's own signature. What is refused is what it says."""
     with pytest.raises(AccessTokenInvalid):
-        decode_access_token(_signed(**spoilt))
+        decode_access_token(_signed(**spoilt), now=utc_now)
 
 
 def test_rubbish_is_refused_rather_than_raising_something_else() -> None:
     for nonsense in ("", "not.a.token", "Bearer something", "a.b.c"):
         with pytest.raises(AccessTokenInvalid):
-            decode_access_token(nonsense)
+            decode_access_token(nonsense, now=utc_now)

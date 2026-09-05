@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Final
 
 from substate import State
@@ -85,7 +85,7 @@ async def quiet(world: World, projection: Projection, *, now: datetime | None = 
     The membership test is the table's own, so the total here is the number of rows the cohort
     chip returns. A second predicate would be a second definition of "quiet".
     """
-    moment = now if now is not None else datetime.now(UTC)
+    moment = now if now is not None else world.clock.now()
     edges = (QUIET_AFTER, *QUIET_BANDS)
     counts = [0] * len(edges)
 

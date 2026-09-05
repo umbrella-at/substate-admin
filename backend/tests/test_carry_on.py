@@ -12,8 +12,10 @@ subscriber's activity moves backwards or lands somewhere they could not have bee
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from substate import MemoryStorage, SubscriptionEngine
 
+from app.schemas import AdvanceRequest
 from app.seed.activity import FRESHEST, LIVE, QUIET_AFTER
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, Population, SeedReport, carry_on, seed_world
@@ -224,3 +226,23 @@ async def test_a_subscription_that_is_over_keeps_the_mark_it_had(seeded: Wound) 
     # reaches nine in ten — so the ones that did not are the sample, and there have to be some.
     assert len(still_over) > 10, "everybody came back, so this asserts nothing"
     assert {uid: population.last_active[uid] for uid in still_over} == still_over
+
+
+@pytest.mark.parametrize("days", [0, -30])
+async def test_a_wind_of_no_days_is_refused_rather_than_reported(seeded: Wound, days: int) -> None:
+    """`AdvanceRequest` bounds the number, so this arrives only from a test or a capture.
+
+    It used to return a full report with the clock exactly where it was — and `_take_stock` drew
+    from the activity stream on the way, so the "no-op" moved every later draw and the history
+    stopped reproducing. The stream's state is asserted alongside the clock for that reason.
+    """
+    _, clock, population, _ = seeded
+    stood_at, stream = clock.offset, population.streams.activity.getstate()
+
+    with pytest.raises(ValidationError):
+        AdvanceRequest(days=days)
+    with pytest.raises(ValueError, match="at least one day"):
+        await wind(seeded, days)
+
+    assert clock.offset == stood_at
+    assert population.streams.activity.getstate() == stream
