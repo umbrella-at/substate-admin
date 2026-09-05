@@ -2431,7 +2431,7 @@ export interface operations {
                 sort?: string;
                 state?: ("trial" | "active" | "grace" | "expired" | "cancelled")[];
                 planId?: string[];
-                cohort?: ("quiet" | "trial-ending" | "cancelled-still-active") | null;
+                cohort?: ("quiet" | "trial-ending" | "cancelled-losing-access") | null;
                 q?: string | null;
             };
             header?: never;
