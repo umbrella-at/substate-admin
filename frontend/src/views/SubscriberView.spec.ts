@@ -237,4 +237,28 @@ describe('the four states of the feed', () => {
     expect(wrapper.text()).toContain('The service could not be reached.')
     expect(wrapper.text()).toContain('Try again')
   })
+
+  // The other direction, and the one that was behind a gate: a failed card said so and took the
+  // history down with it, though the history had arrived and is about the same person.
+  it('keeps the feed when the card fails', async () => {
+    const wrapper = await render({
+      card: new ApiError(500, { code: 'INTERNAL_ERROR', message: 'x', field: null }),
+      events: feed([EVENT]),
+    })
+
+    expect(wrapper.text()).toContain('The service could not be reached.')
+    expect(wrapper.text()).toContain('History')
+    expect(wrapper.text()).toContain('Cancelled. Access runs to 16 Oct 2026.')
+  })
+
+  // The one answer that does take it away, because there is nobody here to have a history.
+  it('does not offer a history for a subscriber who is not there', async () => {
+    const wrapper = await render({
+      card: new ApiError(404, { code: 'NOT_FOUND', message: 'Nope.', field: null }),
+      events: feed([EVENT]),
+    })
+
+    expect(wrapper.text()).toContain('There is no subscriber')
+    expect(wrapper.text()).not.toContain('History')
+  })
 })

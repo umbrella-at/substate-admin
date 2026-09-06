@@ -61,24 +61,10 @@ function reason(failure: unknown): string {
 
 <template>
   <section class="flex flex-col gap-4 p-6">
-    <!-- Loading, with nothing to show. The shape of the card that is coming: a header bar and the
-         rows it will have, so the page does not resize when they arrive. -->
-    <div v-if="card.isPending.value" class="flex flex-col gap-4" aria-busy="true">
-      <span class="sr-only">Loading subscriber</span>
-      <div class="rounded-card bg-surface-1 p-4">
-        <!-- The title bar to come. `max-w-form` rather than a width of its own: the
-             spacing scale has no step this wide, and inventing one for a placeholder
-             is how a design file stops being where values come from. -->
-        <SkeletonBlock class="h-8 max-w-form" />
-        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <SkeletonBlock v-for="fact in 6" :key="fact" class="h-8" />
-        </div>
-      </div>
-    </div>
-
     <!-- No such subscriber. Not the error state: there is nothing to retry, and the way out is the
-         table rather than another attempt at an id that does not exist. -->
-    <div v-else-if="missing" class="flex max-w-reading flex-col items-start gap-4">
+         table rather than another attempt at an id that does not exist. It is also the one answer
+         that takes the history with it: there is nobody here to have one. -->
+    <div v-if="missing" class="flex max-w-reading flex-col items-start gap-4">
       <AppNotice role="warning">
         There is no subscriber <code class="font-numeric">{{ userId }}</code> in this world. The
         base world is rebuilt when the service restarts, so a link from before a restart can name
@@ -89,15 +75,35 @@ function reason(failure: unknown): string {
       </AppButton>
     </div>
 
-    <div v-else-if="card.isError.value" class="flex flex-col items-start gap-4">
-      <AppNotice role="danger" assertive>{{ reason(card.error.value) }}</AppNotice>
-      <AppButton variant="outlined" @click="() => void card.refetch()">Try again</AppButton>
-    </div>
+    <template v-else>
+      <!-- Loading, with nothing to show. The shape of the card that is coming: a header bar and the
+           rows it will have, so the page does not resize when they arrive. -->
+      <div v-if="card.isPending.value" class="flex flex-col gap-4" aria-busy="true">
+        <span class="sr-only">Loading subscriber</span>
+        <div class="rounded-card bg-surface-1 p-4">
+          <!-- The title bar to come. `max-w-form` rather than a width of its own: the
+             spacing scale has no step this wide, and inventing one for a placeholder
+             is how a design file stops being where values come from. -->
+          <SkeletonBlock class="h-8 max-w-form" />
+          <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SkeletonBlock v-for="fact in 6" :key="fact" class="h-8" />
+          </div>
+        </div>
+      </div>
 
-    <template v-else-if="card.data.value">
-      <SubscriberFacts :detail="card.data.value" />
-      <SubscriberOperations :detail="card.data.value" />
+      <div v-else-if="card.isError.value" class="flex flex-col items-start gap-4">
+        <AppNotice role="danger" assertive>{{ reason(card.error.value) }}</AppNotice>
+        <AppButton variant="outlined" @click="() => void card.refetch()">Try again</AppButton>
+      </div>
 
+      <template v-else-if="card.data.value">
+        <SubscriberFacts :detail="card.data.value" />
+        <SubscriberOperations :detail="card.data.value" />
+      </template>
+
+      <!-- Beside the card rather than inside it. The two come from different places — the engine
+           and Postgres — so a failed card is a reason to say so above the history, not to take
+           the history away as well. -->
       <section class="flex flex-col gap-4">
         <h2 class="text-heading text-text-primary">History</h2>
 
