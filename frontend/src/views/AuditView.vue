@@ -176,7 +176,7 @@ const failure = computed(() => failureText(result.error.value))
           {{
             hasAuditFilters(query)
               ? 'No recorded action matches these filters.'
-              : 'Nothing has been done to a subscription yet. Open a subscriber and perform an operation, and it will be recorded here.'
+              : 'Nothing has been done here yet. An operation on a subscriber, or an edit to a role, is recorded here as soon as it is made.'
           }}
         </p>
         <AppButton v-if="hasAuditFilters(query)" variant="outlined" @click="go(EMPTY_AUDIT_QUERY)">

@@ -42,6 +42,12 @@ const router = useRouter()
 
 const period = computed<Preset>(() => periodFromRoute(route.query['period']))
 
+/** Whether "a longer period" is advice anybody can take. On the widest of the three it is not,
+ *  and two of the five figures were offering it there. */
+const longerPeriodExists = computed(
+  () => PERIODS.findIndex((preset) => preset.value === period.value.value) < PERIODS.length - 1,
+)
+
 /** One moment for all the figures on one paint: a `now` that moved between two of them would put
  *  them on two periods invisibly. Refreshed when the period changes, because a tab left open for a
  *  day was otherwise asking about the thirty days ending yesterday. */
@@ -160,7 +166,11 @@ const revenueBars = computed(() => {
         :empty="
           flow.data.value !== undefined && total(flowLines.joined) + total(flowLines.left) === 0
         "
-        invitation="Nothing joined or left in this period. A longer one will have movement in it."
+        :invitation="
+          longerPeriodExists
+            ? 'Nothing joined or left in this period. A longer one may have movement in it.'
+            : 'Nothing joined or left in the last twelve months. The world goes on running, and the next arrival lands here.'
+        "
         :busy="flow.isFetching.value"
         :answer="`${counted(total(flowLines.joined), 'arrival', 'arrivals')}, ${counted(total(flowLines.left), 'departure', 'departures')}`"
         note="These two do not subtract to a population: a subscriber who lapses and pays again ends a subscription without arriving a second time. What is standing now is the states figure."
@@ -182,8 +192,12 @@ const revenueBars = computed(() => {
           :pending="funnel.isPending.value"
           :failed="funnel.isError.value"
           :failure="failure(funnel.error.value)"
-          :empty="funnel.data.value !== undefined && funnel.data.value.stages[0]?.count === 0"
-          invitation="Nobody arrived in this period. A longer one will have somebody in it."
+          :empty="funnel.data.value !== undefined && total(funnelBars.values) === 0"
+          :invitation="
+            longerPeriodExists
+              ? 'Nobody arrived in this period. A longer one may have somebody in it.'
+              : 'Nobody arrived in the last twelve months. The world goes on running, and the next arrival lands here.'
+          "
           :busy="funnel.isFetching.value"
           :answer="biggestLoss(funnel.data.value?.stages ?? [])"
           :note="
@@ -209,7 +223,7 @@ const revenueBars = computed(() => {
           :failed="states.isError.value"
           :failure="failure(states.error.value)"
           :empty="states.data.value?.total === 0"
-          invitation="There are no subscriptions in this world yet."
+          invitation="No subscription has been started in this world yet. The world goes on running, so the first one appears here without a reload."
           :busy="states.isFetching.value"
           :answer="counted(states.data.value?.total ?? 0, 'subscription', 'subscriptions')"
           @retry="() => void states.refetch()"
@@ -230,7 +244,7 @@ const revenueBars = computed(() => {
           :failed="quiet.isError.value"
           :failure="failure(quiet.error.value)"
           :empty="quiet.data.value?.total === 0"
-          invitation="Everybody with a live subscription has been here in the last month."
+          invitation="Nobody with a live subscription has gone a month without turning up. Anyone who has never turned up at all is not counted here."
           :busy="quiet.isFetching.value"
           :answer="counted(quiet.data.value?.total ?? 0, 'subscriber', 'subscribers')"
           @retry="() => void quiet.refetch()"
@@ -251,7 +265,7 @@ const revenueBars = computed(() => {
           :failed="revenue.isError.value"
           :failure="failure(revenue.error.value)"
           :empty="revenue.data.value !== undefined && total(revenueBars.values) === 0"
-          invitation="No payment has been recorded in the last twelve months."
+          invitation="No payment has been recorded in the last twelve months. Record one on a subscriber's card, or move the world past a renewal, and it is counted here."
           :busy="revenue.isFetching.value"
           :answer="
             revenue.data.value === undefined

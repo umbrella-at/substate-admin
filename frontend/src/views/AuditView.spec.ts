@@ -177,7 +177,7 @@ describe('the four states', () => {
   it('says what would fill an empty audit', async () => {
     const wrapper = await render(page([]))
 
-    expect(wrapper.text()).toContain('Open a subscriber and perform an operation')
+    expect(wrapper.text()).toContain('An operation on a subscriber, or an edit to a role')
     expect(button(wrapper, 'Clear filters')).toBeUndefined()
   })
 
@@ -240,7 +240,7 @@ describe('the filters', () => {
     const wrapper = await render(page([]))
 
     expect(wrapper.text()).toContain('No recorded action matches these filters.')
-    expect(wrapper.text()).not.toContain('Open a subscriber and perform an operation')
+    expect(wrapper.text()).not.toContain('An operation on a subscriber, or an edit to a role')
   })
 })
 
