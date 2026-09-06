@@ -143,9 +143,13 @@ function submitNew(): void {
       <section class="flex flex-col gap-4 rounded-panel bg-surface-1 p-4">
         <h2 class="text-heading text-text-primary">Operators</h2>
 
+        <!-- The shape of the table below: a header line and four rows at its own `py-2`. -->
         <template v-if="users.isPending.value">
           <p class="sr-only" role="status">Loading the operators</p>
-          <SkeletonBlock v-for="line in 4" :key="line" class="h-8 w-full" />
+          <div class="py-2"><SkeletonBlock class="h-3 max-w-form" /></div>
+          <div v-for="line in 4" :key="line" class="py-2">
+            <SkeletonBlock class="h-4 max-w-reading" />
+          </div>
         </template>
 
         <template v-else-if="users.isError.value">
@@ -198,9 +202,15 @@ function submitNew(): void {
           </AppButton>
         </div>
 
+        <!-- The shape of what is coming here is a wrap of pill buttons over a permission list,
+             not four full-width bars: that was the operator table's shape on the wrong panel. -->
         <template v-if="roles.isPending.value">
           <p class="sr-only" role="status">Loading the roles</p>
-          <SkeletonBlock v-for="line in 4" :key="line" class="h-8 w-full" />
+          <div class="flex flex-wrap gap-2">
+            <SkeletonBlock v-for="pill in 4" :key="pill" class="h-8 w-12" />
+          </div>
+          <SkeletonBlock class="h-4 max-w-reading" />
+          <SkeletonBlock class="h-4 max-w-reading" />
         </template>
 
         <template v-else-if="roles.isError.value">

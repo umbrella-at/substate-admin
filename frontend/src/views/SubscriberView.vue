@@ -103,8 +103,19 @@ const reason = failureText
 
         <div v-if="feed.isPending.value" class="flex flex-col gap-4" aria-busy="true">
           <span class="sr-only">Loading events</span>
+          <!-- The feed's own frame and its own row: four of them at the height the events will
+               have, built from the same padding rather than from a number. -->
           <div class="overflow-hidden rounded-panel border border-border">
-            <SkeletonBlock v-for="line in 4" :key="line" class="m-4 h-6" />
+            <div class="border-b border-border bg-surface-2 px-4 py-3">
+              <SkeletonBlock class="h-3 max-w-form" />
+            </div>
+            <div
+              v-for="line in 4"
+              :key="line"
+              class="border-b border-border px-4 py-3 last:border-b-0"
+            >
+              <SkeletonBlock class="h-4 max-w-reading" />
+            </div>
           </div>
         </div>
 

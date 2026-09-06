@@ -108,11 +108,22 @@ const failure = computed(() => failureText(error.value))
     <SubscribersFilters v-if="!worldIsUnbuilt" :query="query" :plans="planIds" @change="go" />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a
-         spinner: five rows of the same height, so the page does not resize when they arrive. -->
+         spinner: the header, then five rows built from the table's own padding and its two type
+         sizes, so the page does not resize when the rows arrive. -->
     <div v-if="isPending" class="flex flex-col gap-4" aria-busy="true">
       <span class="sr-only">Loading subscribers</span>
       <div class="overflow-hidden rounded-panel border border-border">
-        <SkeletonBlock v-for="row in 5" :key="row" class="m-4 h-8" />
+        <div class="border-b border-border bg-surface-2 px-4 py-3">
+          <SkeletonBlock class="h-3 max-w-form" />
+        </div>
+        <div
+          v-for="row in 5"
+          :key="row"
+          class="flex flex-col gap-1 border-b border-border px-4 py-3 last:border-b-0"
+        >
+          <SkeletonBlock class="h-4 max-w-form" />
+          <SkeletonBlock class="h-3 w-12" />
+        </div>
       </div>
     </div>
 

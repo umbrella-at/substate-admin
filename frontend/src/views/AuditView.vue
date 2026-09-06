@@ -153,7 +153,12 @@ const failure = computed(() => failureText(result.error.value))
     <div v-if="result.isPending.value" class="flex flex-col gap-4" aria-busy="true">
       <span class="sr-only">Loading the audit</span>
       <div class="overflow-hidden rounded-panel border border-border">
-        <SkeletonBlock v-for="line in 5" :key="line" class="m-4 h-8" />
+        <div class="border-b border-border bg-surface-2 px-4 py-3">
+          <SkeletonBlock class="h-3 max-w-form" />
+        </div>
+        <div v-for="line in 5" :key="line" class="border-b border-border px-4 py-3 last:border-b-0">
+          <SkeletonBlock class="h-4 max-w-reading" />
+        </div>
       </div>
     </div>
 
