@@ -10,7 +10,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 
-import { ApiError, type RoleDetail, type RolesResponse, type UserListResponse } from '@/api/client'
+import { type RoleDetail, type RolesResponse, type UserListResponse } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
@@ -67,12 +68,7 @@ const role = computed<RoleDetail | undefined>(() =>
   items.value.find((each) => each.id === selected.value),
 )
 
-const UNREACHABLE = 'The service could not be reached.'
-
-function failure(error: unknown): string {
-  if (error instanceof ApiError && error.status < 500 && error.message !== '') return error.message
-  return UNREACHABLE
-}
+const failure = failureText
 
 async function reload(): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ['roles'] })

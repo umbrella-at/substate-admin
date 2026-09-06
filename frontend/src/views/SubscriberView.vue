@@ -22,6 +22,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { ApiError } from '@/api/client'
+import { failureText } from '@/api/failure'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
 import SkeletonBlock from '@/components/SkeletonBlock.vue'
@@ -49,14 +50,7 @@ const missing = computed(
   () => card.error.value instanceof ApiError && card.error.value.status === 404,
 )
 
-const UNREACHABLE = 'The service could not be reached.'
-
-function reason(failure: unknown): string {
-  if (failure instanceof ApiError && failure.status < 500 && failure.message !== '') {
-    return failure.message
-  }
-  return UNREACHABLE
-}
+const reason = failureText
 </script>
 
 <template>

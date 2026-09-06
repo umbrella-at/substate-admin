@@ -20,7 +20,8 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { ApiError, type AuditPage } from '@/api/client'
+import { type AuditPage } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -87,12 +88,7 @@ function setOutcome(outcome: Outcome | null): void {
   go({ ...query.value, page: 1, outcome })
 }
 
-const UNREACHABLE = 'The service could not be reached.'
-const failure = computed(() => {
-  const cause = result.error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
-  return UNREACHABLE
-})
+const failure = computed(() => failureText(result.error.value))
 </script>
 
 <template>

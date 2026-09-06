@@ -9,7 +9,8 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import { ApiError, type PlanSummary } from '@/api/client'
+import { type PlanSummary } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -83,13 +84,7 @@ const hasFilters = computed(
     query.value.q !== null,
 )
 
-const UNREACHABLE = 'The service could not be reached.'
-
-const failure = computed(() => {
-  const cause = error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
-  return UNREACHABLE
-})
+const failure = computed(() => failureText(error.value))
 </script>
 
 <template>

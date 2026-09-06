@@ -229,20 +229,33 @@ describe('the four states of the feed', () => {
 
   // The card survives the feed failing, which is the whole reason they are rendered separately.
   it('keeps the card when the feed fails', async () => {
-    const wrapper = await render({
-      events: new ApiError(500, { code: 'INTERNAL_ERROR', message: 'x', field: null }),
-    })
+    const wrapper = await render({ events: new TypeError('Failed to fetch') })
 
     expect(wrapper.find('h1').text()).toBe('Ada Lovelace')
     expect(wrapper.text()).toContain('The service could not be reached.')
     expect(wrapper.text()).toContain('Try again')
   })
 
+  // A 500 carrying the backend's envelope is the service speaking, and it names the request id.
+  // Reporting it as "could not be reached" was a claim about the network that is not true.
+  it('repeats what the service said about its own failure', async () => {
+    const wrapper = await render({
+      events: new ApiError(500, {
+        code: 'INTERNAL_ERROR',
+        message: 'The service failed to handle this request. Try again; quote request 7f3a.',
+        field: null,
+      }),
+    })
+
+    expect(wrapper.text()).toContain('quote request 7f3a')
+    expect(wrapper.text()).not.toContain('The service could not be reached.')
+  })
+
   // The other direction, and the one that was behind a gate: a failed card said so and took the
   // history down with it, though the history had arrived and is about the same person.
   it('keeps the feed when the card fails', async () => {
     const wrapper = await render({
-      card: new ApiError(500, { code: 'INTERNAL_ERROR', message: 'x', field: null }),
+      card: new TypeError('Failed to fetch'),
       events: feed([EVENT]),
     })
 

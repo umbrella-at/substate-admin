@@ -10,7 +10,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { ApiError } from '@/api/client'
+import { failureText } from '@/api/failure'
 import AppButton from '@/components/AppButton.vue'
 import BarFigure from '@/components/BarFigure.vue'
 import ChartFrame from '@/components/ChartFrame.vue'
@@ -72,14 +72,9 @@ function choose(next: Preset): void {
   void router.push({ query: periodToRoute(next) })
 }
 
-const UNREACHABLE = 'The service could not be reached.'
-
 /** What to put on screen when a figure failed. A 401 never arrives here — the client's session
  *  hook has navigated by then — so this is a 5xx, a refusal, or no network at all. */
-function failure(error: unknown): string {
-  if (error instanceof ApiError && error.status < 500 && error.message !== '') return error.message
-  return UNREACHABLE
-}
+const failure = failureText
 
 const funnelBars = computed(() => {
   const stages = funnel.data.value?.stages ?? []

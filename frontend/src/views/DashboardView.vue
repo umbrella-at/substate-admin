@@ -18,7 +18,8 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { ApiError, type MeResponse } from '@/api/client'
+import { type MeResponse } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -55,15 +56,9 @@ watch(me, (fresh) => {
   if (fresh !== undefined) auth.adopt(fresh)
 })
 
-const UNREACHABLE = 'The service could not be reached.'
-
 /** What to put on screen when the load failed. A 401 never arrives here — the client's session
  *  hook has already navigated by then — so this is a 5xx, a rate limit, or no network at all. */
-const failure = computed(() => {
-  const cause = error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
-  return UNREACHABLE
-})
+const failure = computed(() => failureText(error.value))
 
 const permissions = computed(() => me.value?.permissions ?? [])
 
