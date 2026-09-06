@@ -155,6 +155,43 @@ describe('someone already signed in', () => {
   })
 })
 
+describe('a demonstration whose world is gone', () => {
+  /** A reload carrying a kept pass whose sandbox has been reaped. The 410 lands during the
+   *  opening exchange, before the router is installed, so the transport's own handler cannot
+   *  navigate on it and the store records it instead. */
+  function clientWithADeadSandbox(): ApiClient {
+    return {
+      refresh: async () => 'undeliverable' as const,
+      setDemoToken: () => undefined,
+      me: async () => {
+        throw new ApiError(410, { code: 'SANDBOX_GONE', message: 'That world is gone.' })
+      },
+    } as Partial<ApiClient> as ApiClient
+  }
+
+  // Decision 205, and the reason it is a rule rather than a preference: the sign-in page tells
+  // them to sign in again, and there was never an account to sign in to.
+  it('is not sent to the sign-in page', async () => {
+    globalThis.sessionStorage.setItem('substate.demo', 'a-kept-pass')
+    provideApiClient(clientWithADeadSandbox())
+
+    await router.replace('/subscribers')
+
+    expect(router.currentRoute.value.name).toBe('demo-ended')
+    globalThis.sessionStorage.clear()
+  })
+
+  it('does not bounce off the screen written for it', async () => {
+    globalThis.sessionStorage.setItem('substate.demo', 'a-kept-pass')
+    provideApiClient(clientWithADeadSandbox())
+
+    await router.replace('/demo-ended')
+
+    expect(router.currentRoute.value.name).toBe('demo-ended')
+    globalThis.sessionStorage.clear()
+  })
+})
+
 describe('a permission the visitor does not hold', () => {
   it('answers at the address that was asked for, marked forbidden', async () => {
     provideApiClient(clientFor(session(['users.read'])))

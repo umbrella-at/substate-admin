@@ -39,6 +39,7 @@ function stubClient(parts: Partial<ApiClient>): ApiClient {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  globalThis.sessionStorage.clear()
 })
 
 describe('bootstrap', () => {
@@ -130,6 +131,47 @@ describe('bootstrap', () => {
 
     expect(auth.ready).toBe(true)
     expect(auth.isAuthenticated).toBe(false)
+  })
+
+  // Decision 205: the sandbox and the pass end together, and the screen written for that moment
+  // is not the sign-in page — a demonstration visitor has no account to sign back in to. The 410
+  // arrives here, before the router exists, so the transport's own handler cannot navigate on it.
+  it('remembers that the world behind a kept pass is gone', async () => {
+    globalThis.sessionStorage.setItem('substate.demo', 'a-kept-pass')
+    const auth = useAuthStore()
+
+    await auth.bootstrap(
+      stubClient({
+        refresh: async () => 'undeliverable' as const,
+        setDemoToken: vi.fn(),
+        me: async () => {
+          throw new ApiError(410, { code: 'SANDBOX_GONE', message: 'That world is gone.' })
+        },
+      }),
+    )
+
+    expect(auth.demoEnded).toBe(true)
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.ready).toBe(true)
+  })
+
+  // Every other refusal is an ordinary anonymous arrival, and sending one of those to a screen
+  // that says a demonstration ended would describe something that never started.
+  it('does not call an expired pass a demonstration that ended', async () => {
+    globalThis.sessionStorage.setItem('substate.demo', 'a-kept-pass')
+    const auth = useAuthStore()
+
+    await auth.bootstrap(
+      stubClient({
+        refresh: async () => 'undeliverable' as const,
+        setDemoToken: vi.fn(),
+        me: async () => {
+          throw new ApiError(401, { code: 'TOKEN_EXPIRED', message: 'Expired.' })
+        },
+      }),
+    )
+
+    expect(auth.demoEnded).toBe(false)
   })
 
   it('gives up after five seconds and mounts anonymous', async () => {

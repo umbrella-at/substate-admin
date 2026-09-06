@@ -124,6 +124,12 @@ router.beforeEach(async (to) => {
   // signed-in person to the login page — a bug that looks like "the session did not survive".
   if (!auth.ready) await auth.bootstrap(apiClient())
 
+  // Before the sign-in redirect below, because it would otherwise catch this first. A pass whose
+  // world is gone is not somebody who needs to sign in; it is a demonstration that ended.
+  if (auth.demoEnded && to.name !== 'demo-ended') {
+    return { name: 'demo-ended', replace: true }
+  }
+
   const needsAuth = to.meta.requiresAuth !== false
 
   if (needsAuth && !auth.isAuthenticated) {
