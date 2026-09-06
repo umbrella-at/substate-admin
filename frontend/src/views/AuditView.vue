@@ -16,7 +16,7 @@
  * subscriber is a thing somebody sends to a colleague.
  */
 
-import { useQuery } from '@tanstack/vue-query'
+import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -54,6 +54,9 @@ const query = computed<AuditQuery>(() => auditQueryFromRoute(route.query))
 const result = useQuery<AuditPage>({
   queryKey: computed(() => ['audit', auditQueryKey(query.value)]),
   queryFn: ({ signal }) => client.audit(auditQueryToSearchParams(query.value), signal),
+  // The only paged list here that did not keep the last answer, so every filter click and every
+  // page turn threw the rows, the pager and the count away for a skeleton.
+  placeholderData: keepPreviousData,
 })
 
 const rows = computed(() => result.data.value?.items ?? [])
@@ -168,13 +171,17 @@ const failure = computed(() => failureText(result.error.value))
     </div>
 
     <template v-else>
-      <AuditTable
-        :rows="rows"
-        :live-world="liveWorld"
-        :busy="result.isFetching.value"
-        @filter-actor="(id: string) => go({ ...query, page: 1, actorUserId: id })"
-        @filter-target="(id: string) => go({ ...query, page: 1, targetId: id })"
-      />
+      <!-- Dimmed while a newer answer is on its way, like the other two tables: the rows on screen
+           are real and one question out of date, and only assistive tech was being told. -->
+      <div :class="result.isFetching.value ? 'opacity-60 transition-opacity' : ''">
+        <AuditTable
+          :rows="rows"
+          :live-world="liveWorld"
+          :busy="result.isFetching.value"
+          @filter-actor="(id: string) => go({ ...query, page: 1, actorUserId: id })"
+          @filter-target="(id: string) => go({ ...query, page: 1, targetId: id })"
+        />
+      </div>
 
       <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
         <p class="max-w-reading text-ui text-text-secondary">

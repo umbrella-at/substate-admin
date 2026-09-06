@@ -63,7 +63,7 @@ const health = {
   world: { id: 'base', seeded: true, subscribers: 351, events: 3791 },
 }
 
-async function render(answer: unknown = page()) {
+async function render(answer: unknown = page(), audit?: () => Promise<unknown>) {
   const wrapper = mount(AuditView, {
     global: {
       plugins: [
@@ -75,9 +75,11 @@ async function render(answer: unknown = page()) {
       ],
       provide: {
         [apiClientKey as symbol]: {
-          audit: vi.fn(() =>
-            answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer),
-          ),
+          audit:
+            audit ??
+            vi.fn(() =>
+              answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer),
+            ),
           health: vi.fn(async () => health),
         },
       },
@@ -256,5 +258,30 @@ describe('a row that outlives its world', () => {
 
     expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(0)
     expect(wrapper.text()).toContain('sub-0001')
+  })
+})
+
+/**
+ * The audit was the one paged list without `keepPreviousData`, so a filter click unmounted the
+ * table, the pager and the count and put the skeleton back — on a screen whose whole use is
+ * narrowing a list, and where the two sibling tables keep their rows and dim them instead.
+ */
+describe('changing a filter', () => {
+  it('keeps the rows it has while the next answer is on its way', async () => {
+    let answer: (value: AuditPage) => void = () => {}
+    const audit = vi
+      .fn<() => Promise<unknown>>()
+      .mockResolvedValueOnce(page())
+      .mockImplementationOnce(() => new Promise<AuditPage>((resolve) => (answer = resolve)))
+    const view = await render(page(), audit)
+    expect(view.text()).toContain('Recorded a payment')
+
+    routeQuery.value = { outcome: 'refused' }
+    await flushPromises()
+    await flushPromises()
+
+    expect(view.find('.skeleton').exists()).toBe(false)
+    expect(view.text()).toContain('Recorded a payment')
+    answer(page())
   })
 })
