@@ -96,6 +96,8 @@ async function render(
     detail?: Partial<SubscriberDetail>
     /** The catalogue the panel gets back. Empty stands for a request that failed. */
     plans?: PlanSummary[]
+    /** Neither catalogue ever answers, which is every card's first moment. */
+    catalogueStillAsked?: boolean
   } = {},
 ): Promise<ReturnType<typeof mount>> {
   const auth = useAuthStore()
@@ -120,7 +122,15 @@ async function render(
     attachTo: document.body,
     global: {
       plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
-      provide: { [apiClientKey as symbol]: client(options.plans ?? PLANS) },
+      provide: {
+        [apiClientKey as symbol]: options.catalogueStillAsked
+          ? {
+              plans: () => new Promise(() => {}),
+              referralPrograms: () => new Promise(() => {}),
+              operate,
+            }
+          : client(options.plans ?? PLANS),
+      },
     },
   })
   await flushPromises()
@@ -474,6 +484,17 @@ describe('what the form offers before it is pressed', () => {
     expect(button(wrapper, 'Change plan')?.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('The plan catalogue could not be read.')
   })
+
+  // A catalogue still in flight is not a catalogue that could not be read, and for the first
+  // moment of every card the panel named the second while the first was true.
+  it('does not report a catalogue that has not answered yet as one that failed', async () => {
+    const wrapper = await render({ catalogueStillAsked: true })
+
+    // The panel is there — otherwise this would pass by rendering nothing at all.
+    expect(wrapper.text()).toContain('Change plan')
+    expect(wrapper.text()).not.toContain('The plan catalogue could not be read.')
+    expect(wrapper.text()).not.toContain('The programme list could not be read.')
+  })
 })
 
 describe('what the answer says', () => {
@@ -497,6 +518,24 @@ describe('what the answer says', () => {
     }
 
     expect(operate).toHaveBeenCalledTimes(1)
+    release({ subscriber: detail(), events: [] })
+  })
+
+  // One operation at a time is right; six buttons announcing it is not. The card used to say
+  // "Cancelling the subscription…" on a button nobody had pressed while a payment was out.
+  it('announces the operation that is out, and only that one', async () => {
+    let release = (_: unknown) => {}
+    operate.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const wrapper = await render()
+
+    await form(wrapper, 'Record a payment')?.trigger('submit')
+    await vi.waitFor(() => expect(operate).toHaveBeenCalledTimes(1))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Recording the payment…')
+    expect(wrapper.text()).not.toContain('Cancelling the subscription…')
+    expect(wrapper.text()).not.toContain('Changing the plan…')
+    expect(wrapper.text()).not.toContain('Redeeming the code…')
     release({ subscriber: detail(), events: [] })
   })
 
