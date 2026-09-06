@@ -118,13 +118,20 @@ const reason = failureText
              and what a world nobody has ticked looks like. It says what would fill it, and names
              no direction: the operations panel is above this on a wide screen, below it on a
              narrow one, and absent entirely for somebody who may only read. -->
-        <p
-          v-else-if="feed.rows.value.length === 0"
-          class="max-w-reading text-ui text-text-secondary"
-        >
+        <p v-else-if="feed.total.value === 0" class="max-w-reading text-ui text-text-secondary">
           Nothing has happened to this subscription yet. An operation on this card, or the next time
           the world moves, will appear here.
         </p>
+
+        <!-- Not the same answer. Keyed on the page rather than on the history, this said nothing
+             had ever happened and took the pager away with it, one page past the end. -->
+        <div v-else-if="feed.rows.value.length === 0" class="flex flex-col items-start gap-3 py-4">
+          <p class="max-w-reading text-ui text-text-secondary">
+            There is no page {{ page }} of this history. It has {{ feed.total.value }} events on
+            {{ feed.pageCount.value }} pages.
+          </p>
+          <AppButton variant="outlined" @click="page = 1">Back to the first page</AppButton>
+        </div>
 
         <template v-else>
           <div :class="feed.isRefreshing.value ? 'opacity-60 transition-opacity' : ''">

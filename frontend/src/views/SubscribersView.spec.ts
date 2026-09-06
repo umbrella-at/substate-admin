@@ -135,10 +135,30 @@ describe('the four states', () => {
     expect(view.text()).toContain('1 subscriber')
   })
 
-  it('says an empty world is empty', async () => {
+  it('invites rather than reports absence when the world is empty', async () => {
     const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
     await flushPromises()
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
+  })
+
+  // Three different nothings, and only one of them is "there is nobody". This one used to borrow
+  // whichever of the other two sentences fitted, above a pager stating a total that contradicted
+  // both — and the pager hides its own buttons past the last page, so nothing led back.
+  it('says a page past the end is a page past the end, and offers the way back', async () => {
+    routeQuery.value = { page: '3' }
+    const view = render(() => Promise.resolve(page({ items: [], total: 48, page: 3 })))
+    await flushPromises()
+
+    expect(view.text()).toContain('There is no page 3')
+    expect(view.text()).toContain('48')
+    expect(view.text()).not.toContain('Nobody has subscribed in this world yet')
+    expect(view.text()).not.toContain('No subscribers match these filters')
+
+    const back = view.findAll('button').find((each) => each.text() === 'Back to the first page')
+    expect(back).toBeDefined()
+    await back!.trigger('click')
+    expect(push).toHaveBeenCalled()
+    expect(routeQuery.value['page']).toBeUndefined()
   })
 
   it('blames the filters when they are what emptied the table, and offers to clear them', async () => {
@@ -199,7 +219,7 @@ describe('the four states are a choice', () => {
     const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
     await flushPromises()
     expect(showing(view)).toEqual({ loading: false, failed: false, table: true })
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
   })
 })
 
@@ -266,7 +286,7 @@ describe('an empty table and an unbuilt world are not the same screen', () => {
     })
     await flushPromises()
     expect(view.text()).not.toContain('was not built')
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
   })
 })
 

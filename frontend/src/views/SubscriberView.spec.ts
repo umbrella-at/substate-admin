@@ -64,6 +64,12 @@ function feed(items: SubscriberEventPage['items'] = []): SubscriberEventPage {
   return { items, total: items.length, page: 1, pageSize: 25 }
 }
 
+/** A page of a history longer than itself, for the states that are about paging rather than about
+ *  what one event says. */
+function feedOf(items: SubscriberEventPage['items'], total: number): Promise<SubscriberEventPage> {
+  return Promise.resolve({ items, total, page: 1, pageSize: 25 })
+}
+
 const EVENT = {
   id: 'e-1',
   type: 'subscription.cancelled',
@@ -71,7 +77,12 @@ const EVENT = {
   payload: { accessUntil: '2026-10-16T00:00:00Z' },
 }
 
-async function render(over: { card?: unknown; events?: unknown } = {}) {
+type Events =
+  | SubscriberEventPage
+  | Error
+  | ((userId: string, params: URLSearchParams) => Promise<SubscriberEventPage>)
+
+async function render(over: { card?: unknown; events?: Events } = {}) {
   const wrapper = mount(SubscriberView, {
     global: {
       plugins: [
@@ -87,11 +98,12 @@ async function render(over: { card?: unknown; events?: unknown } = {}) {
               ? Promise.reject(over.card)
               : Promise.resolve(over.card ?? detail()),
           ),
-          subscriberEvents: vi.fn(() =>
-            over.events instanceof Error
+          subscriberEvents: vi.fn((userId: string, params: URLSearchParams) => {
+            if (typeof over.events === 'function') return over.events(userId, params)
+            return over.events instanceof Error
               ? Promise.reject(over.events)
-              : Promise.resolve(over.events ?? feed()),
-          ),
+              : Promise.resolve(over.events ?? feed())
+          }),
           plans: vi.fn(async () => []),
           referralPrograms: vi.fn(async () => []),
           operate: vi.fn(),
@@ -218,6 +230,33 @@ describe('the four states of the feed', () => {
 
     expect(wrapper.text()).toContain('Cancelled. Access runs to 16 Oct 2026.')
     expect(wrapper.text()).toContain('1 event')
+  })
+
+  // A page past the end is not an empty history. Keyed on the page rather than on the total, the
+  // feed claimed nothing had ever happened to somebody with sixty events, and took the pager away
+  // as it said so — leaving nothing on screen to press.
+  it('does not call a page past the end an empty history', async () => {
+    // Page-aware, so the state under test is one the component navigated to rather than one the
+    // stub asserted into existence: page two answers empty, and the total says it should not.
+    const wrapper = await render({
+      events: (_: string, params: URLSearchParams) =>
+        params.get('page') === '1'
+          ? feedOf(
+              Array.from({ length: 25 }, (_unused, index) => ({ ...EVENT, id: `e-${index}` })),
+              60,
+            )
+          : feedOf([], 60),
+    })
+
+    const next = wrapper.findAll('button').find((each) => each.text() === 'Next')
+    await next!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('There is no page 2 of this history')
+    expect(wrapper.text()).toContain('60 events')
+    expect(wrapper.text()).not.toContain('Nothing has happened to this subscription yet')
+    expect(wrapper.text()).toContain('Back to the first page')
   })
 
   // An invitation rather than a report of emptiness: it says what would put something here.

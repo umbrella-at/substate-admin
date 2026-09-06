@@ -76,6 +76,10 @@ function sortHref(field: SortField): RouteLocationRaw {
   }
 }
 
+/** A page number past the last one. The rows are empty and the total is not, so "nothing matches"
+ *  and "there is nobody here" are both false — and the pager beside them says so. */
+const pastTheEnd = computed(() => rows.value.length === 0 && total.value > 0)
+
 const hasFilters = computed(
   () =>
     query.value.states.length > 0 ||
@@ -137,15 +141,22 @@ const failure = computed(() => failureText(error.value))
         </div>
 
         <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
-          <p class="text-ui text-text-secondary">
+          <p class="max-w-reading text-ui text-text-secondary">
             {{
-              hasFilters
-                ? 'No subscribers match these filters.'
-                : 'This world has no subscribers yet.'
+              pastTheEnd
+                ? `There is no page ${query.page}. This question has ${total} of them on ${pageCount} pages.`
+                : hasFilters
+                  ? 'No subscribers match these filters.'
+                  : 'Nobody has subscribed in this world yet. The world goes on running, so the first arrival appears here without a reload.'
             }}
           </p>
+          <!-- The pager hides its own buttons past the last page, so without this there is nothing
+               on screen to press and the address is the only way back. -->
+          <AppButton v-if="pastTheEnd" variant="outlined" @click="go({ ...query, page: 1 })">
+            Back to the first page
+          </AppButton>
           <AppButton
-            v-if="hasFilters"
+            v-else-if="hasFilters"
             variant="outlined"
             @click="go({ ...EMPTY_QUERY, pageSize: query.pageSize })"
           >
