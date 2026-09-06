@@ -145,7 +145,14 @@ function toggleUrgency(): void {
 
   <!-- Named, so it is a landmark. There is a second form in the frame now — the clock control —
        and "the form on this page" stopped identifying anything. -->
-  <form class="flex flex-col gap-3" aria-label="Filters" @submit.prevent>
+
+  <!-- A panel, because the fields inside it are recessed into one: their fill is the page's own,
+       so laid straight on the page they survive as a rectangle of border and nothing else. -->
+  <form
+    class="flex flex-col gap-3 rounded-panel border border-border bg-surface-1 p-4"
+    aria-label="Filters"
+    @submit.prevent
+  >
     <div class="flex flex-wrap items-end gap-4">
       <div class="w-full max-w-form">
         <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
