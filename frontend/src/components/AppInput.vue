@@ -63,7 +63,7 @@ const id = useId()
       :aria-invalid="invalid ? 'true' : undefined"
       :aria-describedby="describedBy"
       class="mt-2 block w-full rounded-control border bg-surface-0 px-3 py-2 text-ui text-text-primary placeholder:text-text-muted"
-      :class="invalid ? 'border-danger-border' : 'border-border-strong'"
+      :class="invalid ? 'border-danger-border' : 'border-control-border'"
     />
   </div>
 </template>
