@@ -87,6 +87,7 @@ const save = useMutation({
 const remove = useMutation({
   mutationFn: (id: string) => client.deleteRole(id),
   onSuccess: async () => {
+    movedByAWrite = true
     selected.value = null
     await reload()
   },
@@ -99,15 +100,59 @@ const create = useMutation({
     creating.value = false
     draftCode.value = ''
     draftName.value = ''
+    movedByAWrite = true
     selected.value = made.id
     await reload()
   },
 })
 
+/** What the last write did, in the words of the button that did it. */
+
+/* Three writes had no answer at all: a delete removed a name, a save changed nothing visible, a
+   create closed a form. `Save role` has to come back as `Role saved`, and a delete that fails
+   had nowhere at all to say so. */
+const outcome = computed<{ role: 'success' | 'danger'; text: string } | null>(() => {
+  if (remove.error.value !== null) {
+    return { role: 'danger', text: failure(remove.error.value) }
+  }
+  if (remove.isSuccess.value) return { role: 'success', text: 'Role deleted.' }
+  if (create.isSuccess.value) return { role: 'success', text: 'Role created.' }
+  if (save.isSuccess.value) return { role: 'success', text: 'Role saved.' }
+  return null
+})
+
+/** Set by a write that moves the selection itself, so the reset below does not erase the sentence
+ *  that write has just produced. */
+let movedByAWrite = false
+
+/* A refusal belongs to the role it was refused on. Left standing, the previous role's failure
+   appeared over the next one, describing a save nobody had attempted there. */
+watch(selected, () => {
+  if (movedByAWrite) {
+    movedByAWrite = false
+    return
+  }
+  save.reset()
+  remove.reset()
+  create.reset()
+})
+
+/* And to the form that produced it: an emptied form reopened wearing the last attempt's refusal. */
+watch(creating, () => {
+  create.reset()
+  attemptedNewRole.value = false
+})
+
+/** Whether `Create role` has been pressed on this form. An empty code is not a refusal to report
+ *  before anybody has asked for anything — and it was not one afterwards either, so the button
+ *  named for what would happen did nothing and said nothing. */
+const attemptedNewRole = ref(false)
+
 const newRoleError = computed(() => {
   if (create.error.value !== null) return failure(create.error.value)
   const parsed = roleForm.safeParse({ code: draftCode.value, name: draftName.value })
-  if (parsed.success || draftCode.value === '') return undefined
+  if (parsed.success) return undefined
+  if (draftCode.value === '' && !attemptedNewRole.value) return undefined
   return parsed.error.issues[0]?.message
 })
 
@@ -122,6 +167,7 @@ function onRemove(): void {
 }
 
 function submitNew(): void {
+  attemptedNewRole.value = true
   const parsed = roleForm.safeParse({ code: draftCode.value, name: draftName.value })
   if (!parsed.success) return
   create.mutate(parsed.data)
@@ -221,6 +267,16 @@ function submitNew(): void {
         </template>
 
         <template v-else>
+          <!-- Where the result of a write appears, because the panel is what owns all three
+               buttons. A refusal about the values stays beside the fields it is about. -->
+          <AppNotice
+            v-if="outcome !== null"
+            :role="outcome.role"
+            :assertive="outcome.role === 'danger'"
+          >
+            {{ outcome.text }}
+          </AppNotice>
+
           <form v-if="creating" class="flex max-w-form flex-col gap-4" @submit.prevent="submitNew">
             <AppInput v-model="draftCode" label="Code" placeholder="analysts" />
             <AppInput v-model="draftName" label="Name" placeholder="Analysts" />
@@ -237,7 +293,11 @@ function submitNew(): void {
             </div>
           </form>
 
-          <ul class="flex flex-wrap gap-2">
+          <p v-if="items.length === 0" class="max-w-reading text-ui text-text-secondary">
+            There are no roles yet. Create one, and everyone it is given to may do what it grants.
+          </p>
+
+          <ul v-else class="flex flex-wrap gap-2">
             <li v-for="each in items" :key="each.id">
               <AppButton
                 :variant="each.id === selected ? 'outlined' : 'plain'"
