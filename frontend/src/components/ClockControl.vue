@@ -22,12 +22,13 @@ import { ApiError } from '@/api/client'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
+import AppNotice from '@/components/AppNotice.vue'
 import { useWorldClock } from '@/composables/useWorldClock'
 import { daysWound, modelClock, modelDate } from '@/domain/clock'
 
 const client = useApiClient()
 const queryClient = useQueryClient()
-const { now, offsetMs, isSandbox, data: reading, isError } = useWorldClock()
+const { now, offsetMs, isSandbox, data: reading } = useWorldClock()
 
 const busy = ref(false)
 const refusal = ref('')
@@ -117,14 +118,9 @@ async function wind(days: number): Promise<void> {
       </AppButton>
     </form>
 
-    <p v-if="refusal !== ''" class="mt-2 text-caption text-danger-text" role="status">
-      {{ refusal }}
-    </p>
-
-    <!-- A reading that never arrived is not a world at zero, and the difference matters: every
-         relative time on every screen is measured against this. -->
-    <p v-else-if="isError" class="mt-2 text-caption text-warning-text" role="status">
-      This world's clock could not be read, so the times on screen are your own.
-    </p>
+    <!-- The one notice shape, like every other refusal in the application. The clock-read warning
+         that used to be chained behind this one now sits in the frame, where everyone can see it
+         — it is about every time on the page, and this control is drawn for hardly anybody. -->
+    <AppNotice v-if="refusal !== ''" role="danger" class="mt-2">{{ refusal }}</AppNotice>
   </section>
 </template>

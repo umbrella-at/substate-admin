@@ -14,6 +14,8 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import AppButton from '@/components/AppButton.vue'
+import AppNotice from '@/components/AppNotice.vue'
 import ClockControl from '@/components/ClockControl.vue'
 import { useWorldClock } from '@/composables/useWorldClock'
 import type { PermissionCode } from '@/domain/permissions'
@@ -25,7 +27,10 @@ const route = useRoute()
 /* READ HERE, NOT IN THE CONTROL, because the control is drawn only for whoever may press it.
    `support` and `viewer` hold no `demo.control` — so once anybody winds the base world, their
    Last active column measures against their own browser and reads "just now" for everybody. */
-useWorldClock()
+
+/* And SAID here for the same reason. A reading that never arrived is a fact about every time on
+   the page, and it was announced only inside the control that most operators never see. */
+const clock = useWorldClock()
 
 interface Destination {
   name: string
@@ -85,6 +90,15 @@ const visible = computed(() =>
     </nav>
 
     <div class="min-w-0 flex-1">
+      <!-- Warning rather than danger: the screen still works and every absolute time on it is
+           right. What is wrong is the relative ones, and the sentence says which. -->
+      <div v-if="clock.isError.value" class="flex flex-col items-start gap-3 px-6 pt-6">
+        <AppNotice role="warning">
+          This world's clock could not be read, so the times on screen are measured against your own
+          rather than against the world's.
+        </AppNotice>
+        <AppButton variant="outlined" @click="() => void clock.refetch()">Try again</AppButton>
+      </div>
       <slot />
     </div>
   </div>

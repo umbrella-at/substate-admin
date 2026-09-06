@@ -6,7 +6,7 @@
  */
 
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import { mount, RouterLinkStub } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
@@ -31,14 +31,37 @@ vi.mock('vue-router', async (importOriginal) => ({
 const asked = vi.fn(() => new Promise(() => {}))
 const stillThinking = { clock: asked }
 
-function render() {
+function render(client: unknown = stillThinking) {
   return mount(AppShell, {
     global: {
-      plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
-      provide: { [apiClientKey as unknown as string]: stillThinking },
+      plugins: [
+        [
+          VueQueryPlugin,
+          { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+        ],
+      ],
+      provide: { [apiClientKey as unknown as string]: client },
       stubs: { RouterLink: RouterLinkStub, ClockControl: true },
     },
   })
+}
+
+/** A session, because every query mounted in the frame is guarded on one. */
+function signIn(code: string) {
+  const auth = useAuthStore()
+  auth.adopt({
+    kind: 'user',
+    permissions: [],
+    role: { code, name: code },
+    user: {
+      createdAt: '2026-01-01T00:00:00Z',
+      email: `${code}@example.com`,
+      id: '00000000-0000-0000-0000-000000000000',
+      isActive: true,
+      lastLoginAt: null,
+    },
+  })
+  return auth
 }
 
 beforeEach(() => {
@@ -96,5 +119,40 @@ describe('the world the frame is showing', () => {
     render()
 
     expect(asked).toHaveBeenCalled()
+  })
+
+  // Said in the frame for the same reason it is read there. The sentence used to live inside the
+  // control, so the two roles that cannot see the control were the two that got no warning at all
+  // — and they are the ones whose every relative time would quietly be measured against Chrome.
+  it('says so to somebody who cannot see the clock control', async () => {
+    const auth = signIn('viewer')
+    vi.spyOn(auth, 'can').mockReturnValue(false)
+
+    const wrapper = render({
+      clock: vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain("This world's clock could not be read")
+    expect(wrapper.text()).toContain('Try again')
+  })
+
+  it('says nothing when the reading arrives', async () => {
+    const auth = signIn('viewer')
+    vi.spyOn(auth, 'can').mockReturnValue(false)
+
+    const wrapper = render({
+      clock: vi.fn(async () => ({
+        now: '2026-09-06T00:00:00Z',
+        offsetSeconds: 0,
+        isSandbox: false,
+        daysLeft: 365,
+      })),
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain("This world's clock could not be read")
   })
 })
