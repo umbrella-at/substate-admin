@@ -35,6 +35,7 @@ AuditAction = Literal[
     "role.create",
     "role.update",
     "role.delete",
+    "world.advance",
 ]
 """What was asked for, named as the button names it.
 
@@ -46,8 +47,9 @@ being different is what makes that readable rather than confusing.
 
 AUDIT_ACTIONS: Final[tuple[AuditAction, ...]] = get_args(AuditAction)
 
-TargetType = Literal["subscription", "role"]
-"""What the row is about. A subscription lives in a world; a role lives in this panel."""
+TargetType = Literal["subscription", "role", "world"]
+"""What the row is about. A subscription lives in a world; a role lives in this panel; a world is
+the thing the time machine moves, and moving it changes every number on every screen."""
 
 OK: Final = "ok"
 REFUSED: Final = "refused"

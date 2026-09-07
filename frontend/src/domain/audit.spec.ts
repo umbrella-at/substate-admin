@@ -45,9 +45,9 @@ describe('the action vocabulary', () => {
     expect(Object.keys(ACTION_LABEL).sort()).toEqual([...AUDIT_ACTIONS].sort())
   })
 
-  // Subscription operations first, in the order an operator reaches for them, and the role edits
-  // after: those are rare and are looked for on purpose rather than scanned past.
-  it('offers the operations first and the role edits last', () => {
+  // Subscription operations first, in the order an operator reaches for them, then the role edits
+  // and the clock: those are rare and are looked for on purpose rather than scanned past.
+  it('offers the operations first and the rare things last', () => {
     expect([...AUDIT_ACTIONS]).toEqual([
       'subscription.payment',
       'subscription.cancel',
@@ -58,6 +58,7 @@ describe('the action vocabulary', () => {
       'role.create',
       'role.update',
       'role.delete',
+      'world.advance',
     ])
   })
 })
@@ -145,5 +146,19 @@ describe('the address is the question', () => {
     ['an operator', { ...EMPTY_AUDIT_QUERY, actorUserId: 'u-1' }, true],
   ])('knows a question narrowed by %s', (_name, query, narrowed) => {
     expect(hasAuditFilters(query as AuditQuery)).toBe(narrowed)
+  })
+})
+
+/** Decision 220 left this undone and the estimate was pessimistic: `target_type` is free text, so
+ *  there was no migration, and the two totals above are what makes a half-done addition a type
+ *  error rather than a raw code in a column. */
+describe('winding the clock', () => {
+  it('says how far it was asked to go', () => {
+    expect(requested(entry({ action: 'world.advance', payload: { days: 30 } }))).toBe('30 days')
+    expect(requested(entry({ action: 'world.advance', payload: { days: 1 } }))).toBe('1 day')
+  })
+
+  it('says nothing rather than something wrong when the payload is not a distance', () => {
+    expect(requested(entry({ action: 'world.advance', payload: {} }))).toBe('')
   })
 })

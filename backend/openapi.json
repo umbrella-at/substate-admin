@@ -70,7 +70,8 @@
               "subscription.assign_program",
               "role.create",
               "role.update",
-              "role.delete"
+              "role.delete",
+              "world.advance"
             ],
             "title": "Action",
             "type": "string"
@@ -118,7 +119,8 @@
           "targetType": {
             "enum": [
               "subscription",
-              "role"
+              "role",
+              "world"
             ],
             "title": "Targettype",
             "type": "string"
@@ -2138,7 +2140,8 @@
                   "subscription.assign_program",
                   "role.create",
                   "role.update",
-                  "role.delete"
+                  "role.delete",
+                  "world.advance"
                 ],
                 "type": "string"
               },
