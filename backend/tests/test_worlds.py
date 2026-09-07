@@ -31,7 +31,13 @@ from substate import (
     SubscriptionCreated,
 )
 
-from app.worlds.bootstrap import build_base_world
+from app.worlds.bootstrap import (
+    BaseWorldStatus,
+    base_world_status,
+    build_base_world,
+    repair_base_world,
+    set_base_world_status,
+)
 from app.worlds.journal import flush_world, purge_world
 from app.worlds.registry import (
     BASE_WORLD_ID,
@@ -316,3 +322,57 @@ async def test_a_world_that_failed_to_seed_leaves_nothing_for_the_ticker_to_writ
     assert world.sink.pending == []
     assert world.sink.then is None
     reset_registry()
+
+
+async def test_a_start_that_could_not_reach_the_database_is_repairable() -> None:
+    """DECISION 220 CALLED THIS A KNOWN LIMITATION and it was larger than it admitted: the seed
+    and the sweep of dead sandboxes' rows share one transaction, so a database unreachable for the
+    second the process started lost both — and nothing tried again.
+
+    What that left was a service answering 200 to everything with an empty shop window until a
+    human restarted it. Building again has to work on the same registry, replacing the world the
+    failed attempt left in it.
+    """
+    reset_registry()
+    registry = get_registry()
+    nowhere = create_async_engine("postgresql+psycopg://nobody@127.0.0.1:5999/nothing")
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    try:
+        _, failed = await build_base_world(registry, nowhere, days=2)
+        assert failed.seeded is False
+
+        _, repaired = await build_base_world(registry, engine, days=2)
+
+        assert repaired.seeded is True
+        assert repaired.subscribers > 0
+        # The world the panel reads is the repaired one, not the husk the first attempt left.
+        assert registry.require(BASE_WORLD_ID).seeded is True
+    finally:
+        async with engine.begin() as connection:
+            await purge_world(connection, BASE_WORLD_ID)
+        await engine.dispose()
+        reset_registry()
+
+
+async def test_the_repair_runs_only_while_there_is_nothing_to_show() -> None:
+    """It costs a second of the only worker, so it must not run once a minute forever."""
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    reset_registry()
+    registry = get_registry()
+    before = base_world_status()
+    try:
+        set_base_world_status(BaseWorldStatus(seeded=True, subscribers=1, events=1))
+        assert await repair_base_world(registry, engine) is None
+
+        set_base_world_status(BaseWorldStatus(seeded=False, error="OperationalError"))
+        status = await repair_base_world(registry, engine)
+
+        assert status is not None
+        assert status.seeded is True
+        assert base_world_status().seeded is True
+    finally:
+        set_base_world_status(before)
+        async with engine.begin() as connection:
+            await purge_world(connection, BASE_WORLD_ID)
+        await engine.dispose()
+        reset_registry()

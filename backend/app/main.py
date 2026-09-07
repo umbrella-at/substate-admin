@@ -41,7 +41,7 @@ from app.routers import (
     subscribers,
     users,
 )
-from app.worlds.bootstrap import build_base_world, set_base_world_status
+from app.worlds.bootstrap import build_base_world, repair_base_world, set_base_world_status
 from app.worlds.journal import flush_world, purge_sandbox
 from app.worlds.registry import World, get_registry
 from app.worlds.ticker import ticking
@@ -89,11 +89,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             await flush_world(connection, world)
 
     async def collect() -> int:
-        """Take back the sandboxes whose time is up, with their rows.
+        """Take back the sandboxes whose time is up, with their rows — and repair a start that
+        could not reach the database.
 
         Handed to the ticker rather than run as a task of its own: two loops would interleave, and
         a world dropped mid-round is a world the recorder above writes rows for after it is gone.
+        The repair rides here because the ticker already survives a failure of this callback.
         """
+        await repair_base_world(registry, get_engine())
 
         async def purge(world_id: str) -> None:
             async with get_engine().begin() as connection:
