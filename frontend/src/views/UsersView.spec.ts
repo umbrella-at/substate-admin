@@ -88,11 +88,22 @@ type Answers = {
 
 function render(over: Answers = {}) {
   useAuthStore().adopt(me(over.holds ?? ['users.read', 'users.write']))
+  // The list a delete really shrinks. Stubbed to return the same rows every time, a delete never
+  // moved the selection a second time, and the sentence it erases was never put under pressure.
+  const gone = new Set<string>()
   const client = {
     users: over.users ?? (() => Promise.resolve(USERS)),
-    roles: over.roles ?? (() => Promise.resolve(ROLES)),
+    roles:
+      over.roles ??
+      (() => Promise.resolve({ ...ROLES, items: ROLES.items.filter((r) => !gone.has(r.id)) })),
     replaceRole: vi.fn(() => Promise.resolve(ROLES.items[1]!)),
-    deleteRole: vi.fn(over.deleteRole ?? (() => Promise.resolve(null))),
+    deleteRole: vi.fn(
+      over.deleteRole ??
+        ((id: string) => {
+          gone.add(id)
+          return Promise.resolve(null)
+        }),
+    ),
     createRole: vi.fn(over.createRole ?? (() => Promise.resolve(ROLES.items[1]!))),
     me: vi.fn(() =>
       Promise.resolve(me(over.holdsAfterWrite ?? over.holds ?? ['users.read', 'users.write'])),
@@ -291,13 +302,31 @@ describe('what a write answers', () => {
     expect(view.text()).toContain('Role saved.')
   })
 
-  it('says the role was deleted', async () => {
+  // With a list that really shrinks, which is the case that erased this sentence: the watcher
+  // picking the first survivor moved the selection a second time and reset the mutation.
+  it('says the role was deleted, on a list that really loses it', async () => {
     const view = render()
     await flushPromises()
     await selectAnalysts(view)
     await deleteTheRole(view)
+    await flushPromises()
 
     expect(view.text()).toContain('Role deleted.')
+    expect(view.text()).not.toContain('Analysts')
+  })
+
+  // And the third, which closing the form used to take with it.
+  it('says the role was created', async () => {
+    const view = render()
+    await flushPromises()
+    await press(view, 'New role')
+    await view.findAll('input').at(0)!.setValue('analysts')
+    await view.findAll('input').at(1)!.setValue('Analysts')
+    await view.find('form').trigger('submit')
+    await flushPromises()
+    await flushPromises()
+
+    expect(view.text()).toContain('Role created.')
   })
 
   // The one write whose failure was read nowhere at all.

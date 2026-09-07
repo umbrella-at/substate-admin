@@ -61,7 +61,12 @@ const catalogue = computed(() => roles.data.value?.permissions ?? [])
 
 // The first role, once there is one, so the editor is never an empty panel beside a full list.
 watch(items, (all) => {
-  if (selected.value === null && all[0] !== undefined) selected.value = all[0].id
+  if (selected.value === null && all[0] !== undefined) {
+    // A delete lands here: it clears the selection, the list shrinks, and this picks the first
+    // survivor. That is the write moving the selection again, not somebody choosing a role.
+    movedByAWrite = outcome.value !== null
+    selected.value = all[0].id
+  }
 })
 
 const role = computed<RoleDetail | undefined>(() =>
@@ -81,12 +86,19 @@ async function reload(): Promise<void> {
 const save = useMutation({
   mutationFn: (body: { id: string; name: string; permissions: string[] }) =>
     client.replaceRole(body.id, { name: body.name, permissions: body.permissions }),
-  onSuccess: reload,
+  onSuccess: async () => {
+    answered('Role saved.')
+    await reload()
+  },
 })
 
 const remove = useMutation({
   mutationFn: (id: string) => client.deleteRole(id),
+  onError: refused,
   onSuccess: async () => {
+    answered('Role deleted.')
+    // The list is about to lose a role, so the watcher that picks the first survivor will move
+    // the selection a second time. Latched here and in that watcher, not once.
     movedByAWrite = true
     selected.value = null
     await reload()
@@ -97,6 +109,7 @@ const create = useMutation({
   mutationFn: (body: { code: string; name: string }) =>
     client.createRole({ ...body, permissions: [] }),
   onSuccess: async (made: RoleDetail) => {
+    answered('Role created.')
     creating.value = false
     draftCode.value = ''
     draftName.value = ''
@@ -109,35 +122,38 @@ const create = useMutation({
 /** What the last write did, in the words of the button that did it. */
 
 /* Three writes had no answer at all: a delete removed a name, a save changed nothing visible, a
-   create closed a form. `Save role` has to come back as `Role saved`, and a delete that fails
-   had nowhere at all to say so. */
-const outcome = computed<{ role: 'success' | 'danger'; text: string } | null>(() => {
-  if (remove.error.value !== null) {
-    return { role: 'danger', text: failure(remove.error.value) }
-  }
-  if (remove.isSuccess.value) return { role: 'success', text: 'Role deleted.' }
-  if (create.isSuccess.value) return { role: 'success', text: 'Role created.' }
-  if (save.isSuccess.value) return { role: 'success', text: 'Role saved.' }
-  return null
-})
+   create closed a form. `Save role` has to come back as `Role saved`. */
 
-/** Set by a write that moves the selection itself, so the reset below does not erase the sentence
- *  that write has just produced. */
-let movedByAWrite = false
+/* HELD, NOT DERIVED. Read off `isSuccess`, two of the three sentences were erased before a frame
+   could show them: the watchers below reset the mutation that had just succeeded — one when the
+   form closed, one when the list lost a role and the selection moved to the survivor. */
+const outcome = ref<{ role: 'success' | 'danger'; text: string } | null>(null)
 
-/* A refusal belongs to the role it was refused on. Left standing, the previous role's failure
-   appeared over the next one, describing a save nobody had attempted there. */
+function answered(text: string): void {
+  outcome.value = { role: 'success', text }
+}
+
+function refused(cause: unknown): void {
+  outcome.value = { role: 'danger', text: failure(cause) }
+}
+
+/* A refusal belongs to the role it was refused on, and an answer to the write that produced it.
+   Left standing, the previous role's failure appeared over the next one. */
 watch(selected, () => {
   if (movedByAWrite) {
     movedByAWrite = false
     return
   }
+  outcome.value = null
   save.reset()
-  remove.reset()
-  create.reset()
 })
 
-/* And to the form that produced it: an emptied form reopened wearing the last attempt's refusal. */
+/** Set by a write that moves the selection itself, so the reset above does not erase the sentence
+ *  that write has just produced. */
+let movedByAWrite = false
+
+/* And to the form that produced it: an emptied form reopened wearing the last attempt's refusal.
+   The answer is not reset here — closing the form is how a successful create ends. */
 watch(creating, () => {
   create.reset()
   attemptedNewRole.value = false
@@ -158,16 +174,19 @@ const newRoleError = computed(() => {
 
 function onSave(body: { name: string; permissions: string[] }): void {
   const id = role.value?.id
+  outcome.value = null
   if (id !== undefined) save.mutate({ id, ...body })
 }
 
 function onRemove(): void {
   const id = role.value?.id
+  outcome.value = null
   if (id !== undefined) remove.mutate(id)
 }
 
 function submitNew(): void {
   attemptedNewRole.value = true
+  outcome.value = null
   const parsed = roleForm.safeParse({ code: draftCode.value, name: draftName.value })
   if (!parsed.success) return
   create.mutate(parsed.data)
