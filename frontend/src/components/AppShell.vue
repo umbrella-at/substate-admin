@@ -89,11 +89,11 @@ const visible = computed(() =>
 </script>
 
 <template>
-  <div class="flex min-h-screen">
-    <!-- The sidebar shrinks below `sm` rather than holding 240px of a 375px screen, which left
-         the content column 135px wide. The links wrap; nothing is hidden behind a menu. -->
+  <!-- STACKED BELOW `sm`, not narrowed. A 240px column of a 375px screen leaves 135px of table;
+       taking the width off instead made the nav max-content and it grew to 295px. -->
+  <div class="flex min-h-screen flex-col sm:flex-row">
     <nav
-      class="shrink-0 border-r border-border bg-surface-1 p-4 sm:w-sidebar"
+      class="shrink-0 border-b border-border bg-surface-1 p-4 sm:w-sidebar sm:border-r sm:border-b-0"
       aria-label="Sections"
     >
       <span class="block px-3 py-2 text-heading text-text-primary">substate</span>
@@ -114,7 +114,7 @@ const visible = computed(() =>
            and refused is an invitation to a locked door. -->
       <ClockControl v-if="auth.can('demo.control')" />
 
-      <!-- Whose session this is, and how to end it. Outlined, not filled: the last thing anybody
+      <!-- Whose session this is, and how to end it. Plain, not filled: the last thing anybody
            here means to do must not be the loudest thing on the screen. -->
       <div class="mt-6 flex flex-col items-start gap-2 border-t border-border pt-4">
         <p class="px-3 text-caption text-text-muted">{{ auth.user?.email }}</p>

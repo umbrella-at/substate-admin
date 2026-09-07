@@ -585,13 +585,16 @@ the retry beside it, because the usual cause is the network and the usual fix is
 Under `prefers-reduced-motion` the skeleton does not pulse. It stays flat on `--skeleton-base`
 **and gains a `1px` outline in `--control-border`**, which is what makes it visible rather than
 what makes it pretty: with the motion gone, the fill alone is 1.72:1 against the panel, and the
-outline is 3.10:1 against that same panel. The earlier version of this paragraph asserted the flat
+outline is 3.52:1 against that same panel. The earlier version of this paragraph asserted the flat
 fill "is still visibly a placeholder", which was not true and was never measured — a reader who
 had asked for less motion got an apparently empty panel instead of a loading one.
 
 ## Layout
 
-Sidebar `240px`, fixed. Content fills the rest with `24px` page padding.
+**Sidebar `240px` beside the content, and above it below `640px`.** The frame stacks rather than
+narrows: a `240px` column of a `375px` screen leaves `135px` of table, and taking the width off
+instead lets the navigation grow to its widest child. Content fills the rest with `24px` page
+padding.
 
 | Token | Value | Where |
 |---|---|---|
@@ -624,8 +627,14 @@ rather than pushing anything.
 
 **A table row is `py-3` on the cell and whatever its content is tall.** Not a number: the
 Subscriber cell stacks a `14px` name over a `12px` identifier, which makes the row about `68px`,
-and a row height of `40px` would have to cut one of those two lines. Every cell in every table is
-`px-4 py-3`, so two tables are the same height by construction rather than by agreement.
+and a row height of `40px` would have to cut one of those two lines. The three tables that carry
+the panel's data — subscribers, the event feed, the audit — are `px-4 py-3` on every cell, so they
+are the same height by construction rather than by agreement.
+
+The operators list on the users screen is not one of them and does not follow it: it is two
+columns inside a `16px` panel, so `px-4` would inset it from a padding it already has, and it uses
+`py-2` with no horizontal padding at all. Named here because an exception nobody wrote down is an
+exception the next reader takes for a mistake.
 
 This replaces three numbers — a `40px` row, a `34px` header, `14px` of horizontal padding — that
 were written before any table existed and that nothing ever implemented. The last of them was not
@@ -633,7 +642,7 @@ even on the spacing scale.
 
 ## Signature element
 
-The time machine, and it is a `208px` panel at the foot of the navigation rather than anything
+The time machine, and it is a `207px` panel at the foot of the navigation rather than anything
 that could be called a hero. That is the first thing to say about it, because the sentence this
 section replaced promised boldness and the obvious way to deliver it — a filled accent button —
 is the one thing this control may not have. It lives in the frame, so a fill here would be a
@@ -644,6 +653,7 @@ So the boldness is spent on the reading, which is what the control is actually a
 | Part | Value |
 |---|---|
 | the panel | `--surface-2`, `8px` radius, `12px` padding, `24px` clear of the links above |
+| its width | `207px` — the sidebar's `240px` less its own `1px` edge and the navigation's `16px` either side |
 | its left edge, once wound | `2px` `--accent-text` — absent at today |
 | the source line | `12px`, `--text-muted`: *Your world* in a sandbox, *The demonstration world* in the base one |
 | the date | `20px` MONO, `--text-primary` — the largest type anywhere in the frame |
@@ -723,7 +733,7 @@ a month, and nobody can tell which half. So:
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
 | a dialog's edge is measured against what is behind it | `scripts/contrast.py` composites `--scrim` over both surfaces and measures the outline on the result |
 | a colour reaches a canvas from this file | `scripts/colours.py` reads every `.ts`, `.vue` and `.css` under `frontend/src` bar the palette itself, and fails on a colour literal or on a token name the stylesheet does not declare |
-| the states page ships to nobody | `scripts/check-design.sh` greps the built bundle for `/dev/states`, which is routed inside `import.meta.env.DEV` |
+| the states page ships to nobody | `scripts/check-design.sh` greps the built bundle for `/dev/states` and for the page's own heading, both of which are folded away with the route |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
 

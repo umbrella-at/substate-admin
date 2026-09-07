@@ -188,10 +188,16 @@ describe('signing out', () => {
     return wrapper.findAll('button').find((each) => each.text().startsWith('Sign out'))
   }
 
-  it('is offered from every screen, not from one of them', () => {
+  // Awaited, or the assertion reads the DOM rendered at the route the mount started on — which
+  // is the dashboard, the one screen the control was already on before this was fixed.
+  it('is offered from every screen, not from one of them', async () => {
     const { wrapper } = withSession()
-    routeName.value = 'subscribers'
-    expect(theButton(wrapper)).toBeDefined()
+
+    for (const screen of ['subscribers', 'analytics', 'audit', 'users']) {
+      routeName.value = screen
+      await flushPromises()
+      expect(theButton(wrapper), screen).toBeDefined()
+    }
   })
 
   it('is not the loudest control in the frame', () => {
