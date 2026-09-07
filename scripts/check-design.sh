@@ -92,6 +92,21 @@ else
     fi
 fi
 
+echo "the development-only page:"
+# Decision 8 puts /dev/states in the development build only, and the route sits inside
+# `import.meta.env.DEV` so the bundler folds it away.
+
+# That is a promise about a build, and nothing else can see it broken: an accidental static import
+# would ship the page, its fixtures and every screen they pull in, and the application would go on
+# working perfectly.
+if [ -z "$css" ]; then
+    : # already reported by the staleness guard
+elif grep -rqF 'Four states, on purpose' frontend/dist/assets/*.js 2> /dev/null; then
+    fail "frontend/src/views/DevStatesView.vue" "the /dev/states page is in the production bundle; it is development-only by decision 8"
+else
+    ok "the /dev/states page is absent from the production bundle"
+fi
+
 echo "one palette:"
 # Adding a shadcn component re-runs a generator that writes colour values, and its instinct is to
 # put a full light-and-dark palette back into the stylesheet. Nothing would look wrong: the second

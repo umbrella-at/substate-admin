@@ -272,3 +272,16 @@ describe('safeNext', () => {
     expect(safeNext(undefined)).toBeNull()
   })
 })
+
+/** The page the four-state rule is specified through. It is dev-only by construction — the route
+ *  is inside `import.meta.env.DEV`, which the build folds away — so this can only assert the half
+ *  it is running in. The other half is asserted against the built bundle by check-design.sh. */
+describe('the development-only states page', () => {
+  it('is reachable without a session in a development build', async () => {
+    provideApiClient(clientFor(null))
+
+    await router.replace('/dev/states')
+
+    expect(router.currentRoute.value.name).toBe('dev-states')
+  })
+})
