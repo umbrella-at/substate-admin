@@ -44,12 +44,21 @@ const emit = defineEmits<{ go: [number] }>()
     </p>
 
     <div v-if="pageCount > 1" class="flex gap-2">
-      <AppButton variant="outlined" :disabled="page <= 1 || busy" @click="emit('go', page - 1)">
+      <!-- `busy` is not `disabled`, which is docs/design.md's rule rather than a preference: a
+           control greyed out for the length of a request and back reads as a flinch. What says a
+           newer answer is coming is the table dimming beside these, not the buttons dying. -->
+      <AppButton
+        variant="outlined"
+        :busy="busy"
+        :disabled="page <= 1"
+        @click="emit('go', page - 1)"
+      >
         Previous
       </AppButton>
       <AppButton
         variant="outlined"
-        :disabled="page >= pageCount || busy"
+        :busy="busy"
+        :disabled="page >= pageCount"
         @click="emit('go', page + 1)"
       >
         Next

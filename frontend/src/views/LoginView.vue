@@ -207,13 +207,9 @@ async function submit(): Promise<void> {
       <h1 class="text-title text-text-primary">Sign in</h1>
       <p class="mt-2 text-ui text-text-secondary">The substate admin panel.</p>
 
-      <p
-        v-if="expired"
-        class="mt-4 rounded-control border border-warning-border bg-warning-bg px-3 py-2 text-ui text-warning-text"
-        role="status"
-      >
+      <AppNotice v-if="expired" role="warning" class="mt-4">
         Your session ended. Sign in again to carry on where you were.
-      </p>
+      </AppNotice>
 
       <div class="mt-6 grid gap-4">
         <AppInput

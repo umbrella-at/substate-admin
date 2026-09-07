@@ -51,7 +51,7 @@ const id = useId()
 
 <template>
   <div>
-    <label :for="id" class="block text-dense text-text-secondary">{{ label }}</label>
+    <label :for="id" class="block text-caption text-text-secondary">{{ label }}</label>
     <input
       :id="id"
       v-model="model"
