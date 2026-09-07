@@ -97,7 +97,7 @@
 1 11 frontend/src/components/SubscriberFeed.vue
 6 37 frontend/src/components/SubscriberOperations.spec.ts
 8 62 frontend/src/components/SubscriberOperations.vue
-5 44 frontend/src/components/SubscribersFilters.vue
+4 40 frontend/src/components/SubscribersFilters.vue
 5 28 frontend/src/components/SubscribersTable.spec.ts
 7 61 frontend/src/components/SubscribersTable.vue
 1 7 frontend/src/components/TablePager.vue

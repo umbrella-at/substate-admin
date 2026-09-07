@@ -16,13 +16,6 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { STATE_APPEARANCE } from '@/domain/states'
 import {
   COHORTS,
@@ -116,8 +109,8 @@ function toggleState(state: SubscriptionState): void {
  *  "Everyone" belongs. */
 const EVERYONE = 'everyone'
 
-function onCohort(value: unknown): void {
-  apply({ cohort: value === EVERYONE || typeof value !== 'string' ? null : (value as Cohort) })
+function onCohort(value: string): void {
+  apply({ cohort: value === EVERYONE ? null : (value as Cohort) })
 }
 
 function togglePlan(planId: string): void {
@@ -169,30 +162,35 @@ function toggleUrgency(): void {
     aria-label="Filters"
     @submit.prevent
   >
-    <div class="flex flex-wrap items-end gap-4">
-      <div class="w-full max-w-form">
-        <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
-      </div>
-
-      <label class="flex flex-col gap-2 text-caption text-text-secondary">
-        Cohort
-        <Select :model-value="props.query.cohort ?? EVERYONE" @update:model-value="onCohort">
-          <!-- Content width. docs/design.md has no width step for a control that should be wider
-               than its longest label, and inventing one here is how a design file stops being the
-               place values come from. It grows leftward from the end of the row, so nothing moves
-               with it. -->
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem :value="EVERYONE">Everyone</SelectItem>
-            <SelectItem v-for="cohort in COHORTS" :key="cohort.value" :value="cohort.value">
-              {{ cohort.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
+    <div class="w-full max-w-form">
+      <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
     </div>
+
+    <!-- CHIPS OVER THE TABLE, which is what the specification asks of a cohort and what a
+         dropdown was not: three lists worth acting on, visible without being opened. -->
+
+    <!-- One at a time, because the server answers one — and pressing the one that is on turns it
+         off, so the way back is the control itself rather than a fourth value meaning "none". -->
+    <fieldset class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <legend class="sr-only">Cohort</legend>
+      <span class="w-12 text-caption text-text-secondary" aria-hidden="true">Cohort</span>
+      <!-- Outlined whether or not it is on, so all three read as things to press; the one that
+           is on takes the tinted accent surface docs/design.md keeps for a selected row. -->
+      <AppButton
+        v-for="cohort in COHORTS"
+        :key="cohort.value"
+        variant="outlined"
+        :class="
+          props.query.cohort === cohort.value
+            ? 'border-accent-text bg-accent-bg text-text-primary'
+            : ''
+        "
+        :aria-pressed="props.query.cohort === cohort.value"
+        @click="onCohort(props.query.cohort === cohort.value ? EVERYONE : cohort.value)"
+      >
+        {{ cohort.label }}
+      </AppButton>
+    </fieldset>
 
     <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <legend class="sr-only">State</legend>

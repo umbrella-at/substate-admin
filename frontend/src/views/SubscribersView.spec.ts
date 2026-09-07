@@ -551,3 +551,42 @@ describe('Clear filters', () => {
     expect(clear!.attributes('disabled')).toBeUndefined()
   })
 })
+
+/** The specification puts cohorts on chips over the table rather than in a control that has to be
+ *  opened: they are lists worth acting on, and a dropdown makes three of them into one word. */
+describe('the cohort chips', () => {
+  function chip(view: ReturnType<typeof render>, label: string) {
+    return view.findAll('button').find((each) => each.text() === label)
+  }
+
+  it('offers every cohort without anything being opened', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    for (const label of ['Trial ending', 'Quiet', 'Cancelled, losing access']) {
+      expect(chip(view, label), label).toBeDefined()
+    }
+  })
+
+  it('puts the pressed one in the address, and says which is pressed', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    await chip(view, 'Quiet')!.trigger('click')
+    expect(routeQuery.value['cohort']).toBe('quiet')
+  })
+
+  // The way back is the control itself. A fourth chip meaning "none" would be a value the server
+  // does not have, and a dropdown needed one.
+  it('turns off when the one that is on is pressed again', async () => {
+    routeQuery.value = { cohort: 'quiet' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const quiet = chip(view, 'Quiet')!
+    expect(quiet.attributes('aria-pressed')).toBe('true')
+    await quiet.trigger('click')
+
+    expect(routeQuery.value['cohort']).toBeUndefined()
+  })
+})
