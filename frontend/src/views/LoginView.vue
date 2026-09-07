@@ -46,6 +46,11 @@ type Refusal = 'credentials' | 'validation' | 'rate-limited' | 'unreachable' | '
 const refusal = ref<Refusal | null>(null)
 const message = ref('')
 
+/** The demonstration door's own refusal. It used to write into the sentence above — inside the
+ *  sign-in panel, pointed at by both credential fields — so a full sandbox pool read as something
+ *  wrong with a password nobody had typed. */
+const demoMessage = ref('')
+
 /** Set by the session teardown when a signed-in person was returned here. Without it the login
  *  page simply reappears, and reappearing for no visible reason reads as a bug. */
 const expired = computed(() => route.query['expired'] === '1')
@@ -117,8 +122,7 @@ function describe(cause: unknown): { refusal: Refusal; message: string } {
    is empty — the frame draws its links from permissions nobody has fetched yet. */
 async function tryTheDemo(): Promise<void> {
   if (opening.value || busy.value) return
-  refusal.value = null
-  message.value = ''
+  demoMessage.value = ''
   opening.value = true
 
   const controller = new AbortController()
@@ -131,9 +135,7 @@ async function tryTheDemo(): Promise<void> {
     await router.replace('/')
   } catch (cause) {
     if (controller.signal.aborted) return
-    const described = describe(cause)
-    refusal.value = described.refusal
-    message.value = described.message
+    demoMessage.value = describe(cause).message
   } finally {
     if (opener === controller) opener = null
     opening.value = false
@@ -149,6 +151,7 @@ async function submit(): Promise<void> {
 
   refusal.value = null
   message.value = ''
+  demoMessage.value = ''
 
   // Answered here rather than by the server. The login limiter counts every attempt that reaches
   // it, including the empty ones, so submitting a blank form would spend part of a real person's
@@ -253,6 +256,10 @@ async function submit(): Promise<void> {
       <AppButton class="w-full" :busy="opening" variant="outlined" @click="tryTheDemo">
         {{ opening ? 'Building a world…' : 'Try the demo' }}
       </AppButton>
+      <!-- Under the button that produced it, which is where the refusal about the demonstration
+           belongs. It has nothing to do with the credentials above. -->
+      <AppNotice v-if="demoMessage !== ''" class="w-full" assertive>{{ demoMessage }}</AppNotice>
+
       <p class="text-center text-dense text-text-muted">
         A world of your own with nine months of invented history in it, yours for an hour. Nothing
         in it is real and nothing you do there leaves it.

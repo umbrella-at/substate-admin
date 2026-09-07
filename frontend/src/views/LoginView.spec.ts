@@ -280,3 +280,27 @@ describe('trying the demonstration', () => {
     expect(wrapper.findAll('[aria-invalid="true"]')).toHaveLength(0)
   })
 })
+
+/** A refusal about the demonstration is not a refusal about a password. It used to be written
+ *  into the sign-in panel's one sentence, which both credential fields point at. */
+describe('when the demonstration door is refused', () => {
+  it('says so under the button that was pressed, not inside the sign-in form', async () => {
+    const wrapper = await tryTheDemo(
+      stubClient({
+        demoSession: vi.fn().mockRejectedValue(
+          new ApiError(503, {
+            code: 'SANDBOX_FULL',
+            message: 'Every demonstration slot is in use just now.',
+            field: null,
+          } as never),
+        ),
+      }),
+    )
+
+    expect(wrapper.text()).toContain('Every demonstration slot is in use just now.')
+    // Not inside the form, and not pointed at by the fields somebody has not typed in.
+    expect(wrapper.find('form').text()).not.toContain('Every demonstration slot')
+    expect(wrapper.find('#login-error').exists()).toBe(false)
+    expect(wrapper.find('input[type="password"]').attributes('aria-invalid')).toBeUndefined()
+  })
+})
