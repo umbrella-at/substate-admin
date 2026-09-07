@@ -31,6 +31,7 @@ from substate import (
     SubscriptionCreated,
 )
 
+from app.main import collector
 from app.worlds.bootstrap import (
     BaseWorldStatus,
     base_world_status,
@@ -370,6 +371,34 @@ async def test_the_repair_runs_only_while_there_is_nothing_to_show() -> None:
         assert status is not None
         assert status.seeded is True
         assert base_world_status().seeded is True
+    finally:
+        set_base_world_status(before)
+        async with engine.begin() as connection:
+            await purge_world(connection, BASE_WORLD_ID)
+        await engine.dispose()
+        reset_registry()
+
+
+async def test_the_ticker_is_what_repairs_a_start_that_failed() -> None:
+    """THE ONE LINE THAT WIRES THE REPAIR TO ANYTHING, held down.
+
+    `repair_base_world` was tested as a function and reached from nowhere a test could see: delete
+    the call inside the ticker's reap callback and ruff, mypy and the whole suite stayed green,
+    which is a fix that does not run.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    reset_registry()
+    registry = get_registry()
+    before = base_world_status()
+    try:
+        set_base_world_status(BaseWorldStatus(seeded=False, error="OperationalError"))
+
+        # The callback the ticker is handed, built the way `lifespan` builds it.
+        collected = await collector(registry, lambda: engine)()
+
+        assert collected == 0
+        assert base_world_status().seeded is True
+        assert registry.require(BASE_WORLD_ID).seeded is True
     finally:
         set_base_world_status(before)
         async with engine.begin() as connection:
