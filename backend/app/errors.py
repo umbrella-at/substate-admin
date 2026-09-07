@@ -149,10 +149,12 @@ _DEFAULTS: Final[Mapping[ErrorCode, tuple[int, str]]] = MappingProxyType(
             409,
             "This world has been wound as far as it goes.",
         ),
+        # No offer of the panel "in the meantime": whoever reads this has no account — that is
+        # what the demonstration door is for — and the read-only base world was never built.
         ErrorCode.SANDBOX_FULL: (
             503,
             "Every demonstration slot is in use just now. They are handed back within the hour, "
-            "and the panel can be read in the meantime.",
+            "so trying again shortly usually works.",
         ),
     }
 )
