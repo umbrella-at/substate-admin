@@ -11,16 +11,16 @@
 /* Each case mounts the REAL screen over a service that answers the way the case needs. A page
    that redrew the states by hand would be a second implementation and would drift. */
 
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 
 import AuditView from '@/views/AuditView.vue'
 import ChartFrame from '@/components/ChartFrame.vue'
-import ClockControl from '@/components/ClockControl.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import StateCase from '@/dev/StateCase.vue'
 import SubscriberView from '@/views/SubscriberView.vue'
 import SubscribersView from '@/views/SubscribersView.vue'
 import UsersView from '@/views/UsersView.vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   audit,
   detail,
@@ -35,13 +35,18 @@ import {
   users,
 } from '@/dev/fixtures'
 
-const AT_ZERO = {
-  now: '2026-09-06T09:00:00Z',
-  offsetSeconds: 0,
-  isSandbox: true,
-  daysLeft: 365,
-}
-const WOUND = { ...AT_ZERO, now: '2026-10-06T09:00:00Z', offsetSeconds: 2_592_000, daysLeft: 335 }
+/* A SESSION WHILE THE PAGE IS OPEN, because two of the screens below refuse to ask anything
+   without one — a disabled query reports `pending`, so their error, empty and data cases were all
+   the loading case wearing a different label. */
+const auth = useAuthStore()
+const was = { user: auth.user, role: auth.role, kind: auth.kind, worldId: auth.worldId }
+const had = [...auth.permissions]
+
+onMounted(() => auth.adopt(me()))
+onBeforeUnmount(() => {
+  if (was.user === null) auth.clear()
+  else auth.adopt({ ...was, user: was.user, role: was.role!, permissions: had, kind: was.kind! })
+})
 
 /** The four, in one order, everywhere on this page. Reading it is comparing like with like. */
 const STATES = ['loading', 'error', 'empty', 'data'] as const
@@ -101,18 +106,6 @@ const summary = computed(() => ({
   data: { me: () => Promise.resolve(me()) },
 }))
 
-const clock = computed(() => ({
-  loading: { clock: NEVER },
-  error: { clock: REFUSED },
-  empty: { clock: () => Promise.resolve(AT_ZERO) },
-  data: { clock: () => Promise.resolve(WOUND) },
-}))
-
-const CLOCK_NOTES: Record<string, string> = {
-  empty: 'A world nobody has wound. There is no fourth state here: a clock is never empty.',
-  data: 'Wound a month on, which is the line the base world never shows until somebody presses.',
-}
-
 const FIGURE = {
   question: 'What is in the base right now?',
   source: 'Standing now, from the engine',
@@ -131,7 +124,8 @@ const FIGURE = {
         answers the way the case needs, so what is on this page is what is on that one.
       </p>
       <p class="text-ui text-text-muted">
-        This page exists in the development build only. It is not routed in production.
+        This page exists in the development build only. It is not routed in production. The cases
+        share one address, so a filter typed into one table is a filter on all four of them.
       </p>
     </header>
 
@@ -240,22 +234,15 @@ const FIGURE = {
       </div>
     </section>
 
-    <section class="flex flex-col gap-4">
-      <h2 class="text-heading text-text-primary">The time machine</h2>
-      <p class="max-w-reading text-ui text-text-secondary">
-        The signature element, at 240px because that is the column it lives in.
+    <section class="flex max-w-reading flex-col gap-2">
+      <h2 class="text-heading text-text-primary">Not here: the time machine</h2>
+      <p class="text-ui text-text-secondary">
+        Four clocks side by side would all show the same time. The world's offset is module state
+        shared by every component that reads it, so the last case to answer sets the reading for all
+        of them — and the control's error state belongs to the frame, which this page does not
+        mount. Its ten states are described in <code class="font-numeric">docs/design.md</code>
+        instead, under Signature element.
       </p>
-      <div class="grid gap-6 lg:grid-cols-4">
-        <StateCase
-          v-for="state in STATES"
-          :key="state"
-          :label="state"
-          :note="CLOCK_NOTES[state]"
-          :service="clock[state]"
-        >
-          <div class="w-sidebar bg-surface-1 p-4"><ClockControl /></div>
-        </StateCase>
-      </div>
     </section>
   </main>
 </template>

@@ -93,18 +93,23 @@ else
 fi
 
 echo "the development-only page:"
-# Decision 8 puts /dev/states in the development build only, and the route sits inside
+# Decision 230 puts /dev/states in the development build only, and the route sits inside
 # `import.meta.env.DEV` so the bundler folds it away.
 
 # That is a promise about a build, and nothing else can see it broken: an accidental static import
 # would ship the page, its fixtures and every screen they pull in, and the application would go on
 # working perfectly.
+
+# Two needles, because one was a heading anybody could reword: the route's own path, and the page's
+# own words. Either surviving the build is the same failure.
 if [ -z "$css" ]; then
     : # already reported by the staleness guard
+elif grep -rqF '/dev/states' frontend/dist/assets/*.js 2> /dev/null; then
+    fail "frontend/src/router/index.ts" "the /dev/states route is in the production bundle; decision 230 puts it in the development build only"
 elif grep -rqF 'Four states, on purpose' frontend/dist/assets/*.js 2> /dev/null; then
-    fail "frontend/src/views/DevStatesView.vue" "the /dev/states page is in the production bundle; it is development-only by decision 8"
+    fail "frontend/src/views/DevStatesView.vue" "the /dev/states page is in the production bundle; decision 230 puts it in the development build only"
 else
-    ok "the /dev/states page is absent from the production bundle"
+    ok "neither the route nor the page it reaches is in the production bundle"
 fi
 
 echo "one palette:"

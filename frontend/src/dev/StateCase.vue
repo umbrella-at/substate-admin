@@ -27,21 +27,18 @@ provide(apiClientKey, defineService())
    the application, which is what makes it a per-case cache. */
 provide('VUE_QUERY_CLIENT', new QueryClient({ defaultOptions: { queries: { retry: false } } }))
 
+/** The case's own answers, and a promise that never settles for anything it did not think of. */
+
+/* A PROXY AROUND THE SERVICE, NOT SPREAD INTO AN OBJECT. Spreading a proxy copies the keys of its
+   TARGET, so `{...new Proxy({}, {get})}` is `{}` and the trap is never reached — the fallback did
+   nothing and a method a case omitted was `undefined`, which is a TypeError inside the screen. */
 function defineService(): ApiClient {
-  return {
-    // A method this case did not think about must not resolve to `undefined` and be called: that
-    // is a TypeError in a screen, which reads as the screen being broken rather than the case.
-    ...(new Proxy(
-      {},
-      {
-        get: (_target, name: string) => () =>
-          new Promise(() => {
-            void name
-          }),
-      },
-    ) as ApiClient),
-    ...service,
-  } as ApiClient
+  return new Proxy(service, {
+    get: (target, name: string) =>
+      name in target
+        ? (target as Record<string, unknown>)[name]
+        : () => new Promise(() => undefined),
+  }) as ApiClient
 }
 </script>
 
