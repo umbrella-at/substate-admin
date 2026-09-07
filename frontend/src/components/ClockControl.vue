@@ -18,7 +18,7 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, ref } from 'vue'
 
-import { ApiError } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
@@ -40,17 +40,17 @@ const custom = ref('')
 const UNMOVED = 'The world did not move. Try again in a moment.'
 
 const STEPS = [
-  { days: 1, label: 'Day', winding: 'A day on…' },
-  { days: 7, label: 'Week', winding: 'A week on…' },
-  { days: 30, label: 'Month', winding: 'A month on…' },
+  { id: 'day', days: 1, label: 'Day', winding: 'A day on…' },
+  { id: 'week', days: 7, label: 'Week', winding: 'A week on…' },
+  { id: 'month', days: 30, label: 'Month', winding: 'A month on…' },
 ] as const
 
 /** The one docs/design.md names, and the one this control is marked by. */
-const MONTH = 30
+const MONTH = 'month'
 
-/** Which step is out, so the label that changes is the label that was pressed. A button that
- *  carries `busy` and keeps its name announces the wait to a screen reader and to nobody else. */
-const winding = ref<number | null>(null)
+/** WHICH CONTROL IS OUT, keyed by the control rather than by the number it sends. Keyed by days,
+ *  typing 30 into the field renamed the Month step for a press made on Go. */
+const winding = ref<string | null>(null)
 
 const day = computed(() => modelDate(now.value))
 const time = computed(() => modelClock(now.value))
@@ -68,10 +68,10 @@ const asked = computed(() => {
  *  reading arrives, the whole of it: the refusal is the authority, this only saves a press. */
 const left = computed(() => reading.value?.daysLeft ?? 365)
 
-async function wind(days: number): Promise<void> {
+async function wind(days: number, control: string): Promise<void> {
   if (busy.value) return
   busy.value = true
-  winding.value = days
+  winding.value = control
   refusal.value = ''
   try {
     const reached = await client.advanceClock(days)
@@ -83,10 +83,10 @@ async function wind(days: number): Promise<void> {
     })
     custom.value = ''
   } catch (cause) {
-    // The service's own sentence when it wrote one. A world that has been wound as far as it goes
-    // says how much is left, and that number is the only thing that lets somebody choose a
-    // smaller step — "the world did not move" would throw it away.
-    refusal.value = cause instanceof ApiError && cause.message !== '' ? cause.message : UNMOVED
+    // The service's own sentence when it wrote one, through the one helper that decides that. A
+    // world wound as far as it goes says how much is left, and that number is the only thing that
+    // lets somebody choose a smaller step.
+    refusal.value = failureText(cause, UNMOVED)
   } finally {
     busy.value = false
     winding.value = null
@@ -129,19 +129,24 @@ async function wind(days: number): Promise<void> {
         v-for="step in STEPS"
         :key="step.days"
         variant="outlined"
-        :class="step.days === MONTH && !busy ? 'border-accent-text text-text-primary' : ''"
-        :busy="busy"
+        :marked="step.id === MONTH"
+        :busy="winding === step.id"
         :disabled="step.days > left"
-        @click="wind(step.days)"
+        @click="wind(step.days, step.id)"
       >
-        {{ busy && winding === step.days ? step.winding : step.label }}
+        {{ winding === step.id ? step.winding : step.label }}
       </AppButton>
     </div>
 
-    <form class="mt-2 flex items-end gap-2" novalidate @submit.prevent="asked && wind(asked)">
+    <form class="mt-2 flex items-end gap-2" novalidate @submit.prevent="asked && wind(asked, 'go')">
       <AppInput v-model="custom" class="min-w-0 flex-1" label="Days" placeholder="90" />
-      <AppButton variant="outlined" type="submit" :busy="busy" :disabled="asked === null">
-        {{ busy && winding === asked ? 'Winding…' : 'Go' }}
+      <AppButton
+        variant="outlined"
+        type="submit"
+        :busy="winding === 'go'"
+        :disabled="asked === null"
+      >
+        {{ winding === 'go' ? 'Winding…' : 'Go' }}
       </AppButton>
     </form>
 

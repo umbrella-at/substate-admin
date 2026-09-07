@@ -569,6 +569,23 @@ describe('the cohort chips', () => {
   })
 
   it('puts the pressed one in the address, and says which is pressed', async () => {
+    routeQuery.value = { cohort: 'quiet' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    // Both directions. Asserted only on the chip that is on, a component that marked all three
+    // as pressed would pass — and the attribute is the whole of what a screen reader gets.
+    expect(chip(view, 'Quiet')!.attributes('aria-pressed')).toBe('true')
+    expect(chip(view, 'Trial ending')!.attributes('aria-pressed')).toBe('false')
+
+    // And the mark that paints it. `border-accent-text` appended to an outlined button loses to
+    // the variant's own `border-border-strong`, so the absence is the half that decides.
+    expect(chip(view, 'Quiet')!.classes()).toContain('border-accent-text')
+    expect(chip(view, 'Quiet')!.classes()).not.toContain('border-border-strong')
+    expect(chip(view, 'Trial ending')!.classes()).toContain('border-border-strong')
+  })
+
+  it('writes the pressed one into the address', async () => {
     const view = render(() => Promise.resolve(page()))
     await flushPromises()
 

@@ -214,6 +214,24 @@ describe('what the control looks like', () => {
     // Marked by its outline rather than by a fill: this control is in the frame, so a filled
     // element here would be a second one on every screen that has its own.
     expect(month!.classes()).not.toContain('bg-accent-fill')
+
+    // AND THE ORDINARY OUTLINE IS GONE, which is the half that decides what paints. Both are
+    // single-class utilities of one specificity, so the built stylesheet's order wins over the
+    // class attribute's — and `border-border-strong` is emitted after `border-accent-text`.
+    expect(month!.classes()).not.toContain('border-border-strong')
+    expect(month!.classes()).not.toContain('text-text-secondary')
+  })
+
+  // Disabled outranks the mark, or the one step the world will not take is the brightest.
+  it('does not mark a month the world cannot afford', async () => {
+    const { wrapper } = await open(
+      stubClient({ clock: vi.fn().mockResolvedValue({ ...AT_ZERO, daysLeft: 5 }) }),
+    )
+
+    const month = wrapper.findAll('button').find((each) => each.text() === 'Month')
+    expect(month!.attributes('disabled')).toBeDefined()
+    expect(month!.classes()).not.toContain('border-accent-text')
+    expect(month!.classes()).not.toContain('text-text-primary')
   })
 
   it('shows a wound world differently from one at today', async () => {
@@ -242,6 +260,29 @@ describe('what the control looks like', () => {
     expect(wrapper.text()).toContain('A month on…')
     expect(wrapper.text()).not.toContain('A week on…')
     expect(wrapper.text()).not.toContain('A day on…')
+    // And only that one says it is waiting. One flag for four buttons announced the wait on
+    // controls nobody had pressed.
+    const busy = wrapper.findAll('button').filter((each) => each.attributes('aria-busy') === 'true')
+    expect(busy).toHaveLength(1)
+    release(A_MONTH_ON)
+  })
+
+  // Keyed on the number rather than on the control, typing the step's own number into the field
+  // renamed a button nobody pressed — and pressing Go renamed the step whose distance matched.
+  it('does not rename a control because the field holds the same number', async () => {
+    let release = (_: unknown) => {}
+    const client = stubClient({
+      advanceClock: vi.fn(() => new Promise((resolve) => (release = resolve))),
+    })
+    const { wrapper } = await open(client)
+
+    await wrapper.find('input').setValue('30')
+    await press(wrapper, 'Month')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('A month on…')
+    expect(wrapper.text()).not.toContain('Winding…')
+    expect(wrapper.text()).toContain('Go')
     release(A_MONTH_ON)
   })
 })

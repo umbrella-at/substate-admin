@@ -180,11 +180,8 @@ function toggleUrgency(): void {
         v-for="cohort in COHORTS"
         :key="cohort.value"
         variant="outlined"
-        :class="
-          props.query.cohort === cohort.value
-            ? 'border-accent-text bg-accent-bg text-text-primary'
-            : ''
-        "
+        :marked="props.query.cohort === cohort.value"
+        :class="props.query.cohort === cohort.value ? 'bg-accent-bg' : ''"
         :aria-pressed="props.query.cohort === cohort.value"
         @click="onCohort(props.query.cohort === cohort.value ? EVERYONE : cohort.value)"
       >
