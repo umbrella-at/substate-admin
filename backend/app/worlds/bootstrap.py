@@ -135,3 +135,26 @@ def set_base_world_status(status: BaseWorldStatus) -> None:
 
 def base_world_status() -> BaseWorldStatus:
     return _status
+
+
+async def repair_base_world(registry: WorldRegistry, engine: AsyncEngine) -> BaseWorldStatus | None:
+    """Build the base world again if the start could not, and say so. `None` means nothing to do.
+
+    DECISION 220 CALLED THIS A KNOWN LIMITATION, and it was larger than it admitted: the seed and
+    the sweep of dead sandboxes' rows share one transaction above, so a database unreachable for
+    one second at start lost both, and nothing tried again.
+    """
+
+    # What that leaves is a service answering 200 to everything with an empty shop window until a
+    # human restarts it, which is worse than the missing sweep the decision named.
+
+    # The ticker already runs on a schedule and already survives a failure of this callback, so the
+    # retry is one call: about a second of the only worker, once a minute, while there is nothing
+    # to show.
+    if base_world_status().seeded:
+        return None
+    _, status = await build_base_world(registry, engine)
+    set_base_world_status(status)
+    if status.seeded:
+        _log.info("base_world_repaired", subscribers=status.subscribers, events=status.events)
+    return status

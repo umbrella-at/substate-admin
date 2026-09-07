@@ -16,13 +16,6 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppButton from '@/components/AppButton.vue'
 import AppInput from '@/components/AppInput.vue'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { STATE_APPEARANCE } from '@/domain/states'
 import {
   COHORTS,
@@ -34,7 +27,23 @@ import {
   type SubscriptionState,
 } from '@/domain/subscribers'
 
-const props = defineProps<{ query: SubscriberQuery; plans: string[] }>()
+const props = defineProps<{
+  query: SubscriberQuery
+  plans: string[]
+  /** True once the catalogue request has answered and failed. An empty `plans` on its own is
+   *  indistinguishable from one that has not arrived, and the group rendered as a bare label. */
+  plansFailed?: boolean
+}>()
+
+/** Whether anything is narrowing the table. Computed by the view as well, for the empty state;
+ *  passed nowhere before, so `Clear filters` was named for something that would not happen. */
+const narrowed = computed(
+  () =>
+    props.query.states.length > 0 ||
+    props.query.cohort !== null ||
+    props.query.planIds.length > 0 ||
+    props.query.q !== null,
+)
 
 /** `replace` says whether this question deserves its own entry in the browser's history. Ticking
  *  a box does. The eleven intermediate spellings of a name being typed do not. */
@@ -100,8 +109,8 @@ function toggleState(state: SubscriptionState): void {
  *  "Everyone" belongs. */
 const EVERYONE = 'everyone'
 
-function onCohort(value: unknown): void {
-  apply({ cohort: value === EVERYONE || typeof value !== 'string' ? null : (value as Cohort) })
+function onCohort(value: string): void {
+  apply({ cohort: value === EVERYONE ? null : (value as Cohort) })
 }
 
 function togglePlan(planId: string): void {
@@ -145,31 +154,40 @@ function toggleUrgency(): void {
 
   <!-- Named, so it is a landmark. There is a second form in the frame now — the clock control —
        and "the form on this page" stopped identifying anything. -->
-  <form class="flex flex-col gap-3" aria-label="Filters" @submit.prevent>
-    <div class="flex flex-wrap items-end gap-4">
-      <div class="w-full max-w-form">
-        <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
-      </div>
 
-      <label class="flex flex-col gap-2 text-caption text-text-secondary">
-        Cohort
-        <Select :model-value="props.query.cohort ?? EVERYONE" @update:model-value="onCohort">
-          <!-- Content width. docs/design.md has no width step for a control that should be wider
-               than its longest label, and inventing one here is how a design file stops being the
-               place values come from. It grows leftward from the end of the row, so nothing moves
-               with it. -->
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem :value="EVERYONE">Everyone</SelectItem>
-            <SelectItem v-for="cohort in COHORTS" :key="cohort.value" :value="cohort.value">
-              {{ cohort.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
+  <!-- A panel, because the fields inside it are recessed into one: their fill is the page's own,
+       so laid straight on the page they survive as a rectangle of border and nothing else. -->
+  <form
+    class="flex flex-col gap-3 rounded-panel border border-border bg-surface-1 p-4"
+    aria-label="Filters"
+    @submit.prevent
+  >
+    <div class="w-full max-w-form">
+      <AppInput v-model="text" label="Search" placeholder="Name or identifier" />
     </div>
+
+    <!-- CHIPS OVER THE TABLE, which is what the specification asks of a cohort and what a
+         dropdown was not: three lists worth acting on, visible without being opened. -->
+
+    <!-- One at a time, because the server answers one — and pressing the one that is on turns it
+         off, so the way back is the control itself rather than a fourth value meaning "none". -->
+    <fieldset class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <legend class="sr-only">Cohort</legend>
+      <span class="w-12 text-caption text-text-secondary" aria-hidden="true">Cohort</span>
+      <!-- Outlined whether or not it is on, so all three read as things to press; the one that
+           is on takes the tinted accent surface docs/design.md keeps for a selected row. -->
+      <AppButton
+        v-for="cohort in COHORTS"
+        :key="cohort.value"
+        variant="outlined"
+        :marked="props.query.cohort === cohort.value"
+        :class="props.query.cohort === cohort.value ? 'bg-accent-bg' : ''"
+        :aria-pressed="props.query.cohort === cohort.value"
+        @click="onCohort(props.query.cohort === cohort.value ? EVERYONE : cohort.value)"
+      >
+        {{ cohort.label }}
+      </AppButton>
+    </fieldset>
 
     <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <legend class="sr-only">State</legend>
@@ -190,6 +208,12 @@ function toggleUrgency(): void {
     <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <legend class="sr-only">Plan</legend>
       <span class="w-12 text-caption text-text-secondary" aria-hidden="true">Plan</span>
+      <!-- A group with nothing in it says why, rather than being a label with a gap after it.
+           The rest of the filters still work, so this is a sentence and not the screen's error. -->
+      <span v-if="props.plansFailed" class="text-dense text-text-muted">
+        The plan catalogue could not be read, so there is nothing to filter by. The other filters
+        are unaffected.
+      </span>
       <label
         v-for="plan in props.plans"
         :key="plan"
@@ -209,7 +233,13 @@ function toggleUrgency(): void {
       <AppButton :variant="urgent ? 'outlined' : 'plain'" @click="toggleUrgency">
         {{ urgent ? 'Sorted by urgency' : 'Sort by urgency' }}
       </AppButton>
-      <AppButton variant="plain" @click="apply({ states: [], cohort: null, planIds: [], q: null })">
+      <!-- Disabled rather than hidden: a control that appears when a filter is ticked is a
+           control that moves the row under the cursor. Unavailable is what disabled is for. -->
+      <AppButton
+        variant="plain"
+        :disabled="!narrowed"
+        @click="apply({ states: [], cohort: null, planIds: [], q: null })"
+      >
         Clear filters
       </AppButton>
     </div>

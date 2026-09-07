@@ -11,6 +11,7 @@
  */
 
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h, ref } from 'vue'
@@ -19,6 +20,7 @@ import { ApiError, type PlanSummary, type SubscriberPage } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SubscriberSummary } from '@/domain/subscribers'
+import { useAuthStore } from '@/stores/auth'
 import SubscribersView from '@/views/SubscribersView.vue'
 
 const routeQuery = ref<Record<string, string | string[]>>({})
@@ -83,19 +85,41 @@ function health(seeded: boolean) {
 function render(
   subscribers: (params: URLSearchParams, signal: AbortSignal) => Promise<unknown>,
   seeded = true,
+  /** The world this session reads. `null` is an operator on the base world, which is the world
+   *  `/api/health` describes; a sandbox id is a demonstration visitor, whose own world health
+   *  says nothing about. */
+  worldId: string | null = null,
+  /** What the plan catalogue answers. Its own request, and its own four states. */
+  plans?: () => Promise<unknown>,
 ) {
   const client = {
     subscribers,
-    plans: () => Promise.resolve(PLANS),
+    plans: plans ?? (() => Promise.resolve(PLANS)),
     health: () => Promise.resolve(health(seeded)),
   }
   // Mounted inside the provider the application wraps itself in. The state chip's tooltip is a
   // Reka component whose root refuses to render without one, so a bare mount of this view renders
   // no rows at all — which every assertion below would notice and none would explain.
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().adopt({
+    kind: worldId === null ? 'user' : 'demo',
+    permissions: ['subscribers.read'],
+    role: { code: 'admin', name: 'Administrator' },
+    user: {
+      createdAt: '2026-01-01T00:00:00Z',
+      email: 'operator@example.com',
+      id: '00000000-0000-0000-0000-000000000000',
+      isActive: true,
+      lastLoginAt: null,
+    },
+    worldId,
+  })
   return mount(TooltipProvider, {
     slots: { default: () => h(SubscribersView) },
     global: {
       plugins: [
+        pinia,
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -135,10 +159,30 @@ describe('the four states', () => {
     expect(view.text()).toContain('1 subscriber')
   })
 
-  it('says an empty world is empty', async () => {
+  it('invites rather than reports absence when the world is empty', async () => {
     const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
     await flushPromises()
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
+  })
+
+  // Three different nothings, and only one of them is "there is nobody". This one used to borrow
+  // whichever of the other two sentences fitted, above a pager stating a total that contradicted
+  // both — and the pager hides its own buttons past the last page, so nothing led back.
+  it('says a page past the end is a page past the end, and offers the way back', async () => {
+    routeQuery.value = { page: '3' }
+    const view = render(() => Promise.resolve(page({ items: [], total: 48, page: 3 })))
+    await flushPromises()
+
+    expect(view.text()).toContain('There is no page 3')
+    expect(view.text()).toContain('48')
+    expect(view.text()).not.toContain('Nobody has subscribed in this world yet')
+    expect(view.text()).not.toContain('No subscribers match these filters')
+
+    const back = view.findAll('button').find((each) => each.text() === 'Back to the first page')
+    expect(back).toBeDefined()
+    await back!.trigger('click')
+    expect(push).toHaveBeenCalled()
+    expect(routeQuery.value['page']).toBeUndefined()
   })
 
   it('blames the filters when they are what emptied the table, and offers to clear them', async () => {
@@ -199,7 +243,7 @@ describe('the four states are a choice', () => {
     const view = render(() => Promise.resolve(page({ items: [], total: 0 })))
     await flushPromises()
     expect(showing(view)).toEqual({ loading: false, failed: false, table: true })
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
   })
 })
 
@@ -245,6 +289,18 @@ describe('an empty table and an unbuilt world are not the same screen', () => {
   // The claim needs evidence. A health request still in flight, or one that failed outright, is
   // not an answer saying the world is missing — and putting the failure on screen without one
   // would be the same lie in the other direction.
+
+  // `/api/health` is public, so it always describes the BASE world — decision 213's trap, one
+  // screen along. A demonstration visitor's sandbox is seeded before their pass is issued, and
+  // was being told its full table did not exist because a different world had not been built.
+  it('does not tell a demonstration visitor that their own world is missing', async () => {
+    const view = render(() => Promise.resolve(page()), false, 'sandbox-7')
+    await flushPromises()
+
+    expect(view.text()).not.toContain('The demonstration world was not built')
+    expect(view.text()).toContain('Ada Lovelace')
+  })
+
   it('says nothing about the world until health has answered', async () => {
     const client = {
       subscribers: () => Promise.resolve(page({ items: [], total: 0 })),
@@ -266,7 +322,7 @@ describe('an empty table and an unbuilt world are not the same screen', () => {
     })
     await flushPromises()
     expect(view.text()).not.toContain('was not built')
-    expect(view.text()).toContain('This world has no subscribers yet')
+    expect(view.text()).toContain('Nobody has subscribed in this world yet')
   })
 })
 
@@ -454,5 +510,100 @@ describe('the address bar', () => {
     expect(view.findAllComponents(RouterLinkStub)[0]?.props('to')).toEqual({
       query: { sort: '-displayName' },
     })
+  })
+})
+
+/** The plan catalogue is a second request with a second set of states, and the view took only its
+ *  data — so a failure rendered the group as a label with a gap after it and nothing else. */
+describe('the plan filter when its catalogue fails', () => {
+  it('says why there is nothing to tick, and leaves the other filters alone', async () => {
+    const view = render(
+      () => Promise.resolve(page()),
+      true,
+      null,
+      () => Promise.reject(new ApiError(500, null)),
+    )
+    await flushPromises()
+
+    expect(view.text()).toContain('The plan catalogue could not be read')
+    // The screen is not in its error state: the table answered.
+    expect(view.text()).toContain('Ada Lovelace')
+    expect(view.text()).toContain('Trial')
+  })
+})
+
+/** `Clear filters` is named for what will happen, and on an unfiltered table nothing would. */
+describe('Clear filters', () => {
+  it('is unavailable when there is nothing to clear', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const clear = view.findAll('button').find((each) => each.text() === 'Clear filters')
+    expect(clear!.attributes('disabled')).toBeDefined()
+  })
+
+  it('is available once something is narrowing the table', async () => {
+    routeQuery.value = { state: ['grace'] }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const clear = view.findAll('button').find((each) => each.text() === 'Clear filters')
+    expect(clear!.attributes('disabled')).toBeUndefined()
+  })
+})
+
+/** The specification puts cohorts on chips over the table rather than in a control that has to be
+ *  opened: they are lists worth acting on, and a dropdown makes three of them into one word. */
+describe('the cohort chips', () => {
+  function chip(view: ReturnType<typeof render>, label: string) {
+    return view.findAll('button').find((each) => each.text() === label)
+  }
+
+  it('offers every cohort without anything being opened', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    for (const label of ['Trial ending', 'Quiet', 'Cancelled, losing access']) {
+      expect(chip(view, label), label).toBeDefined()
+    }
+  })
+
+  it('puts the pressed one in the address, and says which is pressed', async () => {
+    routeQuery.value = { cohort: 'quiet' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    // Both directions. Asserted only on the chip that is on, a component that marked all three
+    // as pressed would pass — and the attribute is the whole of what a screen reader gets.
+    expect(chip(view, 'Quiet')!.attributes('aria-pressed')).toBe('true')
+    expect(chip(view, 'Trial ending')!.attributes('aria-pressed')).toBe('false')
+
+    // And the mark that paints it. `border-accent-text` appended to an outlined button loses to
+    // the variant's own `border-border-strong`, so the absence is the half that decides.
+    expect(chip(view, 'Quiet')!.classes()).toContain('border-accent-text')
+    expect(chip(view, 'Quiet')!.classes()).not.toContain('border-border-strong')
+    expect(chip(view, 'Trial ending')!.classes()).toContain('border-border-strong')
+  })
+
+  it('writes the pressed one into the address', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    await chip(view, 'Quiet')!.trigger('click')
+    expect(routeQuery.value['cohort']).toBe('quiet')
+  })
+
+  // The way back is the control itself. A fourth chip meaning "none" would be a value the server
+  // does not have, and a dropdown needed one.
+  it('turns off when the one that is on is pressed again', async () => {
+    routeQuery.value = { cohort: 'quiet' }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const quiet = chip(view, 'Quiet')!
+    expect(quiet.attributes('aria-pressed')).toBe('true')
+    await quiet.trigger('click')
+
+    expect(routeQuery.value['cohort']).toBeUndefined()
   })
 })

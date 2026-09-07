@@ -79,6 +79,8 @@ function me(permissions: string[]): MeResponse {
 type Answers = {
   users?: () => Promise<unknown>
   roles?: () => Promise<unknown>
+  deleteRole?: () => Promise<unknown>
+  createRole?: () => Promise<unknown>
   holds?: string[]
   /** What `/auth/me` answers from now on. The operator may have just edited the role they hold. */
   holdsAfterWrite?: string[]
@@ -86,12 +88,23 @@ type Answers = {
 
 function render(over: Answers = {}) {
   useAuthStore().adopt(me(over.holds ?? ['users.read', 'users.write']))
+  // The list a delete really shrinks. Stubbed to return the same rows every time, a delete never
+  // moved the selection a second time, and the sentence it erases was never put under pressure.
+  const gone = new Set<string>()
   const client = {
     users: over.users ?? (() => Promise.resolve(USERS)),
-    roles: over.roles ?? (() => Promise.resolve(ROLES)),
+    roles:
+      over.roles ??
+      (() => Promise.resolve({ ...ROLES, items: ROLES.items.filter((r) => !gone.has(r.id)) })),
     replaceRole: vi.fn(() => Promise.resolve(ROLES.items[1]!)),
-    deleteRole: vi.fn(() => Promise.resolve(null)),
-    createRole: vi.fn(() => Promise.resolve(ROLES.items[1]!)),
+    deleteRole: vi.fn(
+      over.deleteRole ??
+        ((id: string) => {
+          gone.add(id)
+          return Promise.resolve(null)
+        }),
+    ),
+    createRole: vi.fn(over.createRole ?? (() => Promise.resolve(ROLES.items[1]!))),
     me: vi.fn(() =>
       Promise.resolve(me(over.holdsAfterWrite ?? over.holds ?? ['users.read', 'users.write'])),
     ),
@@ -112,6 +125,7 @@ function render(over: Answers = {}) {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  document.body.innerHTML = ''
 })
 
 /** The custom role. The first in the list is a system role, whose Save and Delete are hidden from
@@ -202,6 +216,15 @@ describe('the four states of the roles panel', () => {
     expect(view.text()).not.toContain('Analysts')
   })
 
+  // This test used to override `users` and assert the OPERATORS panel's sentence, inside a block
+  // named for the roles panel — which is why the roles panel having no empty branch at all went
+  // unnoticed. Both are asserted now, each on its own panel.
+  it('says what would put a role in the list when there is none', async () => {
+    const view = render({ roles: () => Promise.resolve({ ...ROLES, items: [] }) })
+    await flushPromises()
+    expect(view.text()).toContain('There are no roles yet.')
+  })
+
   it('says what would put an operator in the list when there is none', async () => {
     const view = render({ users: () => Promise.resolve({ ...USERS, items: [], total: 0 }) })
     await flushPromises()
@@ -239,5 +262,132 @@ describe('editing the role you hold yourself', () => {
     expect([...useAuthStore().permissions]).toEqual(['users.read'])
     expect(view.text()).not.toContain('Save role')
     expect(view.text()).not.toContain('New role')
+  })
+})
+
+/** What a write says when it is done, and where a refusal stops. */
+
+/* All three writes were silent on success — a delete removed a name from a list and said nothing.
+   One was silent on failure too: `remove.error` was read nowhere, so a refused delete left the
+   screen unchanged. */
+describe('what a write answers', () => {
+  async function press(view: ReturnType<typeof render>, label: string): Promise<void> {
+    await view
+      .findAll('button')
+      .find((each) => each.text().startsWith(label))!
+      .trigger('click')
+    await flushPromises()
+  }
+
+  /** Delete asks first, and the dialog is a portal, so the confirming press is on the document. */
+  async function deleteTheRole(view: ReturnType<typeof render>): Promise<void> {
+    await press(view, 'Delete role')
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (each) => each.textContent?.trim() === 'Delete role',
+    )
+    confirm!.click()
+    await flushPromises()
+    await flushPromises()
+  }
+
+  it('says the role was saved, in the words of the button that saved it', async () => {
+    const view = render()
+    await flushPromises()
+    await selectAnalysts(view)
+    // Save is disabled until something changes, which is the point of it.
+    await view.findAll('input[type="checkbox"], button[role="checkbox"]').at(0)!.trigger('click')
+    await press(view, 'Save role')
+    await flushPromises()
+
+    expect(view.text()).toContain('Role saved.')
+  })
+
+  // With a list that really shrinks, which is the case that erased this sentence: the watcher
+  // picking the first survivor moved the selection a second time and reset the mutation.
+  it('says the role was deleted, on a list that really loses it', async () => {
+    const view = render()
+    await flushPromises()
+    await selectAnalysts(view)
+    await deleteTheRole(view)
+    await flushPromises()
+
+    expect(view.text()).toContain('Role deleted.')
+    expect(view.text()).not.toContain('Analysts')
+  })
+
+  // And the third, which closing the form used to take with it.
+  it('says the role was created', async () => {
+    const view = render()
+    await flushPromises()
+    await press(view, 'New role')
+    await view.findAll('input').at(0)!.setValue('analysts')
+    await view.findAll('input').at(1)!.setValue('Analysts')
+    await view.find('form').trigger('submit')
+    await flushPromises()
+    await flushPromises()
+
+    expect(view.text()).toContain('Role created.')
+  })
+
+  // The one write whose failure was read nowhere at all.
+  it('says a delete was refused rather than saying nothing', async () => {
+    const view = render({
+      deleteRole: () =>
+        Promise.reject(
+          new ApiError(409, {
+            code: 'ROLE_IN_USE',
+            message: 'That role is still held by somebody.',
+            field: null,
+          }),
+        ),
+    })
+    await flushPromises()
+    await selectAnalysts(view)
+    await deleteTheRole(view)
+
+    expect(view.text()).toContain('That role is still held by somebody.')
+    expect(view.text()).not.toContain('Role deleted.')
+  })
+
+  // A refusal belongs to the role it was refused on: it used to follow the selection onto the next.
+  it('does not carry a refusal onto a different role', async () => {
+    const view = render({
+      deleteRole: () =>
+        Promise.reject(
+          new ApiError(409, {
+            code: 'ROLE_IN_USE',
+            message: 'That role is still held by somebody.',
+            field: null,
+          }),
+        ),
+    })
+    await flushPromises()
+    await selectAnalysts(view)
+    await deleteTheRole(view)
+    expect(view.text()).toContain('That role is still held by somebody.')
+
+    await view
+      .findAll('button')
+      .find((each) => each.text() === 'Administrator')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(view.text()).not.toContain('That role is still held by somebody.')
+  })
+
+  // A button named for what will happen must do one of the two: happen, or say why not.
+  it('says why an empty new role cannot be created, rather than doing nothing', async () => {
+    const view = render()
+    await flushPromises()
+    await press(view, 'New role')
+
+    expect(view.text()).not.toContain('Role created.')
+    await view.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(view.text()).not.toContain('Role created.')
+    // Something is now said about the empty field, whatever the schema's wording is.
+    const said = view.findAll('[role="alert"], [role="status"]').map((each) => each.text())
+    expect(said.join(' ').trim().length).toBeGreaterThan(0)
   })
 })

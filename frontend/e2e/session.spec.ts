@@ -72,9 +72,10 @@ async function signIn(page: Page, password: string = account.password): Promise<
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 }
 
-/** The email as the dashboard prints it. */
+/** The email as the dashboard prints it — scoped to the page rather than the frame, which now
+ *  prints it as well beside the way out. */
 function signedInAs(page: Page): Locator {
-  return page.getByText(account.email, { exact: true })
+  return page.getByRole('main').getByText(account.email, { exact: true })
 }
 
 /** The two web storages and `document.cookie`, read from inside the page.
@@ -139,7 +140,10 @@ test('the session survives a reload, through a real refresh, with no token in st
   await signIn(page)
 
   const accessToken = ((await (await login).json()) as { accessToken: string }).accessToken
-  expect(accessToken, 'the login response must carry an access token').not.toBe('')
+  // Not `not.toBe('')`, which is what this said and which `undefined` passes: a renamed or absent
+  // field read as success, and the storage searches below then hunted for the word "undefined".
+  expect(accessToken, 'the login response must carry an access token').toEqual(expect.any(String))
+  expect(accessToken.length, 'and it must not be the empty string').toBeGreaterThan(0)
 
   await expect(page).toHaveURL(DASHBOARD)
   await expect(signedInAs(page)).toBeVisible()
@@ -234,10 +238,11 @@ test('a wrong password says the one sentence and stays on the login page', async
   await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.')
 
   await expect(page).toHaveURL('/login')
-  expect(await readStorage(page), 'a refused sign-in must leave nothing behind').toMatchObject({
-    local: {},
-    session: {},
-  })
+  // Keys, not `toMatchObject({local: {}, session: {}})`, which is what this said: an empty
+  // expected object is a subset of every object, so it matched storage holding anything at all.
+  const afterRefusal = await readStorage(page)
+  expect(Object.keys(afterRefusal.local), 'a refused sign-in must leave nothing behind').toEqual([])
+  expect(Object.keys(afterRefusal.session), 'in either store').toEqual([])
 })
 
 test('a deep link taken while anonymous is what signing in arrives at', async ({ page }) => {

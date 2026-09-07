@@ -16,8 +16,8 @@ import { money } from '@/domain/events'
 
 export type Outcome = AuditEntry['outcome']
 
-/** In the order the panel offers them: what an operator reaches for first, then the role edits.
- *  Role edits sit last because they are rare and are looked for deliberately, not scanned. */
+/** In the order the panel offers them: what an operator reaches for first, then the role edits,
+ *  then the clock. The last two are rare and are looked for deliberately, not scanned. */
 export const AUDIT_ACTIONS: readonly AuditAction[] = [
   'subscription.payment',
   'subscription.cancel',
@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS: readonly AuditAction[] = [
   'role.create',
   'role.update',
   'role.delete',
+  'world.advance',
 ] as const
 
 /** What each action was, said as a person would say it.
@@ -45,6 +46,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   'role.create': 'Created a role',
   'role.update': 'Changed what a role grants',
   'role.delete': 'Deleted a role',
+  'world.advance': 'Wound the clock forward',
 }
 
 function text(payload: Record<string, unknown>, key: string): string | null {
@@ -88,6 +90,13 @@ export function requested(entry: AuditEntry): string {
       return granted(payload)
     case 'role.delete':
       return text(payload, 'name') ?? ''
+    // The distance, which is the whole of what was asked for. Where it landed is a fact about the
+    // world rather than about the request, and the row does not carry it.
+    case 'world.advance': {
+      const days = payload['days']
+      if (typeof days !== 'number') return ''
+      return days === 1 ? '1 day' : `${days} days`
+    }
   }
 }
 

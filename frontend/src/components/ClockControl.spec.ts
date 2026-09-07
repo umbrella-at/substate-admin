@@ -180,3 +180,109 @@ describe('winding the clock', () => {
     expect(wrapper.text()).toContain('65 of its 365 days are left')
   })
 })
+
+/** The one number on this panel that IS the subject, and it had no loading state: while the read
+ *  was in flight the panel drew the browser's own date under the label "The demonstration world",
+ *  which is a confident answer to the question the control exists to ask. */
+describe('before the reading arrives', () => {
+  it("shows the shape of the reading rather than the browser's own clock", async () => {
+    const { wrapper } = await open(stubClient({ clock: () => new Promise(() => {}) }))
+
+    expect(wrapper.find('.skeleton').exists()).toBe(true)
+    // Neither label, and no date: the fallback says `isSandbox` is false, so the panel called a
+    // sandbox the base world and dated it from the browser.
+    expect(wrapper.text()).not.toContain('Your world')
+    expect(wrapper.text()).not.toContain('The demonstration world')
+    expect(wrapper.text()).toContain("Reading this world's clock")
+  })
+
+  it('shows the world once it has answered', async () => {
+    const { wrapper } = await open(stubClient())
+
+    expect(wrapper.find('.skeleton').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Your world')
+  })
+})
+
+/** The signature element, and the two things that make it one. */
+describe('what the control looks like', () => {
+  it('marks the month jump, which is the step the design file names', async () => {
+    const { wrapper } = await open(stubClient())
+
+    const month = wrapper.findAll('button').find((each) => each.text() === 'Month')
+    expect(month!.classes()).toContain('border-accent-text')
+    // Marked by its outline rather than by a fill: this control is in the frame, so a filled
+    // element here would be a second one on every screen that has its own.
+    expect(month!.classes()).not.toContain('bg-accent-fill')
+
+    // AND THE ORDINARY OUTLINE IS GONE, which is the half that decides what paints. Both are
+    // single-class utilities of one specificity, so the built stylesheet's order wins over the
+    // class attribute's — and `border-border-strong` is emitted after `border-accent-text`.
+    expect(month!.classes()).not.toContain('border-border-strong')
+    expect(month!.classes()).not.toContain('text-text-secondary')
+  })
+
+  // Disabled outranks the mark, or the one step the world will not take is the brightest.
+  it('does not mark a month the world cannot afford', async () => {
+    const { wrapper } = await open(
+      stubClient({ clock: vi.fn().mockResolvedValue({ ...AT_ZERO, daysLeft: 5 }) }),
+    )
+
+    const month = wrapper.findAll('button').find((each) => each.text() === 'Month')
+    expect(month!.attributes('disabled')).toBeDefined()
+    expect(month!.classes()).not.toContain('border-accent-text')
+    expect(month!.classes()).not.toContain('text-text-primary')
+  })
+
+  it('shows a wound world differently from one at today', async () => {
+    const atToday = await open(stubClient())
+    expect(atToday.wrapper.find('section').classes()).not.toContain('border-l-accent-text')
+    expect(atToday.wrapper.text()).not.toContain('ahead of today')
+
+    forgetWorldClock()
+    const wound = await open(stubClient({ clock: vi.fn().mockResolvedValue(A_MONTH_ON) }))
+    expect(wound.wrapper.find('section').classes()).toContain('border-l-accent-text')
+    expect(wound.wrapper.text()).toContain('30 days ahead of today')
+  })
+
+  // A button that carries `busy` and keeps its name announces the wait to a screen reader and to
+  // nobody else — and one flag for four buttons announced it on all of them.
+  it('renames the step that is out, and only that one', async () => {
+    let release = (_: unknown) => {}
+    const client = stubClient({
+      advanceClock: vi.fn(() => new Promise((resolve) => (release = resolve))),
+    })
+    const { wrapper } = await open(client)
+
+    await press(wrapper, 'Month')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('A month on…')
+    expect(wrapper.text()).not.toContain('A week on…')
+    expect(wrapper.text()).not.toContain('A day on…')
+    // And only that one says it is waiting. One flag for four buttons announced the wait on
+    // controls nobody had pressed.
+    const busy = wrapper.findAll('button').filter((each) => each.attributes('aria-busy') === 'true')
+    expect(busy).toHaveLength(1)
+    release(A_MONTH_ON)
+  })
+
+  // Keyed on the number rather than on the control, typing the step's own number into the field
+  // renamed a button nobody pressed — and pressing Go renamed the step whose distance matched.
+  it('does not rename a control because the field holds the same number', async () => {
+    let release = (_: unknown) => {}
+    const client = stubClient({
+      advanceClock: vi.fn(() => new Promise((resolve) => (release = resolve))),
+    })
+    const { wrapper } = await open(client)
+
+    await wrapper.find('input').setValue('30')
+    await press(wrapper, 'Month')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('A month on…')
+    expect(wrapper.text()).not.toContain('Winding…')
+    expect(wrapper.text()).toContain('Go')
+    release(A_MONTH_ON)
+  })
+})

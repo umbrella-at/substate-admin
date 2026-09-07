@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { rememberedDemoToken, type ApiClient, type MeResponse } from '@/api/client'
+import { ApiError, rememberedDemoToken, type ApiClient, type MeResponse } from '@/api/client'
 import { granted, type PermissionCode } from '@/domain/permissions'
 
 export type SessionUser = MeResponse['user']
@@ -34,6 +34,11 @@ export const useAuthStore = defineStore('auth', () => {
    *  sends a signed-in person to the login page. */
   const ready = ref(false)
 
+  /** True when the opening exchange found a kept demonstration pass whose world is gone. The
+   *  transport's own 410 handler cannot navigate this early — the router is not installed yet —
+   *  so the guard reads this instead, and sends them to the screen written for exactly this. */
+  const demoEnded = ref(false)
+
   const isAuthenticated = computed(() => user.value !== null)
 
   function can(permission: PermissionCode): boolean {
@@ -41,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function adopt(me: MeResponse): void {
+    demoEnded.value = false
     user.value = me.user
     role.value = me.role
     kind.value = me.kind
@@ -100,13 +106,18 @@ export const useAuthStore = defineStore('auth', () => {
     client.setDemoToken(kept)
     try {
       adopt(await client.me())
-    } catch {
+    } catch (cause) {
+      // A 410 is not "no session". It is the world this pass named, gone — and the difference is
+      // the whole of decision 205: a sign-in screen is advice a visitor with no account cannot
+      // take, and it is where they land if this is forgotten here.
+      demoEnded.value = cause instanceof ApiError && cause.status === 410
       client.setDemoToken(null)
       clear()
     }
   }
 
   return {
+    demoEnded,
     user,
     role,
     permissions,

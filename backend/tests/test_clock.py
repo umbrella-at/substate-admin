@@ -206,6 +206,45 @@ async def test_what_is_left_is_what_the_refusal_says(
     assert reading["daysLeft"] == 65
 
 
+async def test_a_press_leaves_a_row_on_the_audit_screen(
+    client: AsyncClient, base_world: World
+) -> None:
+    """DECISION 220 LEFT THIS UNDONE, and it is the one operator action that changes every number
+    on every screen. A world that moved and an audit that says nobody moved it is the pair the
+    screen exists to prevent."""
+    body = await open_one(client)
+
+    await client.post(ADVANCE, headers=auth(body), json={"days": 30})
+
+    rows = (await client.get("/api/audit", headers=auth(body))).json()["items"]
+    wound = [row for row in rows if row["action"] == "world.advance"]
+    assert len(wound) == 1
+    assert wound[0]["targetType"] == "world"
+    assert wound[0]["targetId"] == world_of(body["accessToken"]).id
+    assert wound[0]["worldId"] == world_of(body["accessToken"]).id
+    assert wound[0]["outcome"] == "ok"
+    assert wound[0]["payload"] == {"days": 30}
+
+
+async def test_a_refused_press_is_recorded_as_refused(
+    client: AsyncClient, base_world: World
+) -> None:
+    """The screen has a `Refused` filter, and a press the world turned down is a thing somebody
+    did. Recorded before the refusal is raised, in its own transaction."""
+    body = await open_one(client)
+    await client.post(ADVANCE, headers=auth(body), json={"days": MAX_WIND.days})
+
+    refused = await client.post(ADVANCE, headers=auth(body), json={"days": 1})
+
+    assert refused.status_code == 409
+    rows = (await client.get("/api/audit", headers=auth(body))).json()["items"]
+    turned_down = [row for row in rows if row["outcome"] == "refused"]
+    assert len(turned_down) == 1
+    assert turned_down[0]["action"] == "world.advance"
+    assert turned_down[0]["errorCode"] == "WORLD_FULLY_WOUND"
+    assert turned_down[0]["payload"] == {"days": 1}
+
+
 async def test_a_second_press_never_enters_the_world_the_first_is_in(
     client: AsyncClient, base_world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

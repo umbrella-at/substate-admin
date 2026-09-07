@@ -18,6 +18,7 @@ const {
   type = 'button',
   disabled = false,
   busy = false,
+  marked = false,
 } = defineProps<{
   /** The rank of the action. At most ONE `filled` element may exist on a screen. */
   variant?: 'filled' | 'outlined' | 'plain'
@@ -26,6 +27,8 @@ const {
   disabled?: boolean
   /** A request this button started has not answered yet. */
   busy?: boolean
+  /** The one in its group that this interface names — the month jump, the cohort that is on. */
+  marked?: boolean
 }>()
 
 const BASE =
@@ -39,6 +42,17 @@ const VARIANTS = {
   plain: 'text-text-secondary hover:text-text-primary',
 } as const
 
+/* MARKED IS A VARIANT, NOT A CLASS THE CALLER ADDS. Two utilities of one specificity are decided
+   by their order in the built stylesheet, not by the order of the class attribute. */
+
+/* `border-border-strong` is emitted after `border-accent-text`, so an accent outline appended from
+   outside never painted — which is how the signature element's one mark went missing. */
+const MARKED = {
+  filled: 'bg-accent-fill text-on-accent hover:bg-accent-fill-hover',
+  outlined: 'border border-accent-text text-text-primary hover:border-accent-text',
+  plain: 'text-text-primary',
+} as const
+
 // Neutral rather than a dimmed accent, because more than one kind of control gets disabled and
 // most of them have no accent fill to dim. The border is stated for every variant so an outlined
 // button does not keep a live outline around dead text.
@@ -48,7 +62,7 @@ const DISABLED = 'bg-fill-disabled text-text-disabled border border-border curso
 <template>
   <button
     :type="type"
-    :class="[BASE, disabled ? DISABLED : VARIANTS[variant]]"
+    :class="[BASE, disabled ? DISABLED : marked ? MARKED[variant] : VARIANTS[variant]]"
     :disabled="disabled"
     :aria-busy="busy ? 'true' : undefined"
   >

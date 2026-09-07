@@ -31,7 +31,10 @@ async function signIn(page: Page, as: { email: string; password: string }): Prom
   // The token off the wire. It never reaches storage — session.spec.ts asserts that — so this is
   // the only way to make the request a browser would have made if the control existed.
   const { accessToken } = (await (await login).json()) as { accessToken: string }
-  expect(accessToken, 'the login response must carry an access token').not.toBe('')
+  // `not.toBe('')` is what this said, and `undefined` passes it — after which every request below
+  // would go out as `Bearer undefined` and be refused for the wrong reason.
+  expect(accessToken, 'the login response must carry an access token').toEqual(expect.any(String))
+  expect(accessToken.length, 'and it must not be the empty string').toBeGreaterThan(0)
   await expect(page.getByRole('link', { name: 'Subscribers' })).toBeVisible()
   return accessToken
 }
@@ -49,19 +52,20 @@ test.describe('a viewer, who may not read the roles at all', () => {
     await page.close()
   })
 
-  test('is offered no way into the screen', async () => {
-    await expect(page.getByRole('link', { name: 'Users and roles' })).toHaveCount(0)
+  // BOTH HALVES IN ONE TEST, SOFTLY. They were two, inside a serial describe, so a failure of the
+  // first skipped the second — and the one report where both halves matter is the one report where
+  // only one of them was ever evaluated. `expect.soft` records and carries on.
+  test('has no way into the screen, and is refused the endpoint behind it', async () => {
+    await expect.soft(page.getByRole('link', { name: 'Users and roles' })).toHaveCount(0)
     // The sections they DO hold, so this is a filtered menu rather than a broken one.
-    await expect(page.getByRole('link', { name: 'Analytics' })).toBeVisible()
-  })
+    await expect.soft(page.getByRole('link', { name: 'Analytics' })).toBeVisible()
 
-  test('is refused the endpoint behind it', async () => {
     const response = await page.request.get(ROLES, {
       headers: { authorization: `Bearer ${token}` },
     })
 
-    expect(response.status()).toBe(403)
-    expect(await response.json()).toEqual({
+    expect.soft(response.status()).toBe(403)
+    expect.soft(await response.json()).toEqual({
       error: {
         code: 'PERMISSION_DENIED',
         message: 'You do not have permission to do that.',
@@ -115,21 +119,19 @@ test.describe('support, who may read the roles and not write them', () => {
     await expect(page.getByText('View aggregate analytics.')).toBeVisible()
   })
 
-  test('is offered no control that would be refused', async () => {
+  test('is offered no control that would be refused, and is refused the write behind them', async () => {
     for (const control of ['New role', 'Save role', 'Delete role', 'Create role']) {
-      await expect(page.getByRole('button', { name: control }), control).toHaveCount(0)
+      await expect.soft(page.getByRole('button', { name: control }), control).toHaveCount(0)
     }
-  })
 
-  test('is refused the write behind them', async () => {
     const response = await page.request.put(`${ROLES}/${roleId}`, {
       headers: { authorization: `Bearer ${token}` },
       data: { name: 'Mine now', permissions: [] },
     })
 
-    expect(response.status()).toBe(403)
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      'PERMISSION_DENIED',
-    )
+    expect.soft(response.status()).toBe(403)
+    expect
+      .soft(((await response.json()) as { error: { code: string } }).error.code)
+      .toBe('PERMISSION_DENIED')
   })
 })

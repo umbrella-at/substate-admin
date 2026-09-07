@@ -59,14 +59,20 @@ defineEmits<{ retry: [] }>()
       <p class="max-w-reading text-ui text-text-secondary">{{ invitation }}</p>
     </template>
 
+    <!-- The whole answer goes provisional, not just the plot. The number and the note are read
+         off the same stale response, and the number is the part a reader takes away. -->
     <template v-else>
-      <p v-if="answer !== undefined" class="text-title font-numeric text-text-primary">
-        {{ answer }}
-      </p>
-      <div :class="busy ? 'opacity-60' : ''">
+      <div
+        :class="busy ? 'flex flex-col gap-3 opacity-60 transition-opacity' : 'flex flex-col gap-3'"
+      >
+        <p v-if="answer !== undefined" class="text-title font-numeric text-text-primary">
+          {{ answer }}
+        </p>
         <slot />
+        <p v-if="note !== undefined" class="max-w-reading text-caption text-text-muted">
+          {{ note }}
+        </p>
       </div>
-      <p v-if="note !== undefined" class="max-w-reading text-caption text-text-muted">{{ note }}</p>
     </template>
   </section>
 </template>

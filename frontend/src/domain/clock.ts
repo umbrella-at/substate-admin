@@ -4,8 +4,11 @@
  * purpose is a snapshot the caller has to remember to rebuild.
  */
 
+/* `2-digit`, like every date in the tables. The reading is the largest mono line in the frame and
+   it re-renders every ten seconds; a day that is one character narrower on nine days in ten makes
+   the whole panel shift under a cursor that is not moving. */
 const DATE = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
+  day: '2-digit',
   month: 'short',
   year: 'numeric',
   timeZone: 'UTC',
@@ -21,7 +24,7 @@ const TIME = new Intl.DateTimeFormat('en-GB', {
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /** The day a world is at, and the time of day, as two strings. Two rather than one because the
- *  panel is 240px wide: one string wraps or does not depending on the month's name, and a reading
+ *  panel is 207px wide: one string wraps or does not depending on the month's name, and a reading
  *  that jumps a line between September and October looks broken in one of them. */
 
 /* UTC, and the label says so. Everything else this panel shows about a world is UTC, and a clock

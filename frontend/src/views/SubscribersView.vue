@@ -9,7 +9,8 @@ import { useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import { ApiError, type PlanSummary } from '@/api/client'
+import { type PlanSummary } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -44,7 +45,7 @@ const { isUnbuilt: worldIsUnbuilt } = useWorld()
 /** The catalogue for the plan filter. Separate from the table's own request because it does not
  *  change when the filters do, and refetching five unchanging rows on every keystroke would be
  *  work with no result. */
-const { data: plans } = useQuery<PlanSummary[]>({
+const { data: plans, isError: plansFailed } = useQuery<PlanSummary[]>({
   queryKey: ['plans'],
   queryFn: ({ signal }) => client.plans(signal),
   staleTime: Infinity,
@@ -75,6 +76,10 @@ function sortHref(field: SortField): RouteLocationRaw {
   }
 }
 
+/** A page number past the last one. The rows are empty and the total is not, so "nothing matches"
+ *  and "there is nobody here" are both false — and the pager beside them says so. */
+const pastTheEnd = computed(() => rows.value.length === 0 && total.value > 0)
+
 const hasFilters = computed(
   () =>
     query.value.states.length > 0 ||
@@ -83,13 +88,7 @@ const hasFilters = computed(
     query.value.q !== null,
 )
 
-const UNREACHABLE = 'The service could not be reached.'
-
-const failure = computed(() => {
-  const cause = error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
-  return UNREACHABLE
-})
+const failure = computed(() => failureText(error.value))
 </script>
 
 <template>
@@ -106,14 +105,31 @@ const failure = computed(() => {
 
     <!-- Hidden with no world: filters over nothing answer every use with the same emptiness.
          The 24px to the table is this section's `gap-6` — an `mb-6` here as well makes it 48. -->
-    <SubscribersFilters v-if="!worldIsUnbuilt" :query="query" :plans="planIds" @change="go" />
+    <SubscribersFilters
+      v-if="!worldIsUnbuilt"
+      :query="query"
+      :plans="planIds"
+      :plans-failed="plansFailed"
+      @change="go"
+    />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a
-         spinner: five rows of the same height, so the page does not resize when they arrive. -->
+         spinner: the header, then five rows built from the table's own padding and its two type
+         sizes, so the page does not resize when the rows arrive. -->
     <div v-if="isPending" class="flex flex-col gap-4" aria-busy="true">
       <span class="sr-only">Loading subscribers</span>
       <div class="overflow-hidden rounded-panel border border-border">
-        <SkeletonBlock v-for="row in 5" :key="row" class="m-4 h-8" />
+        <div class="border-b border-border bg-surface-2 px-4 py-3">
+          <SkeletonBlock class="h-3 max-w-form" />
+        </div>
+        <div
+          v-for="row in 5"
+          :key="row"
+          class="flex flex-col gap-1 border-b border-border px-4 py-3 last:border-b-0"
+        >
+          <SkeletonBlock class="h-4 max-w-form" />
+          <SkeletonBlock class="h-3 w-12" />
+        </div>
       </div>
     </div>
 
@@ -142,15 +158,22 @@ const failure = computed(() => {
         </div>
 
         <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
-          <p class="text-ui text-text-secondary">
+          <p class="max-w-reading text-ui text-text-secondary">
             {{
-              hasFilters
-                ? 'No subscribers match these filters.'
-                : 'This world has no subscribers yet.'
+              pastTheEnd
+                ? `There is no page ${query.page}. This question has ${total} subscribers on ${pageCount} pages.`
+                : hasFilters
+                  ? 'No subscribers match these filters.'
+                  : 'Nobody has subscribed in this world yet. The world goes on running, so the first arrival appears here without a reload.'
             }}
           </p>
+          <!-- Straight back rather than one page at a time: past the end, Previous walks back
+               through however many pages the address overshot by. -->
+          <AppButton v-if="pastTheEnd" variant="outlined" @click="go({ ...query, page: 1 })">
+            Back to the first page
+          </AppButton>
           <AppButton
-            v-if="hasFilters"
+            v-else-if="hasFilters"
             variant="outlined"
             @click="go({ ...EMPTY_QUERY, pageSize: query.pageSize })"
           >

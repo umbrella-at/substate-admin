@@ -103,7 +103,10 @@ function health(seeded: boolean) {
 }
 
 /** A session, because the clock query is guarded on one like every other query in the frame. */
-function signedIn() {
+
+/* `worldId` decides whose world `/api/health` is describing: null is an operator on the base
+   world, which health answers about; an id is a sandbox, which it says nothing about. */
+function signedIn(worldId: string | null = 'w') {
   const pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().adopt({
@@ -117,7 +120,7 @@ function signedIn() {
       isActive: true,
       lastLoginAt: null,
     },
-    worldId: 'w',
+    worldId,
   })
   return pinia
 }
@@ -131,6 +134,7 @@ type Answers = {
   quiet?: () => Promise<unknown>
   revenue?: () => Promise<unknown>
   seeded?: boolean
+  worldId?: string | null
 }
 
 function render(over: Answers = {}) {
@@ -150,7 +154,7 @@ function render(over: Answers = {}) {
   return mount(AnalyticsView, {
     global: {
       plugins: [
-        signedIn(),
+        signedIn(over.worldId === undefined ? 'w' : over.worldId),
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -246,7 +250,7 @@ describe('the four states of one figure', () => {
     return {
       loading: frame.find('.skeleton').exists(),
       failed: text.includes('Try again'),
-      empty: text.includes('There are no subscriptions in this world yet.'),
+      empty: text.includes('No subscription has been started in this world yet.'),
       plot: frame.find('bar-figure-stub').exists(),
     }
   }
@@ -284,8 +288,10 @@ describe('the four states of one figure', () => {
  * one sentence five times, each blaming its own endpoint.
  */
 describe('a world that was not built', () => {
+  // As an OPERATOR on the base world, which is the world `/api/health` describes. A sandbox's
+  // own state is not in that answer, and claiming it from there is decision 213's trap.
   it('replaces the figures rather than appearing inside each of them', async () => {
-    const view = render({ seeded: false })
+    const view = render({ seeded: false, worldId: null })
     await flushPromises()
 
     expect(view.text()).toContain('The demonstration world was not built.')
@@ -293,7 +299,7 @@ describe('a world that was not built', () => {
   })
 
   it('leaves the period control alone, because it is the screen and not a figure', async () => {
-    const view = render({ seeded: false })
+    const view = render({ seeded: false, worldId: null })
     await flushPromises()
     expect(view.text()).toContain('Last 90 days')
   })
@@ -443,5 +449,88 @@ describe('which thirty days the figures ask about', () => {
     )
     wrapper.unmount()
     vi.useRealTimers()
+  })
+})
+
+/** The other four figures' empty branch, which nothing exercised before. */
+
+/* THREE OF THE FIVE ARE ZERO RATHER THAN ABSENT, and the distinction lives in a predicate per
+   figure: a flat line at zero is a drawing of a real answer, so each figure has to be asked
+   whether its numbers add to nothing rather than whether they arrived. */
+
+/* The funnel's asked about one position in an array, which is a different question entirely on an
+   answer with no stages in it. */
+describe('the empty branch of the other four figures', () => {
+  function frameFor(view: ReturnType<typeof render>, question: string) {
+    return view.findAll('section.rounded-panel').find((each) => each.text().includes(question))!
+  }
+
+  it('calls a period with no movement empty rather than plotting two flat lines', async () => {
+    const view = render({
+      flow: () =>
+        Promise.resolve({
+          ...FLOW,
+          points: [
+            { startsAt: '2026-08-24T00:00:00Z', joined: 0, left: 0 },
+            { startsAt: '2026-08-31T00:00:00Z', joined: 0, left: 0 },
+          ],
+        }),
+    })
+    await flushPromises()
+
+    const frame = frameFor(view, 'Who is arriving, and who is leaving?')
+    expect(frame.text()).toContain('Nothing joined or left')
+    expect(frame.find('line-figure-stub').exists()).toBe(false)
+  })
+
+  // Two shapes of nothing, and the second is the one the old predicate got wrong. `stages[0]?.
+  // count === 0` is `undefined === 0` on an empty array — false — so a funnel with no stages at
+  // all fell through to the data branch and drew a plot of nothing under a heading.
+  it.each([
+    [
+      'every stage at zero',
+      [
+        { stage: 'arrived', count: 0 },
+        { stage: 'paid', count: 0 },
+      ],
+    ],
+    ['no stages at all', []],
+  ])('calls a funnel of %s empty', async (_name, stages) => {
+    const view = render({
+      funnel: () => Promise.resolve({ ...FUNNEL, stages, startedATrial: 0 }),
+    })
+    await flushPromises()
+
+    const frame = frameFor(view, 'Where do we lose them?')
+    expect(frame.text()).toContain('Nobody arrived')
+    expect(frame.find('bar-figure-stub').exists()).toBe(false)
+  })
+
+  it('calls a year of no payments empty rather than a chart of nothing', async () => {
+    const view = render({
+      revenue: () =>
+        Promise.resolve({
+          currency: 'USD',
+          months: [
+            { startsAt: '2026-08-01T00:00:00Z', amount: 0 },
+            { startsAt: '2026-09-01T00:00:00Z', amount: 0 },
+          ],
+        }),
+    })
+    await flushPromises()
+
+    const frame = frameFor(view, 'How much money is coming in?')
+    expect(frame.text()).toContain('No payment has been recorded')
+    expect(frame.find('bar-figure-stub').exists()).toBe(false)
+  })
+
+  // The one figure whose zero is good news rather than missing data. It used to claim everybody
+  // had been here, which the cohort cannot support: it drops anyone who never turned up at all.
+  it('does not claim everybody turned up when nobody was quiet', async () => {
+    const view = render({ quiet: () => Promise.resolve({ bands: [], total: 0 }) })
+    await flushPromises()
+
+    const frame = frameFor(view, 'Who pays but has stopped turning up?')
+    expect(frame.text()).toContain('Anyone who has never turned up at all is not counted here.')
   })
 })

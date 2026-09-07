@@ -19,15 +19,17 @@ subscription per tick, so one tick after a ninety-day jump would leave a weekly 
 from datetime import timedelta
 from typing import Annotated, Final
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import audit
 from app.db import get_session
 from app.deps import Authenticated, Identity, RequirePermission
 from app.errors import ApiError, ErrorCode
 from app.logging import get_logger
 from app.routers import current_world, error_responses
 from app.schemas import AdvanceRequest, ClockResponse
+from app.security.ratelimit import client_ip_hash
 from app.seed.run import carry_on
 from app.worlds.journal import ProjectedSubscriber, flush_world, rewrite_projection
 from app.worlds.registry import World
@@ -74,6 +76,7 @@ async def read_clock() -> ClockResponse:
     responses=error_responses(401, 403, 409, 422, 503),
 )
 async def advance(
+    request: Request,
     body: AdvanceRequest,
     identity: Annotated[Identity, RequirePermission("demo.control")],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -85,11 +88,29 @@ async def advance(
     cohort becomes the whole table at the first press.
     """
     world = current_world()
+
+    # THE ONE OPERATOR ACTION THAT CHANGES EVERY NUMBER ON EVERY SCREEN, and it used to leave
+    # nothing but a log line nobody reading the audit screen can see.
+    entry = audit.Entry(
+        actor_user_id=identity.user.id,
+        action="world.advance",
+        target_type="world",
+        target_id=world.id,
+        ip_hash=client_ip_hash(request),
+        world_id=world.id,
+        payload={"days": body.days},
+    )
+
     asked = timedelta(days=body.days)
     left = MAX_WIND - world.clock.offset
     if asked > left:
         # Its own code, and 409: the body is well formed and the world is what will not have it.
         # A 422 on `days` says "correct the number", and at the cap no number succeeds.
+
+        # Recorded before it is raised: the screen's own filter has a `Refused` value, and a press
+        # the world turned down is a thing somebody did.
+        await audit.record(session, entry, refusal=ErrorCode.WORLD_FULLY_WOUND)
+        await session.commit()
         raise ApiError(
             ErrorCode.WORLD_FULLY_WOUND,
             message=(
@@ -129,6 +150,9 @@ async def advance(
                 for uid, name, seen in report.subscribers_projection
             ],
         )
+        # In the same transaction as the journal and the projection, for the reason `audit.perform`
+        # gives about an operation: a world that moved and a row that did not is the pair to avoid.
+        await audit.record(session, entry, refusal=None)
         await session.commit()
 
     _log.info(

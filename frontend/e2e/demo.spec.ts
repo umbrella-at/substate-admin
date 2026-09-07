@@ -78,9 +78,10 @@ test.describe('a stranger with no account', () => {
     await expect(async () => {
       expect(await total(page)).toBeGreaterThan(before)
     }).toPass()
-  })
 
-  test('says how far the world has been wound', async () => {
+    // Asserted here rather than in a test of its own, which is where it used to live. The line is
+    // drawn only once `ahead > 0`, so it was a test about a press another test had made — and a
+    // retry rebuilds the world in `beforeAll`, giving it a fresh one nobody had wound.
     await expect(page.getByText(/\d+ days ahead of today/u)).toBeVisible()
   })
 })

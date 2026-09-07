@@ -56,7 +56,11 @@ MAX_SANDBOXES: Final = 32
 
 
 class SandboxesAreFull(Exception):
-    """The ceiling is reached. The caller answers with the base world on offer instead."""
+    """The ceiling is reached. The caller answers 503, and says the slots come back within the hour.
+
+    Not "with the base world on offer": whoever meets this has no account — the door is what they
+    pressed instead of one — and the read-only base world that sentence promised was never built.
+    """
 
 
 @dataclass(frozen=True, slots=True)

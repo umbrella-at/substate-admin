@@ -68,7 +68,7 @@
 2 22 frontend/capture/subscribers.capture.ts
 3 56 frontend/e2e/session.spec.ts
 2 15 frontend/e2e/subscriber.spec.ts
-4 30 frontend/e2e/subscribers.spec.ts
+4 29 frontend/e2e/subscribers.spec.ts
 3 24 frontend/eslint.config.ts
 2 25 frontend/playwright.capture.config.ts
 4 34 frontend/playwright.config.ts
@@ -97,7 +97,7 @@
 1 11 frontend/src/components/SubscriberFeed.vue
 6 37 frontend/src/components/SubscriberOperations.spec.ts
 8 62 frontend/src/components/SubscriberOperations.vue
-5 44 frontend/src/components/SubscribersFilters.vue
+4 40 frontend/src/components/SubscribersFilters.vue
 5 28 frontend/src/components/SubscribersTable.spec.ts
 7 61 frontend/src/components/SubscribersTable.vue
 1 7 frontend/src/components/TablePager.vue

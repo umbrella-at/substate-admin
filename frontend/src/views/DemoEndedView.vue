@@ -14,6 +14,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -24,21 +25,26 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const busy = ref(false)
-const refused = ref(false)
+
+/** Why no world was opened, in the service's own words. It used to be a boolean, and the sentence
+ *  it produced asserted one particular cause — every slot taken — for all four of them. */
+const refusal = ref('')
+
+const UNBUILT = 'No world could be built just now. The service did not answer; try again shortly.'
 
 async function again(): Promise<void> {
   if (busy.value) return
   busy.value = true
-  refused.value = false
+  refusal.value = ''
   try {
     const session = await client.demoSession()
     client.setDemoToken(session.accessToken)
     auth.adopt(await client.me())
     await router.replace({ name: 'dashboard' })
-  } catch {
-    // Every reason is the same reason from here: no world was opened. The message says what to
-    // do about it rather than which of the two it was.
-    refused.value = true
+  } catch (cause) {
+    // The service's own sentence when it wrote one: every slot taken, too many attempts, or a
+    // failure it names. Only silence gets the sentence about silence.
+    refusal.value = failureText(cause, UNBUILT)
   } finally {
     busy.value = false
   }
@@ -55,22 +61,13 @@ async function again(): Promise<void> {
         nine months of history.
       </p>
 
-      <AppNotice v-if="refused" role="warning">
-        No demonstration could be opened just now. They are handed back within the hour, so this is
-        worth trying again shortly.
-      </AppNotice>
+      <AppNotice v-if="refusal !== ''" role="warning">{{ refusal }}</AppNotice>
 
-      <div class="flex items-center gap-3">
-        <AppButton variant="filled" :busy="busy" @click="again">
-          {{ busy ? 'Building a world…' : 'Start another' }}
-        </AppButton>
-        <RouterLink
-          :to="{ name: 'login' }"
-          class="text-ui text-text-secondary hover:text-text-primary"
-        >
-          Sign in instead
-        </RouterLink>
-      </div>
+      <!-- One button, and the second exit is gone: it went to the login page, which is the one
+           destination this screen exists to avoid and which its own comment above rejects. -->
+      <AppButton variant="filled" :busy="busy" @click="again">
+        {{ busy ? 'Building a world…' : 'Start another' }}
+      </AppButton>
     </div>
   </div>
 </template>

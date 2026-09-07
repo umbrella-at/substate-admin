@@ -15,12 +15,13 @@ Restart=always with no restart limit. A startup that required the database would
 Postgres into a restart loop; instead it costs one 503 from /api/health until the cluster is up.
 """
 
-from collections.abc import AsyncIterator, Iterable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from contextlib import asynccontextmanager
 from typing import Final
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.routing import BaseRoute
 
 from app import __version__
@@ -41,10 +42,10 @@ from app.routers import (
     subscribers,
     users,
 )
-from app.worlds.bootstrap import build_base_world, set_base_world_status
+from app.worlds.bootstrap import build_base_world, repair_base_world, set_base_world_status
 from app.worlds.journal import flush_world, purge_sandbox
-from app.worlds.registry import World, get_registry
-from app.worlds.ticker import ticking
+from app.worlds.registry import World, WorldRegistry, get_registry
+from app.worlds.ticker import Reaper, Recorder, ticking
 
 _log = get_logger(__name__)
 
@@ -53,6 +54,42 @@ _log = get_logger(__name__)
 # Path=/api/auth is written against these paths, and a prefix that lived in the proxy could be
 # changed there without anything in this repository noticing.
 API_PREFIX: Final = "/api"
+
+
+def recorder(engine_of: Callable[[], AsyncEngine]) -> Recorder:
+    """Put what a tick produced into the journal.
+
+    Its own transaction per world and per round: a round that failed to record one sandbox should
+    not take the base world's events down with it.
+    """
+
+    async def record(world: World) -> None:
+        async with engine_of().begin() as connection:
+            await flush_world(connection, world)
+
+    return record
+
+
+def collector(registry: WorldRegistry, engine_of: Callable[[], AsyncEngine]) -> Reaper:
+    """Take back the sandboxes whose time is up, with their rows — and repair a start that could
+    not reach the database.
+
+    Handed to the ticker rather than run as a task of its own: two loops would interleave, and a
+    world dropped mid-round is a world the recorder writes rows for after it is gone.
+    """
+
+    # The repair rides here because the ticker already survives a failure of this callback — and
+    # built outside the lifespan, so a test can hold down the one line that wires it.
+    async def collect() -> int:
+        await repair_base_world(registry, engine_of())
+
+        async def purge(world_id: str) -> None:
+            async with engine_of().begin() as connection:
+                await purge_sandbox(connection, world_id)
+
+        return await reap(registry, purge)
+
+    return collect
 
 
 @asynccontextmanager
@@ -79,27 +116,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _, status = await build_base_world(registry, get_engine())
     set_base_world_status(status)
 
-    async def record(world: World) -> None:
-        """Put what a tick produced into the journal.
-
-        Its own transaction per world and per round: a round that failed to record one sandbox
-        should not take the base world's events down with it.
-        """
-        async with get_engine().begin() as connection:
-            await flush_world(connection, world)
-
-    async def collect() -> int:
-        """Take back the sandboxes whose time is up, with their rows.
-
-        Handed to the ticker rather than run as a task of its own: two loops would interleave, and
-        a world dropped mid-round is a world the recorder above writes rows for after it is gone.
-        """
-
-        async def purge(world_id: str) -> None:
-            async with get_engine().begin() as connection:
-                await purge_sandbox(connection, world_id)
-
-        return await reap(registry, purge)
+    record = recorder(get_engine)
+    collect = collector(registry, get_engine)
 
     try:
         async with ticking(registry, record, collect):

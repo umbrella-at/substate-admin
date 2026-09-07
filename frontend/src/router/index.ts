@@ -12,7 +12,12 @@
  * would mean a role change could only take effect with a frontend release.
  */
 
-import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
+import {
+  createRouter,
+  createWebHistory,
+  type RouteLocationNormalized,
+  type RouteRecordRaw,
+} from 'vue-router'
 
 import type { PermissionCode } from '@/domain/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -107,6 +112,20 @@ export const router = createRouter({
       meta: { requiresAuth: false },
       component: () => import('@/views/DemoEndedView.vue'),
     },
+    // The one page that is not in the production bundle. `import.meta.env.DEV` is a constant the
+    // build folds away, so the view, its fixtures and every screen they pull in disappear with it.
+    ...(import.meta.env.DEV
+      ? ([
+          {
+            path: '/dev/states',
+            name: 'dev-states',
+            // Unframed and open: it embeds whole screens, and the sidebar around a page made of
+            // sidebars is unreadable. There is no session behind any of it to protect.
+            meta: { requiresAuth: false },
+            component: () => import('@/views/DevStatesView.vue'),
+          },
+        ] as const satisfies readonly RouteRecordRaw[])
+      : []),
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
@@ -123,6 +142,12 @@ router.beforeEach(async (to) => {
   // Without this wait the first navigation after a reload reads an empty store and redirects a
   // signed-in person to the login page — a bug that looks like "the session did not survive".
   if (!auth.ready) await auth.bootstrap(apiClient())
+
+  // Before the sign-in redirect below, because it would otherwise catch this first. A pass whose
+  // world is gone is not somebody who needs to sign in; it is a demonstration that ended.
+  if (auth.demoEnded && to.name !== 'demo-ended') {
+    return { name: 'demo-ended', replace: true }
+  }
 
   const needsAuth = to.meta.requiresAuth !== false
 

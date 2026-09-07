@@ -626,7 +626,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete";
+            action: "subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete" | "world.advance";
             actor: components["schemas"]["AuditActor"];
             errorCode?: components["schemas"]["ErrorCode"] | null;
             /**
@@ -654,7 +654,7 @@ export interface components {
              * Targettype
              * @enum {string}
              */
-            targetType: "subscription" | "role";
+            targetType: "subscription" | "role" | "world";
             /** Worldid */
             worldId?: string | null;
         };
@@ -1638,7 +1638,7 @@ export interface operations {
                 page?: number;
                 pageSize?: number;
                 actorUserId?: string | null;
-                action?: ("subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete")[];
+                action?: ("subscription.subscribe" | "subscription.cancel" | "subscription.change_plan" | "subscription.redeem" | "subscription.payment" | "subscription.assign_program" | "role.create" | "role.update" | "role.delete" | "world.advance")[];
                 targetId?: string | null;
                 outcome?: ("ok" | "refused") | null;
             };

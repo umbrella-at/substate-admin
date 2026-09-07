@@ -59,18 +59,22 @@ const userId = computed(() => row.value.userId)
 
 const { mutateAsync, isPending } = useSubscriberOperation(userId)
 
+/** WHICH operation is out, not merely that one is. Six buttons sharing one flag meant a payment
+ *  made the card say "Cancelling the subscription…" — the label of a button nobody had pressed. */
+const running = ref<OperationPath | null>(null)
+
 const mayWrite = computed(() => auth.can('subscribers.write'))
 const mayAssign = computed(() => auth.can('referrals.write'))
 
 /** The catalogues the two choices are made from. Cached for the session: five plans and two
  *  programmes do not change while somebody is looking at a card. */
-const { data: plans } = useQuery<PlanSummary[]>({
+const { data: plans, isLoading: plansLoading } = useQuery<PlanSummary[]>({
   queryKey: ['plans'],
   queryFn: ({ signal }) => client.plans(signal),
   staleTime: Infinity,
   enabled: mayWrite,
 })
-const { data: programs } = useQuery<ReferralProgramSummary[]>({
+const { data: programs, isLoading: programsLoading } = useQuery<ReferralProgramSummary[]>({
   queryKey: ['referral-programs'],
   queryFn: ({ signal }) => client.referralPrograms(signal),
   staleTime: Infinity,
@@ -85,8 +89,11 @@ const planOptions = computed(() =>
  *  every submit blames the operator for a request that failed somewhere else. */
 const NO_CATALOGUE = 'The plan catalogue could not be read. Reload the page to try again.'
 const NO_PROGRAMMES = 'The programme list could not be read. Reload the page to try again.'
-const plansMissing = computed(() => planOptions.value.length === 0)
-const programsMissing = computed(() => programOptions.value.length === 0)
+
+/* A catalogue still in flight is not a catalogue that could not be read. Held apart because the
+   sentence names a cause, and for the first moment of every card it named the wrong one. */
+const plansMissing = computed(() => !plansLoading.value && planOptions.value.length === 0)
+const programsMissing = computed(() => !programsLoading.value && programOptions.value.length === 0)
 const programOptions = computed(() =>
   (programs.value ?? []).map((program) => ({
     value: program.id,
@@ -125,6 +132,7 @@ async function run(attempt: Attempt): Promise<void> {
   // idempotent that is two redemptions of one code.
   if (isPending.value) return
   notice.value = null
+  running.value = attempt.operation
   try {
     const result = await mutateAsync({ operation: attempt.operation, body: attempt.body ?? {} })
     // Green over "Nothing changed" is a contradiction the eye reads before the words. ANY of the
@@ -154,6 +162,8 @@ async function run(attempt: Attempt): Promise<void> {
       attempt.onField(failure.field, failure.message)
     if (landed) return
     notice.value = { role: 'danger', lines: [failure.message] }
+  } finally {
+    running.value = null
   }
 }
 
@@ -475,9 +485,9 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
             type="submit"
             :variant="primary === 'payment' ? 'filled' : 'outlined'"
             :disabled="!canPay"
-            :busy="isPending"
+            :busy="running === 'payment'"
           >
-            {{ isPending ? 'Recording the payment…' : 'Record a payment' }}
+            {{ running === 'payment' ? 'Recording the payment…' : 'Record a payment' }}
           </AppButton>
         </div>
       </form>
@@ -502,9 +512,9 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
             type="submit"
             variant="outlined"
             :disabled="row.state === 'cancelled' || plansMissing"
-            :busy="isPending"
+            :busy="running === 'change-plan'"
           >
-            {{ isPending ? 'Changing the plan…' : 'Change plan' }}
+            {{ running === 'change-plan' ? 'Changing the plan…' : 'Change plan' }}
           </AppButton>
         </div>
       </form>
@@ -520,8 +530,8 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
           :error="redeem.errors.value.promoCode"
         />
         <div>
-          <AppButton type="submit" variant="outlined" :busy="isPending">{{
-            isPending ? 'Redeeming the code…' : 'Redeem code'
+          <AppButton type="submit" variant="outlined" :busy="running === 'redeem'">{{
+            running === 'redeem' ? 'Redeeming the code…' : 'Redeem code'
           }}</AppButton>
         </div>
       </form>
@@ -543,8 +553,13 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
           :error="assign.errors.value.programId"
         />
         <div>
-          <AppButton type="submit" variant="outlined" :disabled="programsMissing" :busy="isPending">
-            {{ isPending ? 'Assigning the programme…' : 'Assign programme' }}
+          <AppButton
+            type="submit"
+            variant="outlined"
+            :disabled="programsMissing"
+            :busy="running === 'referral-program'"
+          >
+            {{ running === 'referral-program' ? 'Assigning the programme…' : 'Assign programme' }}
           </AppButton>
         </div>
       </form>
@@ -559,10 +574,10 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
           <AppButton
             variant="outlined"
             :disabled="!canCancel"
-            :busy="isPending"
+            :busy="running === 'cancel'"
             @click="cancelling = true"
           >
-            {{ isPending ? 'Cancelling the subscription…' : 'Cancel subscription' }}
+            {{ running === 'cancel' ? 'Cancelling the subscription…' : 'Cancel subscription' }}
           </AppButton>
         </div>
       </div>
@@ -592,9 +607,9 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
             type="submit"
             :variant="primary === 'subscribe' ? 'filled' : 'outlined'"
             :disabled="plansMissing"
-            :busy="isPending"
+            :busy="running === 'subscribe'"
           >
-            {{ isPending ? 'Starting the subscription…' : 'Start a subscription' }}
+            {{ running === 'subscribe' ? 'Starting the subscription…' : 'Start a subscription' }}
           </AppButton>
         </div>
       </form>
@@ -606,7 +621,7 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
       busy-action="Cancelling the subscription…"
       dismiss="Keep subscription"
       :title="cancelConsequence"
-      :busy="isPending"
+      :busy="running === 'cancel'"
       @confirm="confirmCancel"
     />
 
@@ -616,7 +631,7 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
       busy-action="Redeeming the code…"
       dismiss="Leave it"
       :title="`${(redeem.values.promoCode ?? '').trim()} can be redeemed once. This cannot be undone.`"
-      :busy="isPending"
+      :busy="running === 'redeem'"
       @confirm="confirmRedeem"
     />
 
@@ -626,7 +641,7 @@ const primary = computed<OperationPath>(() => (canPay.value ? 'payment' : 'subsc
       busy-action="Starting the subscription…"
       dismiss="Leave it as it is"
       :title="restartConsequence"
-      :busy="isPending"
+      :busy="running === 'subscribe'"
       @confirm="confirmRestart"
     />
   </section>

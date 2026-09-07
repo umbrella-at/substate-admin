@@ -16,11 +16,12 @@
  * subscriber is a thing somebody sends to a colleague.
  */
 
-import { useQuery } from '@tanstack/vue-query'
+import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { ApiError, type AuditPage } from '@/api/client'
+import { type AuditPage } from '@/api/client'
+import { failureText } from '@/api/failure'
 import { useApiClient } from '@/api/provide'
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
@@ -53,10 +54,17 @@ const query = computed<AuditQuery>(() => auditQueryFromRoute(route.query))
 const result = useQuery<AuditPage>({
   queryKey: computed(() => ['audit', auditQueryKey(query.value)]),
   queryFn: ({ signal }) => client.audit(auditQueryToSearchParams(query.value), signal),
+  // The only paged list here that did not keep the last answer, so every filter click and every
+  // page turn threw the rows, the pager and the count away for a skeleton.
+  placeholderData: keepPreviousData,
 })
 
 const rows = computed(() => result.data.value?.items ?? [])
 const total = computed(() => result.data.value?.total ?? 0)
+
+/** A page number past the last one — the third nothing, and the one the two sentences below both
+ *  describe falsely. Decision 238 fixed it on the two subscriber tables and not on this one. */
+const pastTheEnd = computed(() => rows.value.length === 0 && total.value > 0)
 const pageSize = computed(() => result.data.value?.pageSize ?? 25)
 const pageCount = computed(() => (total.value === 0 ? 0 : Math.ceil(total.value / pageSize.value)))
 
@@ -87,12 +95,7 @@ function setOutcome(outcome: Outcome | null): void {
   go({ ...query.value, page: 1, outcome })
 }
 
-const UNREACHABLE = 'The service could not be reached.'
-const failure = computed(() => {
-  const cause = result.error.value
-  if (cause instanceof ApiError && cause.status < 500 && cause.message !== '') return cause.message
-  return UNREACHABLE
-})
+const failure = computed(() => failureText(result.error.value))
 </script>
 
 <template>
@@ -157,7 +160,12 @@ const failure = computed(() => {
     <div v-if="result.isPending.value" class="flex flex-col gap-4" aria-busy="true">
       <span class="sr-only">Loading the audit</span>
       <div class="overflow-hidden rounded-panel border border-border">
-        <SkeletonBlock v-for="line in 5" :key="line" class="m-4 h-8" />
+        <div class="border-b border-border bg-surface-2 px-4 py-3">
+          <SkeletonBlock class="h-3 max-w-form" />
+        </div>
+        <div v-for="line in 5" :key="line" class="border-b border-border px-4 py-3 last:border-b-0">
+          <SkeletonBlock class="h-4 max-w-reading" />
+        </div>
       </div>
     </div>
 
@@ -167,23 +175,36 @@ const failure = computed(() => {
     </div>
 
     <template v-else>
-      <AuditTable
-        :rows="rows"
-        :live-world="liveWorld"
-        :busy="result.isFetching.value"
-        @filter-actor="(id: string) => go({ ...query, page: 1, actorUserId: id })"
-        @filter-target="(id: string) => go({ ...query, page: 1, targetId: id })"
-      />
+      <!-- Dimmed while a newer answer is on its way, like the other two tables: the rows on screen
+           are real and one question out of date, and only assistive tech was being told. -->
+      <div :class="result.isFetching.value ? 'opacity-60 transition-opacity' : ''">
+        <AuditTable
+          :rows="rows"
+          :live-world="liveWorld"
+          :busy="result.isFetching.value"
+          @filter-actor="(id: string) => go({ ...query, page: 1, actorUserId: id })"
+          @filter-target="(id: string) => go({ ...query, page: 1, targetId: id })"
+        />
+      </div>
 
       <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
         <p class="max-w-reading text-ui text-text-secondary">
           {{
-            hasAuditFilters(query)
-              ? 'No recorded action matches these filters.'
-              : 'Nothing has been done to a subscription yet. Open a subscriber and perform an operation, and it will be recorded here.'
+            pastTheEnd
+              ? `There is no page ${query.page}. This log holds ${total} recorded actions on ${pageCount} pages.`
+              : hasAuditFilters(query)
+                ? 'No recorded action matches these filters.'
+                : 'Nothing has been done here yet. An operation on a subscriber, or an edit to a role, is recorded here as soon as it is made.'
           }}
         </p>
-        <AppButton v-if="hasAuditFilters(query)" variant="outlined" @click="go(EMPTY_AUDIT_QUERY)">
+        <AppButton v-if="pastTheEnd" variant="outlined" @click="go({ ...query, page: 1 })">
+          Back to the first page
+        </AppButton>
+        <AppButton
+          v-else-if="hasAuditFilters(query)"
+          variant="outlined"
+          @click="go(EMPTY_AUDIT_QUERY)"
+        >
           Clear filters
         </AppButton>
       </div>

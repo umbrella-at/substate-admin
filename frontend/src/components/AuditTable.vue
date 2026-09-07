@@ -37,29 +37,30 @@ defineEmits<{ filterActor: [string]; filterTarget: [string] }>()
  *  about "another world" would be about a column that is empty on purpose. */
 function targetTitle(row: AuditEntry): string {
   if (row.targetType === 'role') return 'A role, which belongs to this panel rather than to a world'
+  if (row.targetType === 'world') return 'The world itself, which is what the time machine moves'
   if (props.liveWorld === null) return 'Which world this panel is showing is not known yet'
   return `Recorded in world ${row.worldId}, which is not the one on screen`
 }
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-panel border border-border">
+  <div class="overflow-x-auto rounded-panel border border-border bg-surface-1">
     <table class="w-full border-collapse text-ui" :aria-busy="busy === true">
       <thead>
         <tr class="border-b border-border bg-surface-2">
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             When
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             Who
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             Action
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             Subscriber
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             Result
           </th>
         </tr>
@@ -68,7 +69,7 @@ function targetTitle(row: AuditEntry): string {
         <tr
           v-for="row in rows"
           :key="row.id"
-          class="border-b border-border last:border-b-0 hover:bg-surface-1"
+          class="border-b border-border last:border-b-0 hover:bg-surface-2"
         >
           <td class="px-4 py-3 align-top font-numeric text-dense tabular-nums text-text-muted">
             {{ instant(row.occurredAt) }}
