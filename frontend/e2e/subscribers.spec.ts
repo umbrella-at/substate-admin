@@ -36,6 +36,13 @@ async function signIn(page: Page): Promise<void> {
   await expect(page.getByRole('link', { name: 'Subscribers' })).toBeVisible()
 }
 
+/** What the pager says the answer holds, as a number. Read rather than written down: the world
+ *  is nine months ending on whatever day this runs, and it can be wound forward from there. */
+async function counted(page: Page): Promise<number> {
+  const text = await page.getByText(/\d+ subscribers?/).textContent()
+  return Number(text?.match(/\d+/)?.[0])
+}
+
 function rows(page: Page) {
   return page.locator('tbody tr')
 }
@@ -70,12 +77,16 @@ test.describe('the subscriber table', () => {
   })
 
   test('a filter narrows the table and says so in the address', async () => {
+    const everyone = await counted(page)
+
     await page.getByRole('checkbox', { name: 'In grace' }).click()
     await expect(page).toHaveURL(/state=grace/)
     await expect(rows(page).first().getByText('In grace')).toBeVisible()
 
-    const total = await page.getByText(/\d+ subscribers?/).textContent()
-    expect(Number(total?.match(/\d+/)?.[0])).toBeLessThan(50)
+    // Against the number this table said a moment ago, not against a number from the seed. The
+    // world is rebuilt around whatever day the run lands on and can be wound forward besides, so
+    // a written-down total is a coin — and the assertion it degrades into is one that cannot fail.
+    await expect.poll(() => counted(page)).toBeLessThan(everyone)
   })
 
   // The property that makes the URL worth putting the state in: the link is the table.
@@ -153,13 +164,17 @@ test.describe('the subscriber table', () => {
   })
 
   test('more than one plan can be asked for at once', async () => {
-    const count = page.getByText(/\d+ subscribers?/)
+    const everyone = await counted(page)
 
     // Exact: "annual" is also inside "semiannual", and a substring match would tick both.
     await page.getByRole('checkbox', { name: 'weekly' }).click()
     await expect(page).toHaveURL(/planId=weekly/)
-    await expect(count).not.toHaveText(/351/)
-    const one = Number((await count.textContent())?.match(/\d+/)?.[0])
+
+    // Waiting for the ANSWER, not for the address. This waited for the count to stop saying 351,
+    // which is a number out of the seed: wind the world and the unfiltered total is not 351
+    // either, so the wait returned at once and `one` below was the unfiltered table.
+    await expect.poll(() => counted(page)).toBeLessThan(everyone)
+    const one = await counted(page)
 
     await page.getByRole('checkbox', { name: 'annual', exact: true }).click()
     await expect(page).toHaveURL(/planId=weekly.*planId=annual/)
@@ -169,11 +184,8 @@ test.describe('the subscriber table', () => {
     //
     // Polled on the number rather than waited on the text: the count also carries "· page 1 of 3",
     // so an assertion against "72 subscribers" is never equal to it and `not.toHaveText` returns
-    // at once — which is how the first version of this read the old total and compared it with
-    // itself.
-    await expect
-      .poll(async () => Number((await count.textContent())?.match(/\d+/)?.[0]))
-      .toBeGreaterThan(one)
+    // at once.
+    await expect.poll(() => counted(page)).toBeGreaterThan(one)
 
     // Whichever rows the order happens to put on this page, none of them is a third plan. The
     // earlier version of this asserted both plans were visible here, which is a fact about the

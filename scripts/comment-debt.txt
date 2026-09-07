@@ -68,7 +68,7 @@
 2 22 frontend/capture/subscribers.capture.ts
 3 56 frontend/e2e/session.spec.ts
 2 15 frontend/e2e/subscriber.spec.ts
-4 30 frontend/e2e/subscribers.spec.ts
+4 29 frontend/e2e/subscribers.spec.ts
 3 24 frontend/eslint.config.ts
 2 25 frontend/playwright.capture.config.ts
 4 34 frontend/playwright.config.ts
