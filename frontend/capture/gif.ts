@@ -23,8 +23,16 @@ export interface Frame {
  *  the palette it actually needs is far smaller, but a cheap ceiling costs nothing here. */
 const COLOURS = 256
 
-export function encodeGif(frames: readonly Frame[]): Buffer {
+/** Every second pixel of every frame goes into the palette. */
+
+/* LEARNED FROM ALL OF THEM, NOT FROM THE FIRST. The first frame here is a sign-in screen, which
+   holds none of the five state-chip colours — so a palette quantized from it mapped every chip in
+   the animation onto the same blue-grey, and the picture's whole subject went missing. */
+const EVERY = 2
+
+export function encodeGif(frames: readonly Frame[], keep: readonly string[] = []): Buffer {
   if (frames.length === 0) throw new Error('a gif of no frames is not a gif')
+  if (keep.length > COLOURS / 2) throw new Error('too many colours reserved to learn a palette')
 
   const decoded = frames.map((frame) => ({ image: PNG.sync.read(frame.png), ms: frame.ms }))
   const { width, height } = decoded[0]!.image
@@ -36,17 +44,77 @@ export function encodeGif(frames: readonly Frame[]): Buffer {
     }
   }
 
-  // ONE PALETTE FOR THE WHOLE ANIMATION, quantized from the first frame and reused. Per-frame
-  // palettes make the interface's greys shift between frames, which reads as the panel flickering
-  // rather than as the data changing — and the data changing is the entire subject.
+  // ONE PALETTE FOR THE WHOLE ANIMATION. Per-frame palettes make the interface's greys shift
+  // between frames, which reads as the panel flickering rather than as the data changing.
   const encoder = GIFEncoder()
-  const palette = quantize(new Uint8ClampedArray(decoded[0]!.image.data), COLOURS)
+  const palette = paletteOf(
+    decoded.map((frame) => frame.image),
+    keep,
+  )
 
-  for (const { image, ms } of decoded) {
+  decoded.forEach(({ image, ms }, index) => {
     const rgba = new Uint8ClampedArray(image.data)
-    encoder.writeFrame(applyPalette(rgba, palette), width, height, { palette, delay: ms })
-  }
+    // The palette is written once, on the first frame. Passed on every frame, gifenc emits a
+    // local colour table each time — fifteen identical copies of the same 768 bytes.
+    encoder.writeFrame(applyPalette(rgba, palette), width, height, {
+      delay: ms,
+      ...(index === 0 ? { palette } : {}),
+    })
+  })
 
   encoder.finish()
   return Buffer.from(encoder.bytes())
+}
+
+/** The colours of the whole animation, sampled from every frame of it. */
+
+/* `keep` is put in by hand rather than hoped for: a state chip is a few hundred pixels of a
+   million, so quantizing merges it into the greys around it — and five chips being five colours is
+   the one thing this picture is about. */
+function paletteOf(images: readonly { data: Buffer }[], keep: readonly string[]): number[][] {
+  const pixels = images.reduce(
+    (count, image) => count + Math.ceil(image.data.length / 4 / EVERY),
+    0,
+  )
+  const sample = new Uint8ClampedArray(pixels * 4)
+  let at = 0
+  for (const image of images) {
+    for (let p = 0; p + 3 < image.data.length; p += 4 * EVERY) {
+      sample[at] = image.data[p]!
+      sample[at + 1] = image.data[p + 1]!
+      sample[at + 2] = image.data[p + 2]!
+      sample[at + 3] = 255
+      at += 4
+    }
+  }
+  const reserved = keep.map((hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)))
+  return [...reserved, ...quantize(sample, COLOURS - reserved.length)]
+}
+
+/** The colours a gif can actually draw, read back out of the bytes it is about to be written as. */
+
+/* One assertion the run cannot make any other way: that the five state chips are still five
+   colours in the finished picture. */
+export function paletteIn(gif: Buffer): [number, number, number][] {
+  const packed = gif[10]!
+  if ((packed & 0x80) === 0) throw new Error('this gif has no global colour table')
+  const size = 2 ** ((packed & 7) + 1)
+  return Array.from({ length: size }, (_unused, index) => {
+    const at = 13 + index * 3
+    return [gif[at]!, gif[at + 1]!, gif[at + 2]!] as [number, number, number]
+  })
+}
+
+/** How far the nearest entry of a palette is from a colour, in plain RGB distance. */
+export function distanceTo(palette: readonly [number, number, number][], hex: string): number {
+  const want = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
+  return Math.round(
+    Math.sqrt(
+      Math.min(
+        ...palette.map((entry) =>
+          entry.reduce((sum, part, index) => sum + (part - want[index]!) ** 2, 0),
+        ),
+      ),
+    ),
+  )
 }
