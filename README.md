@@ -22,7 +22,7 @@ Every picture here is generated rather than taken. `npm --prefix frontend run ca
 
 ```json
 { "status": "ok", "version": "0.1.0", "commit": "840edf8", "db": true,
-  "world": { "seeded": true, "subscribers": 351, "events": 3791 } }
+  "world": { "id": "base", "seeded": true, "subscribers": 351, "events": 3791 } }
 ```
 
 ## Run it locally
@@ -39,20 +39,23 @@ npm --prefix frontend run dev                              # http://127.0.0.1:51
 
 The API builds the demonstration world while it starts, so the second command is also the one that produces the 351 subscribers.
 
-First time, before those three work — the schema, the permission catalogue, an account to sign in as, and the dependencies the SPA is built from:
+First time, before those three work — the schema, the permission catalogue, an account to sign in as, and the dependencies the SPA is built from. The database has to be up before the migration, and the configuration has to be filled in before either, so the order below is the order it runs in:
 
 ```sh
-cp backend/.env.example backend/.env   # a DSN, two secrets, two switches and the build
-                                       # it reports, all described in the file itself
+docker compose up -d                   # the database the migration is about to talk to
+cp backend/.env.example backend/.env   # then fill it in: three keys have no defaults and
+                                       # nothing starts without them
 uv run --directory backend alembic upgrade head
 uv run --directory backend substate-admin sync-permissions
 uv run --directory backend substate-admin create-user --email you@example.com --role admin
 npm --prefix frontend ci
 ```
 
+The three with no defaults are the DSN and two secrets, and the file describes every key it holds. With the compose file above, the DSN is `postgresql+psycopg://postgres:postgres@127.0.0.1:5432/substate_admin`; both secrets are whatever `openssl rand -hex 32` gives you.
+
 `COOKIE_SECURE=false` is the one that catches people: Safari refuses a `Secure` cookie over `http://localhost` without saying so, and the panel logs in and then cannot refresh.
 
-The browser tests sign in as three fixed accounts of their own and need a role the panel defines, because the permission scenario signs in as somebody who is refused and a system role hides its own controls from everybody. The addresses are literals in `playwright.config.ts`, so the account you created above is not one of them:
+The browser tests sign in as three fixed accounts of their own and need a role the panel does NOT define: the sharper half of the permission scenario asserts that the controls on a role are absent, and every role the deploy defines hides them from everybody, so asserting it there would pass with the permission check deleted. The addresses are literals in `playwright.config.ts`, so the account you created above is not one of them:
 
 ```sh
 uv run --directory backend substate-admin create-role \
@@ -139,7 +142,7 @@ A boundary nobody wrote down gets re-drawn by whoever needs it next, so here is 
 - **The catalogue is set in code and read by the panel.** Plans, promo codes and referral programmes are constants the API serves and every screen chooses from; editing them is v0.2, and so are the Plans, Promo codes and Referrals screens that would edit them. The forms, the tables, the permission matrix and the four states are all demonstrated by the six operations on a subscriber's card, and a fourth pass over the same ground would add nothing to read.
 - **No general event feed.** A subscriber's own history is on their card. The whole journal as one screen is v0.2, with the catalogue screens.
 - **No SQLAlchemy storage.** Worlds run on `substate`'s in-memory storage, which is why a restart takes every sandbox with it. Persistent storage is substate's own v0.2.
-- **One theme, dark, in one language.** No light theme, no i18n, no localisation. `docs/design.md` says so on its first page.
+- **One theme, dark.** No light theme — `docs/design.md` says so on its first page — and no i18n or localisation: the interface is English, and the fonts it ships are subset to Latin.
 - **No export and no print stylesheet.** Nothing here produces a CSV or a PDF.
 - **No real payment provider.** A webhook shape is exercised in the tests and nothing outbound is wired to anything.
 - **Nothing leaves the panel.** No notifications, no email, no outbound webhooks.
