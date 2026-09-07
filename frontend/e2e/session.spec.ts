@@ -72,9 +72,10 @@ async function signIn(page: Page, password: string = account.password): Promise<
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 }
 
-/** The email as the dashboard prints it. */
+/** The email as the dashboard prints it — scoped to the page rather than the frame, which now
+ *  prints it as well beside the way out. */
 function signedInAs(page: Page): Locator {
-  return page.getByText(account.email, { exact: true })
+  return page.getByRole('main').getByText(account.email, { exact: true })
 }
 
 /** The two web storages and `document.cookie`, read from inside the page.

@@ -11,18 +11,39 @@
  * visible half of that and this is the half a screen reader gets.
  */
 
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useQueryClient } from '@tanstack/vue-query'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
 import ClockControl from '@/components/ClockControl.vue'
+import { useApiClient } from '@/api/provide'
 import { useWorldClock } from '@/composables/useWorldClock'
 import type { PermissionCode } from '@/domain/permissions'
+import { signOut } from '@/session'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
+const client = useApiClient()
+const queryClient = useQueryClient()
+
+/* THE WAY OUT IS IN THE FRAME, because the frame is on every screen. It used to be a button on the
+   dashboard, so leaving from anywhere else meant navigating somewhere first to find it. */
+const signingOut = ref(false)
+
+async function onSignOut(): Promise<void> {
+  if (signingOut.value) return
+  signingOut.value = true
+  try {
+    await signOut(client, queryClient)
+    await router.replace({ name: 'login' })
+  } finally {
+    signingOut.value = false
+  }
+}
 
 /* READ HERE, NOT IN THE CONTROL, because the control is drawn only for whoever may press it.
    `support` and `viewer` hold no `demo.control` — so once anybody winds the base world, their
@@ -69,7 +90,12 @@ const visible = computed(() =>
 
 <template>
   <div class="flex min-h-screen">
-    <nav class="w-sidebar shrink-0 border-r border-border bg-surface-1 p-4" aria-label="Sections">
+    <!-- The sidebar shrinks below `sm` rather than holding 240px of a 375px screen, which left
+         the content column 135px wide. The links wrap; nothing is hidden behind a menu. -->
+    <nav
+      class="shrink-0 border-r border-border bg-surface-1 p-4 sm:w-sidebar"
+      aria-label="Sections"
+    >
       <span class="block px-3 py-2 text-heading text-text-primary">substate</span>
       <ul class="mt-4 flex flex-col gap-1">
         <li v-for="destination in visible" :key="destination.name">
@@ -87,6 +113,15 @@ const visible = computed(() =>
       <!-- Drawn only for whoever may press it, like every link above. A control that is visible
            and refused is an invitation to a locked door. -->
       <ClockControl v-if="auth.can('demo.control')" />
+
+      <!-- Whose session this is, and how to end it. Outlined, not filled: the last thing anybody
+           here means to do must not be the loudest thing on the screen. -->
+      <div class="mt-6 flex flex-col items-start gap-2 border-t border-border pt-4">
+        <p class="px-3 text-caption text-text-muted">{{ auth.user?.email }}</p>
+        <AppButton variant="plain" :busy="signingOut" @click="onSignOut">
+          {{ signingOut ? 'Signing out…' : 'Sign out' }}
+        </AppButton>
+      </div>
     </nav>
 
     <div class="min-w-0 flex-1">

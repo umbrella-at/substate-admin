@@ -14,9 +14,8 @@
  * they matter and nobody has written them yet — is where that shows up.
  */
 
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useQuery } from '@tanstack/vue-query'
+import { computed, watch } from 'vue'
 
 import { type MeResponse } from '@/api/client'
 import { failureText } from '@/api/failure'
@@ -25,13 +24,10 @@ import AppButton from '@/components/AppButton.vue'
 import AppNotice from '@/components/AppNotice.vue'
 import PermissionChip from '@/components/PermissionChip.vue'
 import SkeletonBlock from '@/components/SkeletonBlock.vue'
-import { signOut } from '@/session'
 import { useAuthStore } from '@/stores/auth'
 
 const client = useApiClient()
 const auth = useAuthStore()
-const router = useRouter()
-const queryClient = useQueryClient()
 
 const {
   data: me,
@@ -73,39 +69,18 @@ const lastSignIn = computed(() => {
     parsed,
   )
 })
-
-const signingOut = ref(false)
-
-async function onSignOut(): Promise<void> {
-  if (signingOut.value) return
-  signingOut.value = true
-  try {
-    await signOut(client, queryClient)
-    await router.replace({ name: 'login' })
-  } finally {
-    signingOut.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <header
-      class="flex items-center justify-between gap-4 border-b border-border bg-surface-1 px-6 py-3"
-    >
-      <span class="text-heading text-text-primary">substate</span>
-      <!-- Not filled. docs/design.md allows one filled element per screen and spends it on the
-           screen's primary operation; this screen has none, so signing out — which is the last
-           thing anyone here means to do — must not be the loudest thing on it. -->
-      <AppButton :busy="signingOut" variant="outlined" @click="onSignOut">
-        {{ signingOut ? 'Signing out…' : 'Sign out' }}
-      </AppButton>
-    </header>
-
+  <!-- No chrome of its own. The wordmark and the way out belong to the frame, which is on every
+       screen; drawn here as well they were a second application bar inside the first. -->
+  <div>
     <main class="p-6">
       <h1 class="text-title text-text-primary">Dashboard</h1>
 
-      <section class="mt-6 max-w-reading rounded-panel border border-border bg-surface-1 p-6">
+      <!-- 16px inside 24px, like every other panel: a panel padded to match the page stops
+           reading as a panel and starts reading as a region of it. -->
+      <section class="mt-6 max-w-reading rounded-panel border border-border bg-surface-1 p-4">
         <h2 class="text-heading text-text-primary">Your session</h2>
 
         <!-- LOADING. The shape of what is coming, not a spinner in the middle of the page: two

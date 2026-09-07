@@ -16,6 +16,7 @@ import AppShell from '@/components/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const routeName = ref<string>('dashboard')
+const replace = vi.fn()
 
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
@@ -24,6 +25,7 @@ vi.mock('vue-router', async (importOriginal) => ({
       return routeName.value
     },
   }),
+  useRouter: () => ({ replace }),
 }))
 
 /** The frame reads the world's clock for every screen inside it, so mounting it needs the query
@@ -67,6 +69,7 @@ function signIn(code: string) {
 beforeEach(() => {
   setActivePinia(createPinia())
   routeName.value = 'dashboard'
+  replace.mockClear()
 })
 
 describe('the sidebar', () => {
@@ -154,5 +157,76 @@ describe('the world the frame is showing', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain("This world's clock could not be read")
+  })
+})
+
+/**
+ * The way out lives in the frame, because the frame is on every screen. It used to be a button on
+ * the dashboard, so leaving from the subscriber table meant navigating to the dashboard first.
+ */
+describe('signing out', () => {
+  function withSession() {
+    const auth = signIn('admin')
+    vi.spyOn(auth, 'can').mockReturnValue(true)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const client = {
+      clock: vi.fn(() => new Promise(() => {})),
+      logout: vi.fn(async () => undefined),
+      setAccessToken: vi.fn(),
+    }
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [[VueQueryPlugin, { queryClient }]],
+        provide: { [apiClientKey as unknown as string]: client },
+        stubs: { RouterLink: RouterLinkStub, ClockControl: true },
+      },
+    })
+    return { wrapper, client, queryClient, auth }
+  }
+
+  function theButton(wrapper: ReturnType<typeof mount>) {
+    return wrapper.findAll('button').find((each) => each.text().startsWith('Sign out'))
+  }
+
+  it('is offered from every screen, not from one of them', () => {
+    const { wrapper } = withSession()
+    routeName.value = 'subscribers'
+    expect(theButton(wrapper)).toBeDefined()
+  })
+
+  it('is not the loudest control in the frame', () => {
+    const { wrapper } = withSession()
+    for (const button of wrapper.findAll('button')) {
+      expect(button.classes()).not.toContain('bg-accent-fill')
+    }
+  })
+
+  it('empties the query cache, so the next person cannot be shown this one', async () => {
+    const { wrapper, client, queryClient } = withSession()
+    queryClient.setQueryData(['auth', 'me'], { anything: true })
+
+    await theButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(client.logout).toHaveBeenCalled()
+    expect(client.setAccessToken).toHaveBeenCalledWith(null)
+    expect(queryClient.getQueryData(['auth', 'me'])).toBeUndefined()
+    expect(useAuthStore().isAuthenticated).toBe(false)
+    expect(replace).toHaveBeenCalledWith({ name: 'login' })
+  })
+
+  // Refusing to sign out because the network is down would leave somebody signed in on a machine
+  // they are walking away from.
+  it('still ends the session locally when the server cannot be told', async () => {
+    const { wrapper, client, queryClient } = withSession()
+    queryClient.setQueryData(['auth', 'me'], { anything: true })
+    client.logout.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await theButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(useAuthStore().isAuthenticated).toBe(false)
+    expect(queryClient.getQueryData(['auth', 'me'])).toBeUndefined()
+    expect(replace).toHaveBeenCalledWith({ name: 'login' })
   })
 })
