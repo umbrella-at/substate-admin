@@ -103,7 +103,10 @@ function health(seeded: boolean) {
 }
 
 /** A session, because the clock query is guarded on one like every other query in the frame. */
-function signedIn() {
+
+/* `worldId` decides whose world `/api/health` is describing: null is an operator on the base
+   world, which health answers about; an id is a sandbox, which it says nothing about. */
+function signedIn(worldId: string | null = 'w') {
   const pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().adopt({
@@ -117,7 +120,7 @@ function signedIn() {
       isActive: true,
       lastLoginAt: null,
     },
-    worldId: 'w',
+    worldId,
   })
   return pinia
 }
@@ -131,6 +134,7 @@ type Answers = {
   quiet?: () => Promise<unknown>
   revenue?: () => Promise<unknown>
   seeded?: boolean
+  worldId?: string | null
 }
 
 function render(over: Answers = {}) {
@@ -150,7 +154,7 @@ function render(over: Answers = {}) {
   return mount(AnalyticsView, {
     global: {
       plugins: [
-        signedIn(),
+        signedIn(over.worldId === undefined ? 'w' : over.worldId),
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -284,8 +288,10 @@ describe('the four states of one figure', () => {
  * one sentence five times, each blaming its own endpoint.
  */
 describe('a world that was not built', () => {
+  // As an OPERATOR on the base world, which is the world `/api/health` describes. A sandbox's
+  // own state is not in that answer, and claiming it from there is decision 213's trap.
   it('replaces the figures rather than appearing inside each of them', async () => {
-    const view = render({ seeded: false })
+    const view = render({ seeded: false, worldId: null })
     await flushPromises()
 
     expect(view.text()).toContain('The demonstration world was not built.')
@@ -293,7 +299,7 @@ describe('a world that was not built', () => {
   })
 
   it('leaves the period control alone, because it is the screen and not a figure', async () => {
-    const view = render({ seeded: false })
+    const view = render({ seeded: false, worldId: null })
     await flushPromises()
     expect(view.text()).toContain('Last 90 days')
   })

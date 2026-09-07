@@ -18,6 +18,7 @@ import { computed } from 'vue'
 
 import type { HealthResponse } from '@/api/client'
 import { useApiClient } from '@/api/provide'
+import { useAuthStore } from '@/stores/auth'
 
 /** Half a minute. The world is rebuilt when the service restarts, so the answer changes rarely and
  *  only for a reason a visitor cannot cause — but it does change, and a page left open across a
@@ -26,6 +27,7 @@ const FRESH_FOR = 30_000
 
 export function useWorld() {
   const client = useApiClient()
+  const auth = useAuthStore()
 
   const query = useQuery<HealthResponse>({
     queryKey: ['health'],
@@ -42,6 +44,10 @@ export function useWorld() {
      *  flight or has failed outright must not put "the world was not built" on screen — that is a
      *  claim, and the only evidence for it is an answer that makes it.
      */
-    isUnbuilt: computed(() => query.data.value?.world.seeded === false),
+
+    /* AND ONLY FOR WHOEVER READS THE WORLD IT DESCRIBES. `/api/health` is public, so it always
+       names the base world — decision 213's trap, one screen along; a sandbox was seeded before
+       its pass was issued and would be told its full table did not exist. */
+    isUnbuilt: computed(() => auth.worldId === null && query.data.value?.world.seeded === false),
   }
 }

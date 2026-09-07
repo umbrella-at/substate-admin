@@ -11,6 +11,7 @@
  */
 
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h, ref } from 'vue'
@@ -19,6 +20,7 @@ import { ApiError, type PlanSummary, type SubscriberPage } from '@/api/client'
 import { apiClientKey } from '@/api/provide'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SubscriberSummary } from '@/domain/subscribers'
+import { useAuthStore } from '@/stores/auth'
 import SubscribersView from '@/views/SubscribersView.vue'
 
 const routeQuery = ref<Record<string, string | string[]>>({})
@@ -83,19 +85,41 @@ function health(seeded: boolean) {
 function render(
   subscribers: (params: URLSearchParams, signal: AbortSignal) => Promise<unknown>,
   seeded = true,
+  /** The world this session reads. `null` is an operator on the base world, which is the world
+   *  `/api/health` describes; a sandbox id is a demonstration visitor, whose own world health
+   *  says nothing about. */
+  worldId: string | null = null,
+  /** What the plan catalogue answers. Its own request, and its own four states. */
+  plans?: () => Promise<unknown>,
 ) {
   const client = {
     subscribers,
-    plans: () => Promise.resolve(PLANS),
+    plans: plans ?? (() => Promise.resolve(PLANS)),
     health: () => Promise.resolve(health(seeded)),
   }
   // Mounted inside the provider the application wraps itself in. The state chip's tooltip is a
   // Reka component whose root refuses to render without one, so a bare mount of this view renders
   // no rows at all — which every assertion below would notice and none would explain.
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().adopt({
+    kind: worldId === null ? 'user' : 'demo',
+    permissions: ['subscribers.read'],
+    role: { code: 'admin', name: 'Administrator' },
+    user: {
+      createdAt: '2026-01-01T00:00:00Z',
+      email: 'operator@example.com',
+      id: '00000000-0000-0000-0000-000000000000',
+      isActive: true,
+      lastLoginAt: null,
+    },
+    worldId,
+  })
   return mount(TooltipProvider, {
     slots: { default: () => h(SubscribersView) },
     global: {
       plugins: [
+        pinia,
         [
           VueQueryPlugin,
           { queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
@@ -265,6 +289,18 @@ describe('an empty table and an unbuilt world are not the same screen', () => {
   // The claim needs evidence. A health request still in flight, or one that failed outright, is
   // not an answer saying the world is missing — and putting the failure on screen without one
   // would be the same lie in the other direction.
+
+  // `/api/health` is public, so it always describes the BASE world — decision 213's trap, one
+  // screen along. A demonstration visitor's sandbox is seeded before their pass is issued, and
+  // was being told its full table did not exist because a different world had not been built.
+  it('does not tell a demonstration visitor that their own world is missing', async () => {
+    const view = render(() => Promise.resolve(page()), false, 'sandbox-7')
+    await flushPromises()
+
+    expect(view.text()).not.toContain('The demonstration world was not built')
+    expect(view.text()).toContain('Ada Lovelace')
+  })
+
   it('says nothing about the world until health has answered', async () => {
     const client = {
       subscribers: () => Promise.resolve(page({ items: [], total: 0 })),
