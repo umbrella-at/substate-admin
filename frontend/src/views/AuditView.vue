@@ -61,6 +61,10 @@ const result = useQuery<AuditPage>({
 
 const rows = computed(() => result.data.value?.items ?? [])
 const total = computed(() => result.data.value?.total ?? 0)
+
+/** A page number past the last one — the third nothing, and the one the two sentences below both
+ *  describe falsely. Decision 238 fixed it on the two subscriber tables and not on this one. */
+const pastTheEnd = computed(() => rows.value.length === 0 && total.value > 0)
 const pageSize = computed(() => result.data.value?.pageSize ?? 25)
 const pageCount = computed(() => (total.value === 0 ? 0 : Math.ceil(total.value / pageSize.value)))
 
@@ -186,12 +190,21 @@ const failure = computed(() => failureText(result.error.value))
       <div v-if="rows.length === 0" class="flex flex-col items-start gap-3 py-8">
         <p class="max-w-reading text-ui text-text-secondary">
           {{
-            hasAuditFilters(query)
-              ? 'No recorded action matches these filters.'
-              : 'Nothing has been done here yet. An operation on a subscriber, or an edit to a role, is recorded here as soon as it is made.'
+            pastTheEnd
+              ? `There is no page ${query.page}. This log holds ${total} recorded actions on ${pageCount} pages.`
+              : hasAuditFilters(query)
+                ? 'No recorded action matches these filters.'
+                : 'Nothing has been done here yet. An operation on a subscriber, or an edit to a role, is recorded here as soon as it is made.'
           }}
         </p>
-        <AppButton v-if="hasAuditFilters(query)" variant="outlined" @click="go(EMPTY_AUDIT_QUERY)">
+        <AppButton v-if="pastTheEnd" variant="outlined" @click="go({ ...query, page: 1 })">
+          Back to the first page
+        </AppButton>
+        <AppButton
+          v-else-if="hasAuditFilters(query)"
+          variant="outlined"
+          @click="go(EMPTY_AUDIT_QUERY)"
+        >
           Clear filters
         </AppButton>
       </div>

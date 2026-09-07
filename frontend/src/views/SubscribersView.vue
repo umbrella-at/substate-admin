@@ -161,14 +161,14 @@ const failure = computed(() => failureText(error.value))
           <p class="max-w-reading text-ui text-text-secondary">
             {{
               pastTheEnd
-                ? `There is no page ${query.page}. This question has ${total} of them on ${pageCount} pages.`
+                ? `There is no page ${query.page}. This question has ${total} subscribers on ${pageCount} pages.`
                 : hasFilters
                   ? 'No subscribers match these filters.'
                   : 'Nobody has subscribed in this world yet. The world goes on running, so the first arrival appears here without a reload.'
             }}
           </p>
-          <!-- The pager hides its own buttons past the last page, so without this there is nothing
-               on screen to press and the address is the only way back. -->
+          <!-- Straight back rather than one page at a time: past the end, Previous walks back
+               through however many pages the address overshot by. -->
           <AppButton v-if="pastTheEnd" variant="outlined" @click="go({ ...query, page: 1 })">
             Back to the first page
           </AppButton>

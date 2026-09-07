@@ -274,14 +274,31 @@ describe('changing a filter', () => {
       .mockResolvedValueOnce(page())
       .mockImplementationOnce(() => new Promise<AuditPage>((resolve) => (answer = resolve)))
     const view = await render(page(), audit)
-    expect(view.text()).toContain('Recorded a payment')
+    // Rows, not text: `Recorded a payment` is also the label of a filter checkbox, so a table
+    // with nothing in it satisfies a `toContain` on it.
+    expect(view.findAll('tbody tr')).toHaveLength(1)
 
     routeQuery.value = { outcome: 'refused' }
     await flushPromises()
     await flushPromises()
 
     expect(view.find('.skeleton').exists()).toBe(false)
-    expect(view.text()).toContain('Recorded a payment')
+    expect(view.findAll('tbody tr')).toHaveLength(1)
     answer(page())
+  })
+})
+
+/** Decision 238's third nothing, on the table it was not applied to. */
+describe('a page of the audit past the end', () => {
+  it('says so, rather than that nothing has ever been done', async () => {
+    routeQuery.value = { page: '9' }
+    const view = await render({ items: [], total: 40, page: 9, pageSize: 25 })
+
+    expect(view.text()).toContain('There is no page 9')
+    expect(view.text()).toContain('40 recorded actions on 2 pages')
+    expect(view.text()).not.toContain('Nothing has been done here yet')
+    expect(view.findAll('button').some((each) => each.text() === 'Back to the first page')).toBe(
+      true,
+    )
   })
 })

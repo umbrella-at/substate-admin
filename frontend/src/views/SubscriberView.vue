@@ -138,7 +138,7 @@ const reason = failureText
              had ever happened and took the pager away with it, one page past the end. -->
         <div v-else-if="feed.rows.value.length === 0" class="flex flex-col items-start gap-3 py-4">
           <p class="max-w-reading text-ui text-text-secondary">
-            There is no page {{ page }} of this history. It has {{ feed.total.value }} events on
+            There is no page {{ page }} of this history. It holds {{ feed.total.value }} events on
             {{ feed.pageCount.value }} pages.
           </p>
           <AppButton variant="outlined" @click="page = 1">Back to the first page</AppButton>
