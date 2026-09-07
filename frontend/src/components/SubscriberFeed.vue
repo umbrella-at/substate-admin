@@ -22,20 +22,20 @@ defineProps<{ rows: Row[]; busy: boolean }>()
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-panel border border-border">
+  <div class="overflow-x-auto rounded-panel border border-border bg-surface-1">
     <table class="w-full border-collapse text-ui" :aria-busy="busy">
       <caption class="sr-only">
         Events for this subscriber, newest first
       </caption>
       <thead>
         <tr class="border-b border-border bg-surface-2">
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             When
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             Event
           </th>
-          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-secondary">
+          <th scope="col" class="px-4 py-3 text-left text-caption font-medium text-text-muted">
             What happened
           </th>
         </tr>

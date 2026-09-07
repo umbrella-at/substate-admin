@@ -218,7 +218,7 @@ const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
 <template>
   <!-- The horizontal scroll is on the table's own container. A page that scrolls sideways moves
        the filters and the heading off screen along with the columns. -->
-  <div class="overflow-x-auto rounded-panel border border-border">
+  <div class="overflow-x-auto rounded-panel border border-border bg-surface-1">
     <table class="w-full border-collapse text-ui" :aria-busy="props.busy">
       <thead>
         <tr class="border-b border-border bg-surface-2">
@@ -226,7 +226,12 @@ const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
             v-for="header in table.getHeaderGroups()[0]?.headers ?? []"
             :key="header.id"
             scope="col"
-            class="px-4 py-3 text-left text-caption font-medium text-text-secondary"
+            :class="[
+              'px-4 py-3 text-left text-caption font-medium',
+              // Secondary is the colour docs/design.md reserves for a header you can act on.
+              // Worn by one you cannot, it offers an order that is not there.
+              SORTABLE_HEADERS.has(header.column.id) ? 'text-text-secondary' : 'text-text-muted',
+            ]"
             :aria-sort="ariaSort(header.column.id)"
           >
             <RouterLink
@@ -266,7 +271,7 @@ const ORDERED_BY_URGENCY = computed(() => props.sort.field === 'state')
         <tr
           v-for="row in table.getRowModel().rows"
           :key="row.id"
-          class="border-b border-border last:border-b-0 hover:bg-surface-1"
+          class="border-b border-border last:border-b-0 hover:bg-surface-2"
         >
           <td
             v-for="cell in row.getAllCells()"
