@@ -53,7 +53,10 @@ export default defineConfig({
         // 1440 is that width. The height is chosen so that the filters, the rows and the pager
         // land in one viewport, which is what makes this a picture of a screen rather than a
         // full-page strip of one; the capture asserts the pager is inside it.
-        viewport: { width: 1440, height: 1260 },
+
+        // That assertion is what moved the number, when the filters were given the panel their
+        // fields need to be recessed into and everything below went down by its padding.
+        viewport: { width: 1440, height: 1320 },
 
         // Retina, because the README is read on the machines this was built on and 13px type in
         // a 1x PNG is legible on none of them.
