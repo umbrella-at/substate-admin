@@ -203,3 +203,45 @@ describe('before the reading arrives', () => {
     expect(wrapper.text()).toContain('Your world')
   })
 })
+
+/** The signature element, and the two things that make it one. */
+describe('what the control looks like', () => {
+  it('marks the month jump, which is the step the design file names', async () => {
+    const { wrapper } = await open(stubClient())
+
+    const month = wrapper.findAll('button').find((each) => each.text() === 'Month')
+    expect(month!.classes()).toContain('border-accent-text')
+    // Marked by its outline rather than by a fill: this control is in the frame, so a filled
+    // element here would be a second one on every screen that has its own.
+    expect(month!.classes()).not.toContain('bg-accent-fill')
+  })
+
+  it('shows a wound world differently from one at today', async () => {
+    const atToday = await open(stubClient())
+    expect(atToday.wrapper.find('section').classes()).not.toContain('border-l-accent-text')
+    expect(atToday.wrapper.text()).not.toContain('ahead of today')
+
+    forgetWorldClock()
+    const wound = await open(stubClient({ clock: vi.fn().mockResolvedValue(A_MONTH_ON) }))
+    expect(wound.wrapper.find('section').classes()).toContain('border-l-accent-text')
+    expect(wound.wrapper.text()).toContain('30 days ahead of today')
+  })
+
+  // A button that carries `busy` and keeps its name announces the wait to a screen reader and to
+  // nobody else — and one flag for four buttons announced it on all of them.
+  it('renames the step that is out, and only that one', async () => {
+    let release = (_: unknown) => {}
+    const client = stubClient({
+      advanceClock: vi.fn(() => new Promise((resolve) => (release = resolve))),
+    })
+    const { wrapper } = await open(client)
+
+    await press(wrapper, 'Month')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('A month on…')
+    expect(wrapper.text()).not.toContain('A week on…')
+    expect(wrapper.text()).not.toContain('A day on…')
+    release(A_MONTH_ON)
+  })
+})

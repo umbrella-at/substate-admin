@@ -14,7 +14,7 @@ One theme, dark. A light theme is not v0.1.
 | `--surface-0` | `#111820` | page background |
 | `--surface-1` | `#18212B` | panels, table body, cards |
 | `--surface-2` | `#1F2A36` | dialogs, popovers, dropdown menus |
-| `--border` | `#263241` | default hairline, `0.5px` |
+| `--border` | `#263241` | default hairline, `1px` |
 | `--border-strong` | `#32414F` | control outlines, hover |
 | `--scrim` | `rgba(0,0,0,0.55)` | behind a dialog |
 
@@ -53,11 +53,23 @@ One accent, blue, and it is quiet on purpose.
 | `--accent-text` | `#6B9EC7` | links, active icons, focus ring |
 | `--accent-bg` | `#1B3549` | tinted accent surface, selected row |
 
-**At most one filled accent element per screen.** On the subscriber card that is
-the primary operation; on a plan form it is `Save`; in the time machine it is the
-month jump. Everything else is outlined or plain. This is the rule that makes the
-important action findable without any other decoration, and it stops working the
-moment there are two.
+**At most one filled accent BUTTON per screen.** On the subscriber card that is the primary
+operation; on the role editor it is `Save role`; on the login page it is `Sign in`. Everything
+else is outlined or plain. This is the rule that makes the important action findable without any
+other decoration, and it stops working the moment there are two.
+
+**A control's selected state is not an action, and does not count against that one.** A ticked
+checkbox is `--accent-fill`, and a screen of filters routinely has five of them. The rule above is
+about rank among the things a person could DO on a screen; a box that records what they have
+already chosen competes with none of them, and painting selection in anything else would leave the
+filters unreadable. Said here because the two look like the same token being spent twice, and the
+next reader will otherwise decide it once more.
+
+**The time machine does not spend it.** An earlier version of this file allocated the filled
+element to the control's month jump, written when the control was imagined as a page of its own.
+It lives in the frame instead — on every screen at once — so a fill there would be a second filled
+element on every screen that already has one. What it spends instead is described under Signature
+element: the reading, an accent edge, and an accent outline on the month.
 
 ## Controls
 
@@ -560,7 +572,7 @@ outline of the thing it stands in for rather than a rectangle:
 |---|---|
 | a card | the card's frame, with one bar per row it will have at the row's height |
 | a feed | four rows at the feed row's height, inside the feed's own frame |
-| a table | five rows at the table row's height, inside the table's frame |
+| a table | its header, then five rows at the table row's height, inside the table's frame |
 
 The count is fixed and deliberately short of a full page: a skeleton the height of twenty-five
 rows is a page that shortens when the data arrives, which is the jump the skeleton exists to
@@ -610,14 +622,60 @@ width step here for "wider than the longest label" and inventing one is how a de
 being the place values come from. Placed at the end of its row, so it grows leftward into space
 rather than pushing anything.
 
-Table row `40px`, header row `34px`, `14px` horizontal cell padding.
+**A table row is `py-3` on the cell and whatever its content is tall.** Not a number: the
+Subscriber cell stacks a `14px` name over a `12px` identifier, which makes the row about `68px`,
+and a row height of `40px` would have to cut one of those two lines. Every cell in every table is
+`px-4 py-3`, so two tables are the same height by construction rather than by agreement.
+
+This replaces three numbers — a `40px` row, a `34px` header, `14px` of horizontal padding — that
+were written before any table existed and that nothing ever implemented. The last of them was not
+even on the spacing scale.
 
 ## Signature element
 
-Left deliberately empty. The time machine control is where this interface spends
-its boldness, and it is described here once it exists rather than imagined in
-advance. Everything around it stays quiet so that it is the thing a visitor
-notices.
+The time machine, and it is a `208px` panel at the foot of the navigation rather than anything
+that could be called a hero. That is the first thing to say about it, because the sentence this
+section replaced promised boldness and the obvious way to deliver it — a filled accent button —
+is the one thing this control may not have. It lives in the frame, so a fill here would be a
+second filled element on every screen that already has one.
+
+So the boldness is spent on the reading, which is what the control is actually about.
+
+| Part | Value |
+|---|---|
+| the panel | `--surface-2`, `8px` radius, `12px` padding, `24px` clear of the links above |
+| its left edge, once wound | `2px` `--accent-text` — absent at today |
+| the source line | `12px`, `--text-muted`: *Your world* in a sandbox, *The demonstration world* in the base one |
+| the date | `20px` MONO, `--text-primary` — the largest type anywhere in the frame |
+| the time | `13px` MONO, `--text-secondary`, `HH:mm UTC` |
+| how far it is wound | `12px`, `--accent-text`, drawn only above zero |
+| `Day` `Week` `Month` | outlined; `Month` also carries a `--accent-text` outline |
+| `Days` and `Go` | a field and an outlined button, for a step the three do not offer |
+
+**The date is set two-digit, in mono, on purpose.** It re-renders every ten seconds, and a day
+that is one character narrower on nine days in ten makes the panel shift under a cursor that is
+not moving. It is the same `2-digit` the tables use, so a reader comparing the clock with a row is
+comparing two strings of one width.
+
+**What the accent marks is the difference between two worlds.** At today the panel is quiet: no
+edge, no offset line, nothing in accent but the outline on the month. Press once and the edge
+appears, the offset line appears under the time, and the date has moved — three changes to one
+small panel, which is what makes the press feel like it did something to the whole application.
+It did: every figure and every table on screen is re-read from that clock.
+
+**The month is outlined rather than filled** because it is the step this file names and the one
+most people press, and because an outline is the loudest thing available here that is not a fill.
+
+**Ten states, and the panel is drawn for none of them by accident.** Absent entirely without
+`demo.control`; loading, with the reading in skeleton rather than the browser's own date under a
+label claiming it is the world's; at today; wound; one step in flight, with that step's label
+changed and the others left alone; partly exhausted, as `daysLeft` falls past thirty and then
+seven; fully exhausted, every step dead; refused, carrying the service's own sentence in the
+notice shape; and — in the frame rather than here, because it is about every time on the page —
+the world's clock could not be read at all.
+
+**Everything around it stays quiet so this is the thing a visitor notices**, which was the
+original sentence and is still the rule. The sidebar has no other colour in it.
 
 ## What this is not
 
@@ -665,10 +723,11 @@ a month, and nobody can tell which half. So:
 | every colour pair is measured | `scripts/contrast.py` runs in CI and fails on a pair below its requirement |
 | a dialog's edge is measured against what is behind it | `scripts/contrast.py` composites `--scrim` over both surfaces and measures the outline on the result |
 | a colour reaches a canvas from this file | `scripts/colours.py` reads every `.ts`, `.vue` and `.css` under `frontend/src` bar the palette itself, and fails on a colour literal or on a token name the stylesheet does not declare |
+| the states page ships to nobody | `scripts/check-design.sh` greps the built bundle for `/dev/states`, which is routed inside `import.meta.env.DEV` |
 
 **Nobody checks these but a person.** They are the rules worth reading the diff for.
 
-- at most one filled accent element per screen
+- at most one filled accent button per screen; a ticked control is not one
 - an input sits inside a `--surface-1` container or higher
 - disabled is for an action that is unavailable, never for one in progress
 - buttons named for what happens, sentence case throughout

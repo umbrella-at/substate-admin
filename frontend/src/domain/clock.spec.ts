@@ -7,7 +7,9 @@ describe('the moment a world is at', () => {
     // Everything else the panel shows about a world is UTC. A clock in the reader's own zone next
     // to a table in UTC is an hour of arithmetic somebody has to do to compare two numbers.
     const at = Date.parse('2026-09-04T06:30:00Z')
-    expect(modelDate(at)).toBe('4 Sept 2026')
+    // Two digits, like every date in the tables: a day that is one character narrower on nine
+    // days in ten shifts a panel that re-renders every ten seconds.
+    expect(modelDate(at)).toBe('04 Sept 2026')
     expect(modelClock(at)).toBe('06:30 UTC')
   })
 

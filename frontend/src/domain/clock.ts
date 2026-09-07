@@ -4,8 +4,11 @@
  * purpose is a snapshot the caller has to remember to rebuild.
  */
 
+/* `2-digit`, like every date in the tables. The reading is the largest mono line in the frame and
+   it re-renders every ten seconds; a day that is one character narrower on nine days in ten makes
+   the whole panel shift under a cursor that is not moving. */
 const DATE = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
+  day: '2-digit',
   month: 'short',
   year: 'numeric',
   timeZone: 'UTC',

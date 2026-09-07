@@ -40,10 +40,17 @@ const custom = ref('')
 const UNMOVED = 'The world did not move. Try again in a moment.'
 
 const STEPS = [
-  { days: 1, label: 'Day' },
-  { days: 7, label: 'Week' },
-  { days: 30, label: 'Month' },
+  { days: 1, label: 'Day', winding: 'A day on…' },
+  { days: 7, label: 'Week', winding: 'A week on…' },
+  { days: 30, label: 'Month', winding: 'A month on…' },
 ] as const
+
+/** The one docs/design.md names, and the one this control is marked by. */
+const MONTH = 30
+
+/** Which step is out, so the label that changes is the label that was pressed. A button that
+ *  carries `busy` and keeps its name announces the wait to a screen reader and to nobody else. */
+const winding = ref<number | null>(null)
 
 const day = computed(() => modelDate(now.value))
 const time = computed(() => modelClock(now.value))
@@ -64,6 +71,7 @@ const left = computed(() => reading.value?.daysLeft ?? 365)
 async function wind(days: number): Promise<void> {
   if (busy.value) return
   busy.value = true
+  winding.value = days
   refusal.value = ''
   try {
     const reached = await client.advanceClock(days)
@@ -81,13 +89,18 @@ async function wind(days: number): Promise<void> {
     refusal.value = cause instanceof ApiError && cause.message !== '' ? cause.message : UNMOVED
   } finally {
     busy.value = false
+    winding.value = null
   }
 }
 </script>
 
 <template>
+  <!-- THE SIGNATURE ELEMENT, and its boldness is spent on the reading rather than on a fill: a
+       filled button in the frame is a filled button on every screen, and there is one per screen
+       already. See docs/design.md, "Signature element". -->
   <section
     class="mt-6 rounded-panel border border-border bg-surface-2 p-3"
+    :class="ahead > 0 ? 'border-l-2 border-l-accent-text' : ''"
     aria-label="World clock"
   >
     <!-- The reading has a loading state because it is the one number on this panel that is the
@@ -96,7 +109,7 @@ async function wind(days: number): Promise<void> {
     <template v-if="isPending">
       <p class="sr-only" role="status">Reading this world's clock</p>
       <SkeletonBlock class="h-3 w-12" />
-      <SkeletonBlock class="mt-1 h-4 max-w-form" />
+      <SkeletonBlock class="mt-1 h-6 max-w-form" />
       <SkeletonBlock class="mt-1 h-3 w-12" />
     </template>
 
@@ -104,9 +117,9 @@ async function wind(days: number): Promise<void> {
       <p class="text-caption text-text-muted">
         {{ isSandbox ? 'Your world' : 'The demonstration world' }}
       </p>
-      <p class="mt-1 font-numeric text-ui text-text-primary">{{ day }}</p>
+      <p class="mt-1 font-numeric text-title text-text-primary">{{ day }}</p>
       <p class="font-numeric text-dense text-text-secondary">{{ time }}</p>
-      <p v-if="ahead > 0" class="mt-1 text-caption text-text-muted">
+      <p v-if="ahead > 0" class="mt-1 text-caption text-accent-text">
         {{ ahead }} {{ ahead === 1 ? 'day' : 'days' }} ahead of today
       </p>
     </template>
@@ -116,18 +129,19 @@ async function wind(days: number): Promise<void> {
         v-for="step in STEPS"
         :key="step.days"
         variant="outlined"
+        :class="step.days === MONTH && !busy ? 'border-accent-text text-text-primary' : ''"
         :busy="busy"
         :disabled="step.days > left"
         @click="wind(step.days)"
       >
-        {{ step.label }}
+        {{ busy && winding === step.days ? step.winding : step.label }}
       </AppButton>
     </div>
 
     <form class="mt-2 flex items-end gap-2" novalidate @submit.prevent="asked && wind(asked)">
       <AppInput v-model="custom" class="min-w-0 flex-1" label="Days" placeholder="90" />
       <AppButton variant="outlined" type="submit" :busy="busy" :disabled="asked === null">
-        Go
+        {{ busy && winding === asked ? 'Winding…' : 'Go' }}
       </AppButton>
     </form>
 
