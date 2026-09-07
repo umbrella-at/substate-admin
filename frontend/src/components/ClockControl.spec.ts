@@ -180,3 +180,26 @@ describe('winding the clock', () => {
     expect(wrapper.text()).toContain('65 of its 365 days are left')
   })
 })
+
+/** The one number on this panel that IS the subject, and it had no loading state: while the read
+ *  was in flight the panel drew the browser's own date under the label "The demonstration world",
+ *  which is a confident answer to the question the control exists to ask. */
+describe('before the reading arrives', () => {
+  it("shows the shape of the reading rather than the browser's own clock", async () => {
+    const { wrapper } = await open(stubClient({ clock: () => new Promise(() => {}) }))
+
+    expect(wrapper.find('.skeleton').exists()).toBe(true)
+    // Neither label, and no date: the fallback says `isSandbox` is false, so the panel called a
+    // sandbox the base world and dated it from the browser.
+    expect(wrapper.text()).not.toContain('Your world')
+    expect(wrapper.text()).not.toContain('The demonstration world')
+    expect(wrapper.text()).toContain("Reading this world's clock")
+  })
+
+  it('shows the world once it has answered', async () => {
+    const { wrapper } = await open(stubClient())
+
+    expect(wrapper.find('.skeleton').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Your world')
+  })
+})
