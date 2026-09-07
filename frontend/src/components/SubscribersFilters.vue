@@ -34,7 +34,23 @@ import {
   type SubscriptionState,
 } from '@/domain/subscribers'
 
-const props = defineProps<{ query: SubscriberQuery; plans: string[] }>()
+const props = defineProps<{
+  query: SubscriberQuery
+  plans: string[]
+  /** True once the catalogue request has answered and failed. An empty `plans` on its own is
+   *  indistinguishable from one that has not arrived, and the group rendered as a bare label. */
+  plansFailed?: boolean
+}>()
+
+/** Whether anything is narrowing the table. Computed by the view as well, for the empty state;
+ *  passed nowhere before, so `Clear filters` was named for something that would not happen. */
+const narrowed = computed(
+  () =>
+    props.query.states.length > 0 ||
+    props.query.cohort !== null ||
+    props.query.planIds.length > 0 ||
+    props.query.q !== null,
+)
 
 /** `replace` says whether this question deserves its own entry in the browser's history. Ticking
  *  a box does. The eleven intermediate spellings of a name being typed do not. */
@@ -197,6 +213,12 @@ function toggleUrgency(): void {
     <fieldset class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <legend class="sr-only">Plan</legend>
       <span class="w-12 text-caption text-text-secondary" aria-hidden="true">Plan</span>
+      <!-- A group with nothing in it says why, rather than being a label with a gap after it.
+           The rest of the filters still work, so this is a sentence and not the screen's error. -->
+      <span v-if="props.plansFailed" class="text-dense text-text-muted">
+        The plan catalogue could not be read, so there is nothing to filter by. The other filters
+        are unaffected.
+      </span>
       <label
         v-for="plan in props.plans"
         :key="plan"
@@ -216,7 +238,13 @@ function toggleUrgency(): void {
       <AppButton :variant="urgent ? 'outlined' : 'plain'" @click="toggleUrgency">
         {{ urgent ? 'Sorted by urgency' : 'Sort by urgency' }}
       </AppButton>
-      <AppButton variant="plain" @click="apply({ states: [], cohort: null, planIds: [], q: null })">
+      <!-- Disabled rather than hidden: a control that appears when a filter is ticked is a
+           control that moves the row under the cursor. Unavailable is what disabled is for. -->
+      <AppButton
+        variant="plain"
+        :disabled="!narrowed"
+        @click="apply({ states: [], cohort: null, planIds: [], q: null })"
+      >
         Clear filters
       </AppButton>
     </div>

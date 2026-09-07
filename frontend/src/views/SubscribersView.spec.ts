@@ -512,3 +512,42 @@ describe('the address bar', () => {
     })
   })
 })
+
+/** The plan catalogue is a second request with a second set of states, and the view took only its
+ *  data — so a failure rendered the group as a label with a gap after it and nothing else. */
+describe('the plan filter when its catalogue fails', () => {
+  it('says why there is nothing to tick, and leaves the other filters alone', async () => {
+    const view = render(
+      () => Promise.resolve(page()),
+      true,
+      null,
+      () => Promise.reject(new ApiError(500, null)),
+    )
+    await flushPromises()
+
+    expect(view.text()).toContain('The plan catalogue could not be read')
+    // The screen is not in its error state: the table answered.
+    expect(view.text()).toContain('Ada Lovelace')
+    expect(view.text()).toContain('Trial')
+  })
+})
+
+/** `Clear filters` is named for what will happen, and on an unfiltered table nothing would. */
+describe('Clear filters', () => {
+  it('is unavailable when there is nothing to clear', async () => {
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const clear = view.findAll('button').find((each) => each.text() === 'Clear filters')
+    expect(clear!.attributes('disabled')).toBeDefined()
+  })
+
+  it('is available once something is narrowing the table', async () => {
+    routeQuery.value = { state: ['grace'] }
+    const view = render(() => Promise.resolve(page()))
+    await flushPromises()
+
+    const clear = view.findAll('button').find((each) => each.text() === 'Clear filters')
+    expect(clear!.attributes('disabled')).toBeUndefined()
+  })
+})

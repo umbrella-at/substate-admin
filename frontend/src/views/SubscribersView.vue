@@ -45,7 +45,7 @@ const { isUnbuilt: worldIsUnbuilt } = useWorld()
 /** The catalogue for the plan filter. Separate from the table's own request because it does not
  *  change when the filters do, and refetching five unchanging rows on every keystroke would be
  *  work with no result. */
-const { data: plans } = useQuery<PlanSummary[]>({
+const { data: plans, isError: plansFailed } = useQuery<PlanSummary[]>({
   queryKey: ['plans'],
   queryFn: ({ signal }) => client.plans(signal),
   staleTime: Infinity,
@@ -105,7 +105,13 @@ const failure = computed(() => failureText(error.value))
 
     <!-- Hidden with no world: filters over nothing answer every use with the same emptiness.
          The 24px to the table is this section's `gap-6` — an `mb-6` here as well makes it 48. -->
-    <SubscribersFilters v-if="!worldIsUnbuilt" :query="query" :plans="planIds" @change="go" />
+    <SubscribersFilters
+      v-if="!worldIsUnbuilt"
+      :query="query"
+      :plans="planIds"
+      :plans-failed="plansFailed"
+      @change="go"
+    />
 
     <!-- Loading, with nothing to show. The skeleton is the shape of the table rather than a
          spinner: the header, then five rows built from the table's own padding and its two type
