@@ -56,6 +56,10 @@ jobs:
             caddy:2-alpine \
             caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
 
+      # validate passes with the import deleted, and the other sites on the host go dark with it.
+      - name: Check the Caddyfile keeps its import of the other sites
+        run: ./deploy/check-caddyfile.sh
+
       # A script rather than inline YAML: a laptop runs byte for byte the command the runner runs.
       - name: Check the systemd units
         run: ./deploy/check-units.sh

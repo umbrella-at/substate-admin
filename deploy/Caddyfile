@@ -193,7 +193,8 @@ substate-admin.umbrella-at.uk {
 }
 
 # ── Other projects on this host ──────────────────────────────────────────────
-# Their site blocks, which provision.sh never writes. Absolute on purpose: a
-# relative glob resolves against the importing file, and provision.sh validates
-# this file from the checkout before it is copied here.
+# Their site blocks, which provision.sh never writes. Deleting this line takes
+# them down with no error anywhere, so deploy/check-caddyfile.sh fails CI instead.
+# Absolute on purpose: a relative glob resolves against the importing file, and
+# provision.sh validates this file from the checkout before it is copied here.
 import /etc/caddy/sites/*.caddy

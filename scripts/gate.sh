@@ -96,6 +96,7 @@ else
 fi
 
 run 'systemd units' ./deploy/check-units.sh
+run 'Caddyfile import' ./deploy/check-caddyfile.sh
 run 'internal numbering' ./scripts/check-numbering.sh
 
 if have docker && docker info > /dev/null 2>&1; then

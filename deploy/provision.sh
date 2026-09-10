@@ -52,7 +52,7 @@
 #   :443 site, fails `caddy validate` — both checked against Caddy 2.11.4.
 #
 #   Remove the import line and every site in that directory stops being served
-#   without a single error.
+#   without a single error, which is why deploy/check-caddyfile.sh fails CI then.
 #
 # Copyright (c) 2026 Andrei Tarunin. MIT.
 
