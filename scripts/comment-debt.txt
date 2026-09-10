@@ -62,7 +62,7 @@
 1 4 backend/tests/test_users.py
 2 9 backend/tests/test_worlds.py
 3 31 deploy/check-units.sh
-10 84 deploy/provision.sh
+9 50 deploy/provision.sh
 2 14 docker-compose.yml
 2 18 frontend/capture/subscriber.capture.ts
 2 22 frontend/capture/subscribers.capture.ts

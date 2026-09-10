@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+
+# LONG BECAUSE: this header is the manual the operator reads before running it as root
 #
 # substate-admin — one-shot provisioning for a fresh Ubuntu 24.04 LTS host.
 #
@@ -29,7 +31,28 @@
 #   * start substate-admin-api.service — there is no application code on the
 #     host yet, and a crash-looping unit would only spam the journal;
 #   * run migrations or touch the database schema. Migration 001 creates the
-#     `admin` schema so CI, local and production bootstrap the same way.
+#     `admin` schema so CI, local and production bootstrap the same way;
+#   * write, rename or delete anything in /etc/caddy/sites (see below).
+#
+# Caddy extension point:
+#   /etc/caddy/Caddyfile is this project's and is replaced on every run. Other
+#   sites on the host go into /etc/caddy/sites/*.caddy, which the last line of
+#   deploy/Caddyfile imports. This script creates the directory if it is missing
+#   and never touches its contents.
+#
+#   Which means provisioning substate-admin can now fail because of a file that
+#   another project owns. Those files are validated together with ours, and a
+#   broken one stops the run before anything is installed. That is the trade,
+#   made on purpose: a reload that fails on the live server keeps serving the old
+#   config over a Caddyfile Caddy cannot load, and the next restart or reboot
+#   takes every site on the host down. A refused run costs a re-run once that
+#   file is fixed.
+#
+#   The files hold site blocks only. A global options block, or a second :80 or
+#   :443 site, fails `caddy validate` — both checked against Caddy 2.11.4.
+#
+#   Remove the import line and every site in that directory stops being served
+#   without a single error.
 #
 # Copyright (c) 2026 Andrei Tarunin. MIT.
 
@@ -59,6 +82,7 @@ readonly UV_VERSION="0.12.5"
 readonly SWAP_FILE="/swapfile"
 readonly SWAP_SIZE="2G"
 readonly SSHD_DROPIN="/etc/ssh/sshd_config.d/99-${APP_NAME}.conf"
+readonly CADDY_SITES_DIR="/etc/caddy/sites"
 readonly PLACEHOLDER_RELEASE="${DEPLOY_ROOT}/releases/000-placeholder"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -975,14 +999,29 @@ setup_caddy() {
     add_caddy_repo
     apt_install caddy
 
+    # mkdir -p, not install -d: an existing directory belongs to whoever put
+    # sites in it, and its mode and owner are not ours to reset.
+    if [[ -d "${CADDY_SITES_DIR}" ]]; then
+        skip "${CADDY_SITES_DIR} exists; its contents are left alone"
+    else
+        mkdir -p "${CADDY_SITES_DIR}"
+        ok "created ${CADDY_SITES_DIR}, empty"
+    fi
+
     # Validate the file we are about to install, while the running config is
-    # still the old one. A broken Caddyfile then costs nothing.
+    # still the old one. A broken Caddyfile then costs nothing. The import is
+    # absolute, so this also parses every ${CADDY_SITES_DIR}/*.caddy.
+    local sites=()
+    shopt -s nullglob
+    sites=("${CADDY_SITES_DIR}"/*.caddy)
+    shopt -u nullglob
     if ! caddy validate --adapter caddyfile --config "${SCRIPT_DIR}/Caddyfile" \
         >"${WORK_DIR}/caddy-validate.log" 2>&1; then
         cat "${WORK_DIR}/caddy-validate.log" >&2
-        die "caddy validate rejected ${SCRIPT_DIR}/Caddyfile; nothing was installed"
+        die "caddy validate rejected deploy/Caddyfile with the ${#sites[@]} file(s) it imports from ${CADDY_SITES_DIR};
+  nothing was installed and caddy was NOT reloaded"
     fi
-    ok "caddy validate accepted deploy/Caddyfile"
+    ok "caddy validate accepted deploy/Caddyfile and ${#sites[@]} file(s) from ${CADDY_SITES_DIR}"
 
     systemctl enable caddy >/dev/null
     if install_repo_file "${SCRIPT_DIR}/Caddyfile" /etc/caddy/Caddyfile 0644 root:root; then
@@ -1095,7 +1134,7 @@ summary() {
     uv                  $(/usr/local/bin/uv --version 2>/dev/null || echo 'installed') in /usr/local/bin
     secrets             ${ENV_FILE} (root:${DEPLOY_USER}, 0640)
     releases            ${DEPLOY_ROOT}/{releases,shared,current}
-    caddy               /etc/caddy/Caddyfile ($(systemctl is-active caddy || true))
+    caddy               /etc/caddy/Caddyfile ($(systemctl is-active caddy || true)), imports ${CADDY_SITES_DIR}/*.caddy
     api                 ${API_UNIT} enabled, deliberately not started
     reaper              ${PRUNE_TIMER} enabled and running (daily)
     journald            SystemMaxUse=200M

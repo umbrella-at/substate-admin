@@ -13,8 +13,9 @@
 #     caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
 #     systemctl reload caddy
 #
-# This file names the product's own public domain and nothing else. No server
-# hostname, no IP address, no credentials — those live in GitHub Secrets and in
+# This file names the product's own public domain and nothing else; other sites
+# on the host come in through the import on its last line. No server hostname,
+# no IP address, no credentials — those live in GitHub Secrets and in
 # /etc/substate-admin/api.env, which is never written by CI.
 
 # ── Global options ───────────────────────────────────────────────────────────
@@ -190,3 +191,9 @@ substate-admin.umbrella-at.uk {
 :80, :443 {
 	respond 404
 }
+
+# ── Other projects on this host ──────────────────────────────────────────────
+# Their site blocks, which provision.sh never writes. Absolute on purpose: a
+# relative glob resolves against the importing file, and provision.sh validates
+# this file from the checkout before it is copied here.
+import /etc/caddy/sites/*.caddy
