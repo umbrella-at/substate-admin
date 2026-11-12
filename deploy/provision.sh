@@ -534,9 +534,11 @@ install_uv() {
 
     # Pre-fetch the interpreter as ${DEPLOY_USER} so the first deploy is not
     # also the first download. `uv sync` would do this anyway, so a failure
-    # here is a warning, not an error.
-    if sudo -u "${DEPLOY_USER}" env HOME="${DEPLOY_HOME}" \
-        /usr/local/bin/uv python install "${PY_VERSION}" >/dev/null 2>&1; then
+    # here is a warning, not an error. `cd /tmp` first: the script usually runs
+    # from a checkout under /root, which ${DEPLOY_USER} cannot enter, and uv
+    # fails on a working directory it cannot read.
+    if (cd /tmp && sudo -u "${DEPLOY_USER}" env HOME="${DEPLOY_HOME}" \
+        /usr/local/bin/uv python install "${PY_VERSION}" >/dev/null 2>&1); then
         ok "Python ${PY_VERSION} available to ${DEPLOY_USER}"
     else
         warn "could not pre-fetch Python ${PY_VERSION}; the first deploy will download it"
