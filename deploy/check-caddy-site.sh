@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# deploy/substate-admin.caddy goes into /etc/caddy/sites/ on a host whose Caddy serves other
-# projects too. `caddy validate` (the CI step before this one) catches a file that does not parse;
-# this catches the ones that parse and are still wrong:
-#
-#   * anything but the one site block: a global options block, a :80 or :443 catch-all, a snippet.
-#     Inside the host's Caddyfile they either fail the reload of every site or change all of them;
-#   * an access log without the IP mask on BOTH remote_ip and client_ip (house rule: no raw client
-#     IP in any log);
-#   * a proxy port that differs from the one the API unit binds: the site would answer 502 while
-#     the API runs, and the deploy smoke check would be the first to notice.
-#
-# Run it exactly as CI does: ./deploy/check-caddy-site.sh
+# deploy/substate-admin.caddy joins the sites of a shared host. This fails on what `caddy validate`
+# passes: a second block, a log without the IP mask, a proxy port that is not the API's.
 
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

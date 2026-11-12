@@ -46,11 +46,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # The site file is validated the way the host loads it: imported from /etc/caddy/sites by a
-      # Caddyfile that, like the host's, has no global options and a :80, :443 catch-all, so a
-      # global block or a second catch-all in our file fails here and not on the server. The
-      # same Caddy version as the host (apt there). `validate` touches no ACME: no Let's Encrypt
-      # call, and the domain need not resolve.
+      # Loaded the way the host loads it: imported by a Caddyfile with no global options and a
+      # :80, :443 catch-all, so a global block or a second catch-all fails here, not on the server.
+      # The host's Caddy version; `validate` touches no ACME, so the domain need not resolve.
       - name: Validate the Caddy site file
         run: |
           set -euo pipefail
