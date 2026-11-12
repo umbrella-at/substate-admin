@@ -46,19 +46,25 @@ jobs:
         with:
           persist-credentials: false
 
-      # The Caddyfile is parsed and adapted by the same Caddy version that runs in production.
-      # `validate` touches no ACME: no Let's Encrypt call, and the domain need not resolve.
-      - name: Validate the Caddyfile
+      # The site file is validated the way the host loads it: imported from /etc/caddy/sites by a
+      # Caddyfile that, like the host's, has no global options and a :80, :443 catch-all, so a
+      # global block or a second catch-all in our file fails here and not on the server. The
+      # same Caddy version as the host (apt there). `validate` touches no ACME: no Let's Encrypt
+      # call, and the domain need not resolve.
+      - name: Validate the Caddy site file
         run: |
           set -euo pipefail
           docker run --rm \
-            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2-alpine \
-            caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+            -v "$PWD/deploy/substate-admin.caddy:/etc/caddy/sites/substate-admin.caddy:ro" \
+            caddy:2.11.7-alpine \
+            sh -euc 'mkdir -p /var/log/caddy
+              printf ":80, :443 {\n\trespond 404\n}\nimport /etc/caddy/sites/*.caddy\n" > /etc/caddy/Caddyfile
+              caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile'
 
-      # validate passes with the import deleted, and the other sites on the host go dark with it.
-      - name: Check the Caddyfile keeps its import of the other sites
-        run: ./deploy/check-caddyfile.sh
+      # validate passes on a file that parses and is still wrong for a shared host: a second block,
+      # a log without the IP mask, a proxy port that is not the API's.
+      - name: Check the Caddy site file
+        run: ./deploy/check-caddy-site.sh
 
       # A script rather than inline YAML: a laptop runs byte for byte the command the runner runs.
       - name: Check the systemd units
@@ -441,8 +447,8 @@ jobs:
     needs: [shell, config, design, backend-quality, backend-tests, frontend-quality, frontend-tests, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
-    # Long because `uv sync` on the far side downloads and installs a dependency closure on one
-    # shared vCPU the first time a release changes it.
+    # Long because `uv sync` on the far side downloads and installs a dependency closure on a
+    # host shared with other projects the first time a release changes it.
     timeout-minutes: 15
     environment:
       name: production
@@ -471,8 +477,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # Built here, never on the server: 2 GB shared with Postgres makes a `vite build` an OOM,
-      # and the kernel kills the database rather than the build.
+      # Built here, never on the server: it is shared with Postgres and other projects, and a
+      # `vite build` there is memory the kernel takes back from one of them, not from the build.
       - name: Build the SPA
         working-directory: frontend
         run: |

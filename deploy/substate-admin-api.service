@@ -42,8 +42,8 @@ ConditionPathExists=/srv/substate-admin/current/api/pyproject.toml
 
 [Service]
 Type=exec
-User=deploy
-Group=deploy
+User=substate-admin
+Group=substate-admin
 
 # "current" is a symlink into releases/<git-sha>. systemd resolves
 # WorkingDirectory at every start, so the deploy sequence (swap symlink ->
@@ -51,7 +51,7 @@ Group=deploy
 WorkingDirectory=/srv/substate-admin/current/api
 
 # Secrets only: DATABASE_URL, JWT_SECRET, IP_HASH_PEPPER, APP_ENV.
-# root:deploy 0640, written by provisioning. CI never touches this file.
+# root:substate-admin 0640, written by provisioning. CI never touches this file.
 EnvironmentFile=/etc/substate-admin/api.env
 
 # The whole stack — Postgres cluster, app, logs — is UTC. No local time anywhere.
@@ -71,7 +71,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 # uv insists on a writable cache — it memoises interpreter introspection there
 # even when it has nothing to download. The default is ~/.cache/uv, which
 # ProtectHome=read-only makes unwritable. CacheDirectory= has systemd create
-# and own /var/cache/substate-admin (0755 deploy:deploy) and punch it through
+# and own /var/cache/substate-admin (0755 substate-admin:substate-admin) and punch it through
 # ProtectSystem=strict, so this is the service's only writable path.
 CacheDirectory=substate-admin
 Environment=UV_CACHE_DIR=/var/cache/substate-admin/uv
@@ -103,13 +103,16 @@ Environment=UV_CACHE_DIR=/var/cache/substate-admin/uv
 #   --host 127.0.0.1       never bind a public interface; Caddy is the only
 #                          way in, and it proxies /api/* WITHOUT stripping the
 #                          prefix (FastAPI owns /api).
+#   --port 8102            this project's port in /etc/caddy/ports.md on the
+#                          shared host; deploy/substate-admin.caddy proxies to
+#                          it, and deploy/check-caddy-site.sh keeps the two equal.
 #   --no-sync              the release directory is read-only at runtime and
 #                          `uv sync --frozen` already ran during deploy; this
 #                          stops uv from trying to lock or mutate .venv here.
 # ---------------------------------------------------------------------------
 ExecStart=/usr/local/bin/uv run --frozen --no-sync \
     uvicorn app.main:app \
-    --host 127.0.0.1 --port 8000 \
+    --host 127.0.0.1 --port 8102 \
     --workers 1 \
     --no-access-log \
     --proxy-headers --forwarded-allow-ips 127.0.0.1
@@ -125,12 +128,12 @@ StandardError=journal
 SyslogIdentifier=substate-admin-api
 
 # --- Resource limits ------------------------------------------------------
-# The box has 2 GB of RAM shared with Postgres and Caddy. Capping this service
-# well below the total means a runaway request (a pathological substate world,
-# an unbounded query result) gets this cgroup OOM-killed and restarted two
-# seconds later, instead of the kernel's global OOM killer picking the fattest
-# process on the machine — which is Postgres. Losing the API for two seconds is
-# a blip; losing the database is an outage plus a recovery.
+# The host is shared with other projects, Postgres and Caddy. Capping this
+# service means a runaway request (a pathological substate world, an unbounded
+# query result) gets this cgroup OOM-killed and restarted two seconds later,
+# instead of the kernel's global OOM killer picking the fattest process on the
+# machine — which may be Postgres, or another project's worker. Losing the API
+# for two seconds is a blip; losing the database is an outage plus a recovery.
 MemoryMax=700M
 
 # --- Hardening ------------------------------------------------------------
@@ -148,7 +151,7 @@ PrivateTmp=true
 # reason rather than relaxing ProtectSystem.
 ProtectSystem=strict
 
-# read-only rather than tmpfs: deploy's home holds the ssh keys (which must not
+# read-only rather than tmpfs: the user's home holds the ssh keys (which must not
 # be modifiable) but also the uv-managed Python 3.13 under ~/.local/share/uv,
 # which the interpreter must still be able to read and execute.
 ProtectHome=read-only

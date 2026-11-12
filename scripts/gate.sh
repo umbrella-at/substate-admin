@@ -96,15 +96,18 @@ else
 fi
 
 run 'systemd units' ./deploy/check-units.sh
-run 'Caddyfile import' ./deploy/check-caddyfile.sh
+run 'Caddy site file' ./deploy/check-caddy-site.sh
 run 'internal numbering' ./scripts/check-numbering.sh
 
 if have docker && docker info > /dev/null 2>&1; then
-    run 'Caddyfile' docker run --rm \
-        -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-        caddy:2-alpine caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+    # As in CI: imported by a Caddyfile shaped like the host's (no global options, a catch-all).
+    run 'Caddy site validate' docker run --rm \
+        -v "$PWD/deploy/substate-admin.caddy:/etc/caddy/sites/substate-admin.caddy:ro" \
+        caddy:2.11.7-alpine sh -euc 'mkdir -p /var/log/caddy
+            printf ":80, :443 {\n\trespond 404\n}\nimport /etc/caddy/sites/*.caddy\n" > /etc/caddy/Caddyfile
+            caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile'
 else
-    skip 'Caddyfile' 'docker is not running; CI validates it with the Caddy that serves production'
+    skip 'Caddy site validate' 'docker is not running; CI validates it with the Caddy version of the host'
 fi
 
 # ---------------------------------------------------------------------------------------------

@@ -19,5 +19,5 @@ indent_style = tab
 
 # `caddy fmt` emits tabs and provision.sh validates the file it ships;
 # the config follows the formatter, not the other way round.
-[Caddyfile]
+[{Caddyfile,*.caddy}]
 indent_style = tab

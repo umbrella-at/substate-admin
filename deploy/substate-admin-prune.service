@@ -20,8 +20,8 @@ ConditionPathExists=/srv/substate-admin/current/api/pyproject.toml
 
 [Service]
 Type=oneshot
-User=deploy
-Group=deploy
+User=substate-admin
+Group=substate-admin
 WorkingDirectory=/srv/substate-admin/current/api
 EnvironmentFile=/etc/substate-admin/api.env
 Environment=TZ=UTC
