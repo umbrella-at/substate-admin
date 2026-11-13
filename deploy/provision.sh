@@ -2,25 +2,33 @@
 
 # LONG BECAUSE: this header is the manual the operator reads before running it as root
 #
-# substate-admin — one-shot provisioning for a fresh Ubuntu 24.04 LTS host.
+# substate-admin — one-shot provisioning of this project on a SHARED Ubuntu 24.04 host.
+#
+# The host is not ours. Its owner runs SSH, the firewall, swap, journald and Caddy for every
+# project on it, and this script touches none of them: no sshd drop-in, no ufw rule, no swap
+# file, no journald cap, no Caddy package or repository, and never /etc/caddy/Caddyfile. It sets
+# up what belongs to substate-admin and nothing else:
+#
+#   * the user substate-admin (locked password, systemd-journal, sudo for its own unit only);
+#   * PostgreSQL 18 from PGDG, the role and the database;
+#   * uv, /etc/substate-admin/api.env, /srv/substate-admin;
+#   * the API unit and the prune timer;
+#   * the site file /etc/caddy/sites/substate-admin.caddy, validated together with the whole
+#     host config before Caddy is reloaded.
 #
 # Run ONCE by a human, as root, over SSH. It is idempotent: every step checks
 # before it creates, nothing is clobbered, and a second run is a no-op that
-# reports what already exists. Re-run it after changing deploy/Caddyfile or
-# deploy/substate-admin-api.service to push those files onto the box.
+# reports what already exists. Re-run it after changing deploy/substate-admin.caddy
+# or deploy/substate-admin-api.service to push those files onto the box.
 #
-# It needs the sibling files from this directory, so get the repository onto
-# the host first:
+# It needs the sibling files from this directory, so get them onto the host first:
 #
-#     apt-get update && apt-get install -y git
-#     git clone https://github.com/umbrella-at/substate-admin /opt/substate-admin-src
+#     scp -r deploy/ root@host:/opt/substate-admin-src/deploy/
 #     DEPLOY_PUBKEY="$(cat ~/.ssh/substate_admin_ci.pub)" \
 #         /opt/substate-admin-src/deploy/provision.sh
 #
-# (Or simply `scp -r deploy/ root@host:/opt/substate-admin-src/deploy/`.)
-#
 # Environment:
-#   DEPLOY_PUBKEY  optional. The CI public key to install for the deploy user.
+#   DEPLOY_PUBKEY  optional. The CI public key to install for the substate-admin user.
 #                  If unset, the script says exactly how to add it later.
 #   FORCE=1        optional. Continue on a distribution other than Ubuntu 24.04.
 #
@@ -32,38 +40,28 @@
 #     host yet, and a crash-looping unit would only spam the journal;
 #   * run migrations or touch the database schema. Migration 001 creates the
 #     `admin` schema so CI, local and production bootstrap the same way;
-#   * write, rename or delete anything in /etc/caddy/sites (see below).
+#   * restart anything that is not its own. apt runs with NEEDRESTART_MODE=l, so
+#     needrestart only lists the services of other projects a library upgrade
+#     would want restarted, and leaves them running;
+#   * write, rename or delete any file in /etc/caddy other than its own site file.
 #
-# Caddy extension point:
-#   /etc/caddy/Caddyfile is this project's and is replaced on every run. Other
-#   sites on the host go into /etc/caddy/sites/*.caddy, which the last line of
-#   deploy/Caddyfile imports. This script creates the directory if it is missing
-#   and never touches its contents.
-#
-#   Which means provisioning substate-admin can now fail because of a file that
-#   another project owns. Those files are validated together with ours, and a
-#   broken one stops the run before anything is installed. That is the trade,
-#   made on purpose: a reload that fails on the live server keeps serving the old
-#   config over a Caddyfile Caddy cannot load, and the next restart or reboot
-#   takes every site on the host down. A refused run costs a re-run once that
-#   file is fixed.
-#
-#   The files hold site blocks only. A global options block, or a second :80 or
-#   :443 site, fails `caddy validate` — both checked against Caddy 2.11.4.
-#
-#   Remove the import line and every site in that directory stops being served
-#   without a single error, which is why deploy/check-caddyfile.sh fails CI then.
+# Caddy:
+#   The host's Caddy must already be installed and running, and its Caddyfile must
+#   import /etc/caddy/sites/*.caddy; preflight stops the run otherwise. The site file
+#   is validated in place, as the caddy user, with every other site of the host: a
+#   broken file of another project stops the run too, and in that case ours is put
+#   back the way it was (or removed, if it is new) before the script exits, and
+#   Caddy is NOT reloaded. Reload, never restart: a restart drops the in-flight
+#   requests of every site on the host.
 #
 # Copyright (c) 2026 Andrei Tarunin. MIT.
-
-set -Eeuo pipefail
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
 readonly APP_NAME="substate-admin"
-readonly DEPLOY_USER="deploy"
+readonly DEPLOY_USER="${APP_NAME}"
 readonly DEPLOY_HOME="/home/${DEPLOY_USER}"
 readonly DEPLOY_ROOT="/srv/${APP_NAME}"
 readonly ENV_DIR="/etc/${APP_NAME}"
@@ -79,10 +77,11 @@ readonly PY_VERSION="3.13"
 # the production Python toolchain version is recorded in the repository rather
 # than being "whatever astral.sh served that day".
 readonly UV_VERSION="0.12.5"
-readonly SWAP_FILE="/swapfile"
-readonly SWAP_SIZE="2G"
-readonly SSHD_DROPIN="/etc/ssh/sshd_config.d/99-${APP_NAME}.conf"
 readonly CADDY_SITES_DIR="/etc/caddy/sites"
+readonly CADDY_SITE="${CADDY_SITES_DIR}/${APP_NAME}.caddy"
+# The port of the API on 127.0.0.1, registered for this project in /etc/caddy/ports.md on the
+# host. deploy/substate-admin-api.service binds it and deploy/substate-admin.caddy proxies to it.
+readonly API_PORT="8102"
 readonly PLACEHOLDER_RELEASE="${DEPLOY_ROOT}/releases/000-placeholder"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -183,7 +182,10 @@ apt_install() {
         return 0
     fi
     log "installing: ${missing[*]}"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    # NEEDRESTART_MODE=l: list, never restart. The services a library upgrade touches are
+    # mostly other projects', and restarting them is their owners' call, not this script's.
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l \
+        apt-get install -y --no-install-recommends "${missing[@]}"
 }
 
 # psql as the postgres superuser. `cd /tmp` keeps psql from whining that it
@@ -218,7 +220,7 @@ psql_postgres() {
 # ---------------------------------------------------------------------------
 
 preflight() {
-    step "Preflight: root, distribution, repository files"
+    step "Preflight: root, distribution, repository files, the host's Caddy, the port"
 
     [[ ${EUID} -eq 0 ]] || die "must run as root"
 
@@ -243,376 +245,49 @@ preflight() {
 
     # Fail here rather than half-way through, when the box is already changed.
     local f
-    for f in Caddyfile "${API_UNIT}" "${PRUNE_UNIT}" "${PRUNE_TIMER}"; do
+    for f in "${APP_NAME}.caddy" "${API_UNIT}" "${PRUNE_UNIT}" "${PRUNE_TIMER}"; do
         [[ -f "${SCRIPT_DIR}/${f}" ]] \
             || die "missing ${SCRIPT_DIR}/${f} — copy the whole deploy/ directory onto the host"
     done
-    ok "found deploy/Caddyfile, deploy/${API_UNIT}, deploy/${PRUNE_UNIT} and deploy/${PRUNE_TIMER}"
+    ok "found deploy/${APP_NAME}.caddy, deploy/${API_UNIT}, deploy/${PRUNE_UNIT} and deploy/${PRUNE_TIMER}"
+
+    # The host's Caddy, not ours: it has to be there already, running, and importing one file per
+    # site. Installing or starting it is the host owner's business.
+    command -v caddy >/dev/null \
+        || die "caddy is not installed; this script never installs it — the host's Caddy belongs to the host"
+    id -u caddy >/dev/null 2>&1 || die "there is no caddy user to validate the config as"
+    systemctl is-active --quiet caddy \
+        || die "caddy.service is not running; this script reloads it and never starts it"
+    [[ -d "${CADDY_SITES_DIR}" ]] || die "${CADDY_SITES_DIR} does not exist"
+    grep -qxF -- "import ${CADDY_SITES_DIR}/*.caddy" /etc/caddy/Caddyfile \
+        || die "/etc/caddy/Caddyfile does not import ${CADDY_SITES_DIR}/*.caddy: a site file there would never be served"
+    ok "host Caddy $(caddy version | awk '{print $1}') running, importing ${CADDY_SITES_DIR}/*.caddy"
+
+    # The port is registered for this project, but a registry is only a file. Something else
+    # already listening there would turn every API request into somebody else's answer.
+    local listener
+    listener="$(ss -ltnH "sport = :${API_PORT}" 2>/dev/null || true)"
+    if [[ -n "${listener}" ]] && ! systemctl is-active --quiet "${API_UNIT}"; then
+        die "port ${API_PORT} is taken, and not by ${API_UNIT}: ${listener}"
+    fi
+    ok "port ${API_PORT} is free or held by ${API_UNIT}"
 }
 
 # ---------------------------------------------------------------------------
-# 2. SSH hardening — first, and before anything else can go wrong
-# ---------------------------------------------------------------------------
-
-require_root_authorized_key() {
-    local keys="/root/.ssh/authorized_keys"
-    # A cheap precondition only. It is NOT the thing that authorises turning
-    # passwords off — prove_pubkey_login_works() below does that by logging in.
-    if [[ -s "${keys}" ]] && [[ "$(ssh-keygen -lf "${keys}" 2>/dev/null | wc -l)" -ge 1 ]]; then
-        ok "root has $(ssh-keygen -lf "${keys}" 2>/dev/null | wc -l) parsable key(s) in ${keys}"
-        return 0
-    fi
-    die "root has no usable key in ${keys}; disabling password auth now would lock you out.
-  Install your key first (from your workstation):
-      ssh-copy-id root@<server>
-  then re-run this script."
-}
-
-# The key question before passwords are switched off is not "does this file look
-# like a key" — it is "does logging in with a key actually succeed right now, on
-# this sshd, with these file permissions". Those are different questions, and
-# only the second one is worth anything: a parsable key in a directory sshd
-# refuses to read (StrictModes, a 0777 home, an SELinux label) passes every
-# format check ever written and authenticates nobody.
-#
-# So we answer it the only honest way: mint a throwaway keypair, put it in root's
-# authorized_keys, and open a real SSH session to ourselves with passwords
-# explicitly disabled on the client side. If that session opens, the public-key
-# path works end to end. The throwaway key is removed immediately afterwards,
-# on every exit path.
-EPHEMERAL_KEY_MARKER="substate-admin-provision-selftest"
-
-remove_ephemeral_key() {
-    local keys="/root/.ssh/authorized_keys"
-    if [[ -f "${keys}" ]] && grep -qF "${EPHEMERAL_KEY_MARKER}" "${keys}"; then
-        grep -vF "${EPHEMERAL_KEY_MARKER}" "${keys}" >"${keys}.tmp" || true
-        install -o root -g root -m 600 "${keys}.tmp" "${keys}"
-        rm -f "${keys}.tmp"
-    fi
-}
-
-prove_pubkey_login_works() {
-    local label="$1"
-    local keys="/root/.ssh/authorized_keys"
-    local key="${WORK_DIR}/selftest_ed25519"
-
-    rm -f "${key}" "${key}.pub"
-    ssh-keygen -t ed25519 -N '' -C "${EPHEMERAL_KEY_MARKER}" -f "${key}" -q \
-        || die "could not generate the self-test keypair"
-
-    remove_ephemeral_key
-    if [[ -s "${keys}" ]] && [[ -n "$(tail -c1 "${keys}")" ]]; then
-        printf '\n' >>"${keys}"
-    fi
-    cat "${key}.pub" >>"${keys}"
-    chown root:root "${keys}"
-    chmod 600 "${keys}"
-
-    local out=0
-    ssh -i "${key}" \
-        -o BatchMode=yes \
-        -o PasswordAuthentication=no \
-        -o KbdInteractiveAuthentication=no \
-        -o PreferredAuthentications=publickey \
-        -o IdentitiesOnly=yes \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o ConnectTimeout=10 \
-        -o LogLevel=ERROR \
-        root@127.0.0.1 true >/dev/null 2>&1 || out=$?
-
-    remove_ephemeral_key
-    rm -f "${key}" "${key}.pub"
-
-    if [[ ${out} -eq 0 ]]; then
-        ok "public-key login verified by opening a real session (${label})"
-        return 0
-    fi
-    return 1
-}
-
-# Which method authenticated the session this script is running in. If the
-# operator got here with a password, then nothing has yet demonstrated that they
-# hold a working key, and switching passwords off would strand them.
-report_operator_session_auth() {
-    if [[ -z "${SSH_CONNECTION:-}" ]]; then
-        warn "not running inside an SSH session (provider console?); relying on the loopback proof alone"
-        return 0
-    fi
-    local cip cport method
-    cip="$(awk '{print $1}' <<<"${SSH_CONNECTION}")"
-    cport="$(awk '{print $2}' <<<"${SSH_CONNECTION}")"
-    method="$(journalctl -u ssh -u sshd --no-pager -n 2000 2>/dev/null \
-        | grep -F "from ${cip} port ${cport}" \
-        | grep -oE 'Accepted (publickey|password|keyboard-interactive)' \
-        | tail -n1 | awk '{print $2}')"
-    case "${method}" in
-        publickey)
-            ok "your current session authenticated with a public key"
-            ;;
-        password|keyboard-interactive)
-            die "your current session authenticated with a PASSWORD, not a key.
-  Disabling password auth would end your access at the next login.
-  Log in with your key first, confirm it works, then re-run this script."
-            ;;
-        *)
-            warn "could not determine how the current session authenticated; relying on the loopback proof"
-            ;;
-    esac
-}
-
-# Ubuntu ships /etc/ssh/sshd_config.d/50-cloud-init.conf on cloud images, and
-# sshd takes the FIRST value it sees — 50- sorts before our 99-, so a
-# cloud-init "PasswordAuthentication yes" would silently win. Comment such
-# lines out (keeping a backup that the *.conf glob will not read) instead of
-# pretending the drop-in worked.
-neutralise_conflicting_sshd_directives() {
-    local f stamp line lowered rewritten
-    # sshd keywords are case-insensitive, so compare on a lowercased copy.
-    local -r pattern='^[[:space:]]*(passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication)[[:space:]]+yes([[:space:]]|$)'
-    stamp="$(date -u +%Y%m%d%H%M%S)"
-    rewritten="${WORK_DIR}/sshd-dropin"
-
-    shopt -s nullglob
-    for f in /etc/ssh/sshd_config.d/*.conf; do
-        if [[ "${f}" == "${SSHD_DROPIN}" ]]; then
-            continue
-        fi
-        if ! grep -qiE "${pattern}" "${f}"; then
-            continue
-        fi
-
-        # The backup keeps the .conf suffix out of the way of sshd's glob.
-        cp -a "${f}" "${f}.bak-${stamp}"
-        : >"${rewritten}"
-        while IFS= read -r line || [[ -n "${line}" ]]; do
-            lowered="${line,,}"
-            if [[ "${lowered}" =~ ${pattern} ]]; then
-                printf '# disabled by %s provision.sh: %s\n' "${APP_NAME}" "${line}" >>"${rewritten}"
-            else
-                printf '%s\n' "${line}" >>"${rewritten}"
-            fi
-        done <"${f}"
-        # Overwrite through the existing inode: keep the original ownership.
-        cat "${rewritten}" >"${f}"
-        rm -f "${rewritten}"
-
-        warn "commented out a conflicting directive in ${f} (backup: ${f}.bak-${stamp})"
-    done
-    shopt -u nullglob
-}
-
-reload_sshd() {
-    # Ubuntu 24.04 socket-activates ssh: a per-connection sshd re-reads the
-    # config every time, so there is nothing to reload. Only a long-running
-    # ssh.service needs the signal.
-    if systemctl is-active --quiet ssh.service 2>/dev/null; then
-        systemctl reload ssh.service
-        ok "reloaded ssh.service"
-    elif systemctl is-active --quiet ssh.socket 2>/dev/null; then
-        ok "ssh is socket-activated; every new connection reads the new config"
-    else
-        warn "neither ssh.service nor ssh.socket is active — check the SSH server yourself"
-    fi
-}
-
-harden_ssh() {
-    step "SSH: disable password and keyboard-interactive authentication"
-
-    require_root_authorized_key
-    report_operator_session_auth
-
-    # Prove the public-key path works BEFORE touching the config. If it does not
-    # work now, it will not start working because we disabled passwords, and the
-    # box would simply become unreachable.
-    prove_pubkey_login_works "before hardening" \
-        || die "a real public-key login to root@127.0.0.1 FAILED, so password
-  authentication is being left ON. Nothing was changed.
-  Fix key login first, then re-run. Usual causes:
-    - /root or /root/.ssh has group/other write permission (sshd StrictModes)
-    - AuthorizedKeysFile points somewhere other than ~/.ssh/authorized_keys
-    - PubkeyAuthentication is disabled in an earlier sshd_config drop-in
-  Diagnose with:  sshd -T | grep -iE 'pubkey|authorizedkeysfile|strictmodes'"
-
-    local changed=0
-    if write_managed_file "${SSHD_DROPIN}" 0644 root:root <<EOF
-# ${APP_NAME} — managed by deploy/provision.sh. Do not edit /etc/ssh/sshd_config
-# in place; drop-ins are additive and survive package upgrades.
-# sshd honours the FIRST occurrence of a keyword, and the Include of this
-# directory sits at the top of sshd_config, so these values win.
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PermitRootLogin prohibit-password
-EOF
-    then
-        changed=1
-        log "wrote ${SSHD_DROPIN}"
-    else
-        skip "${SSHD_DROPIN} already current"
-    fi
-
-    neutralise_conflicting_sshd_directives
-
-    # Validate the whole config tree BEFORE reloading. If it does not parse we
-    # remove our drop-in again and stop, with the running sshd untouched.
-    if ! /usr/sbin/sshd -t; then
-        if [[ ${changed} -eq 1 ]]; then
-            rm -f "${SSHD_DROPIN}"
-        fi
-        die "sshd -t rejected the configuration; the drop-in was removed and sshd was NOT reloaded"
-    fi
-    ok "sshd -t accepted the configuration"
-
-    reload_sshd
-
-    # And prove it again against the config that is now live. A reload that
-    # parses is not the same as a reload that still lets a key in; this is the
-    # last moment at which rolling back is free.
-    if ! prove_pubkey_login_works "after hardening"; then
-        if [[ ${changed} -eq 1 ]]; then
-            rm -f "${SSHD_DROPIN}"
-            reload_sshd
-        fi
-        die "public-key login stopped working under the new sshd configuration.
-  The drop-in has been REMOVED and sshd reloaded, so password authentication is
-  back on and your access is intact. Nothing else was changed."
-    fi
-
-    # Trust the effective config, not the file we just wrote.
-    local effective
-    effective="$(/usr/sbin/sshd -T 2>/dev/null || true)"
-    [[ -n "${effective}" ]] \
-        || die "could not read the effective sshd configuration (sshd -T produced nothing)"
-    grep -qx 'passwordauthentication no' <<<"${effective}" \
-        || die "password authentication is still enabled — refusing to pretend otherwise"
-    grep -qx 'kbdinteractiveauthentication no' <<<"${effective}" \
-        || die "keyboard-interactive authentication is still enabled"
-    ok "effective config: password and keyboard-interactive auth are off"
-}
-
-# ---------------------------------------------------------------------------
-# 3. Base packages
+# 2. Base packages
 # ---------------------------------------------------------------------------
 
 install_base_packages() {
     step "Base packages"
 
     apt-get update
-    # python3-systemd is not a hard dependency of fail2ban, but the sshd jail
-    # below reads the journal (Ubuntu 24.04 has no /var/log/auth.log unless
-    # rsyslog is installed) and the systemd backend needs it.
-    apt_install ca-certificates curl gnupg ufw fail2ban rsync acl python3-systemd openssh-client
+    # rsync: the deploy uploads releases with it. openssh-client: ssh-keygen checks the CI key.
+    apt_install ca-certificates curl rsync openssh-client
     ok "base packages present"
 }
 
 # ---------------------------------------------------------------------------
-# 4. Swap — 2 GB of RAM has to host Postgres, Caddy and uvicorn
-# ---------------------------------------------------------------------------
-
-setup_swap() {
-    step "Swap: ${SWAP_SIZE} at ${SWAP_FILE}, vm.swappiness=10"
-
-    # Tracks whether ${SWAP_FILE} is ours to persist in /etc/fstab. An fstab line
-    # for a file that does not exist makes swapfile.swap fail on the next boot and
-    # leaves `systemctl --failed` permanently dirty — which is exactly the signal
-    # an operator needs to stay clean.
-    local swapfile_in_use=0
-
-    if [[ -e "${SWAP_FILE}" ]]; then
-        if swapon --show=NAME --noheadings 2>/dev/null | grep -qFx "${SWAP_FILE}"; then
-            skip "${SWAP_FILE} is already active"
-        else
-            warn "${SWAP_FILE} exists but is not active; enabling it"
-            swapon "${SWAP_FILE}"
-            ok "enabled ${SWAP_FILE}"
-        fi
-        swapfile_in_use=1
-    elif [[ -n "$(swapon --show --noheadings 2>/dev/null || true)" ]]; then
-        # Swap comes from somewhere else: zram-config, a provider-supplied unit.
-        # Leave it alone, and leave /etc/fstab alone with it.
-        skip "swap already active from another source: $(swapon --show=NAME,SIZE --noheadings | tr '\n' ' ')"
-    else
-        log "creating ${SWAP_FILE} (${SWAP_SIZE})"
-        if ! fallocate -l "${SWAP_SIZE}" "${SWAP_FILE}" 2>/dev/null; then
-            warn "fallocate failed (filesystem may not support it); falling back to dd"
-            dd if=/dev/zero of="${SWAP_FILE}" bs=1M count=2048 status=none
-        fi
-        chmod 600 "${SWAP_FILE}"
-        mkswap "${SWAP_FILE}" >/dev/null
-        swapon "${SWAP_FILE}"
-        swapfile_in_use=1
-        ok "swap active"
-    fi
-
-    if (( swapfile_in_use )); then
-        if grep -qE "^[^#]*[[:space:]]swap[[:space:]]" /etc/fstab; then
-            skip "/etc/fstab already has a swap entry"
-        else
-            printf '%s none swap sw 0 0\n' "${SWAP_FILE}" >>/etc/fstab
-            ok "added ${SWAP_FILE} to /etc/fstab"
-        fi
-    fi
-
-    if write_managed_file "/etc/sysctl.d/99-${APP_NAME}.conf" 0644 root:root <<EOF
-# ${APP_NAME} — managed by deploy/provision.sh
-# Swap exists as a safety net on a 2 GB box, not as working memory.
-vm.swappiness = 10
-EOF
-    then
-        sysctl --quiet --system
-        ok "vm.swappiness = 10"
-    else
-        skip "sysctl drop-in already current"
-    fi
-}
-
-# ---------------------------------------------------------------------------
-# 5. Firewall and fail2ban
-# ---------------------------------------------------------------------------
-
-setup_firewall() {
-    step "Firewall: ufw (22, 80, 443) and the fail2ban sshd jail"
-
-    ufw default deny incoming >/dev/null
-    ufw default allow outgoing >/dev/null
-
-    # Allow the port sshd actually listens on before enabling the firewall.
-    local ssh_port
-    ssh_port="$(/usr/sbin/sshd -T 2>/dev/null | awk '/^port /{print $2; exit}' || true)"
-    ssh_port="${ssh_port:-22}"
-    if [[ "${ssh_port}" == "22" ]] && ufw app info OpenSSH >/dev/null 2>&1; then
-        ufw allow OpenSSH >/dev/null
-    else
-        ufw allow "${ssh_port}/tcp" >/dev/null
-    fi
-    ufw allow 80/tcp >/dev/null
-    ufw allow 443/tcp >/dev/null
-    ufw --force enable >/dev/null
-    ok "ufw enabled: ssh (${ssh_port}), 80, 443 in; everything else denied"
-
-    if write_managed_file /etc/fail2ban/jail.d/sshd.local 0644 root:root <<'EOF'
-# substate-admin — managed by deploy/provision.sh
-# Ubuntu 24.04 has no /var/log/auth.log by default, so read the journal.
-[sshd]
-enabled  = true
-backend  = systemd
-maxretry = 5
-findtime = 10m
-bantime  = 1h
-EOF
-    then
-        log "wrote /etc/fail2ban/jail.d/sshd.local"
-        systemctl enable --now fail2ban >/dev/null
-        systemctl restart fail2ban
-    else
-        skip "fail2ban sshd jail already current"
-        systemctl enable --now fail2ban >/dev/null
-    fi
-    ok "fail2ban running with the sshd jail enabled"
-}
-
-# ---------------------------------------------------------------------------
-# 6. The deploy user
+# 3. The substate-admin user
 # ---------------------------------------------------------------------------
 
 install_deploy_pubkey() {
@@ -696,7 +371,7 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# 7. PostgreSQL ${PG_MAJOR} from PGDG
+# 4. PostgreSQL ${PG_MAJOR} from PGDG
 # ---------------------------------------------------------------------------
 
 # Resolve the database password into $DB_PASSWORD. Deliberately a setter and
@@ -836,7 +511,7 @@ setup_postgres() {
 }
 
 # ---------------------------------------------------------------------------
-# 8. uv, system-wide
+# 5. uv, system-wide
 # ---------------------------------------------------------------------------
 
 install_uv() {
@@ -857,11 +532,13 @@ install_uv() {
     fi
     command -v uv >/dev/null || die "uv is not on PATH after installation"
 
-    # Pre-fetch the interpreter as the deploy user so the first deploy is not
+    # Pre-fetch the interpreter as ${DEPLOY_USER} so the first deploy is not
     # also the first download. `uv sync` would do this anyway, so a failure
-    # here is a warning, not an error.
-    if sudo -u "${DEPLOY_USER}" env HOME="${DEPLOY_HOME}" \
-        /usr/local/bin/uv python install "${PY_VERSION}" >/dev/null 2>&1; then
+    # here is a warning, not an error. `cd /tmp` first: the script usually runs
+    # from a checkout under /root, which ${DEPLOY_USER} cannot enter, and uv
+    # fails on a working directory it cannot read.
+    if (cd /tmp && sudo -u "${DEPLOY_USER}" env HOME="${DEPLOY_HOME}" \
+        /usr/local/bin/uv python install "${PY_VERSION}" >/dev/null 2>&1); then
         ok "Python ${PY_VERSION} available to ${DEPLOY_USER}"
     else
         warn "could not pre-fetch Python ${PY_VERSION}; the first deploy will download it"
@@ -869,7 +546,7 @@ install_uv() {
 }
 
 # ---------------------------------------------------------------------------
-# 9. /etc/substate-admin/api.env
+# 6. /etc/substate-admin/api.env
 # ---------------------------------------------------------------------------
 
 write_env_file() {
@@ -899,7 +576,7 @@ write_env_file() {
     ( umask 077
       cat >"${tmp}" <<EOF
 # ${APP_NAME} — generated by deploy/provision.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Read by ${API_UNIT} (EnvironmentFile) and by the deploy user when it runs
+# Read by ${API_UNIT} (EnvironmentFile) and by ${DEPLOY_USER} when it runs
 # alembic. CI never writes this file. Back it up; it cannot be regenerated.
 DATABASE_URL=postgresql+psycopg://${DB_ROLE}:${DB_PASSWORD}@127.0.0.1:${PG_PORT}/${DB_NAME}
 JWT_SECRET=${jwt}
@@ -914,7 +591,7 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# 10. Directory skeleton and a placeholder web root
+# 7. Directory skeleton and a placeholder web root
 # ---------------------------------------------------------------------------
 
 create_skeleton() {
@@ -958,87 +635,48 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# 11. Caddy and the API unit
+# 8. The Caddy site and the units
 # ---------------------------------------------------------------------------
 
-add_caddy_repo() {
-    local keyring="/etc/apt/keyrings/caddy-stable.gpg"
-    local list="/etc/apt/sources.list.d/caddy-stable.list"
-    local changed=0
+setup_caddy_site() {
+    step "Caddy: ${CADDY_SITE}, validate the host config, reload"
 
-    install -d -m 0755 /etc/apt/keyrings
-    if [[ -s "${keyring}" ]]; then
-        skip "Caddy signing key already at ${keyring}"
-    else
-        curl -1fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' -o "${WORK_DIR}/caddy.key"
-        gpg --batch --yes --dearmor -o "${WORK_DIR}/caddy.gpg" "${WORK_DIR}/caddy.key"
-        install -m 0644 "${WORK_DIR}/caddy.gpg" "${keyring}"
-        ok "installed the Caddy signing key"
-        changed=1
+    local src="${SCRIPT_DIR}/${APP_NAME}.caddy"
+    local previous="${WORK_DIR}/site.previous"
+    local had_previous=0
+
+    if [[ -f "${CADDY_SITE}" ]] && cmp -s "${src}" "${CADDY_SITE}"; then
+        skip "${CADDY_SITE} already current"
+        return 0
+    fi
+    if [[ -f "${CADDY_SITE}" ]]; then
+        cp -p -- "${CADDY_SITE}" "${previous}"
+        had_previous=1
     fi
 
-    if write_managed_file "${list}" 0644 root:root <<EOF
-# Caddy stable (Cloudsmith) — managed by deploy/provision.sh
-deb [signed-by=${keyring}] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
-EOF
-    then
-        ok "added the Caddy apt repository"
-        changed=1
-    else
-        skip "Caddy apt repository already current"
-    fi
-
-    if [[ ${changed} -eq 1 ]]; then
-        apt-get update
-    fi
-}
-
-setup_caddy() {
-    step "Caddy: package, Caddyfile, reload"
-
-    add_caddy_repo
-    apt_install caddy
-
-    # mkdir -p, not install -d: an existing directory belongs to whoever put
-    # sites in it, and its mode and owner are not ours to reset.
-    if [[ -d "${CADDY_SITES_DIR}" ]]; then
-        skip "${CADDY_SITES_DIR} exists; its contents are left alone"
-    else
-        mkdir -p "${CADDY_SITES_DIR}"
-        ok "created ${CADDY_SITES_DIR}, empty"
-    fi
-
-    # Validate the file we are about to install, while the running config is
-    # still the old one. A broken Caddyfile then costs nothing. The import is
-    # absolute, so this also parses every ${CADDY_SITES_DIR}/*.caddy.
-    local sites=()
-    shopt -s nullglob
-    sites=("${CADDY_SITES_DIR}"/*.caddy)
-    shopt -u nullglob
-    if ! caddy validate --adapter caddyfile --config "${SCRIPT_DIR}/Caddyfile" \
+    # Validated in place: the host's Caddyfile is the only file that knows what the other sites
+    # are, and it is locked. As the caddy user, because validation opens (and creates) the log
+    # file of every site, and a log created by root is one the running Caddy cannot write to —
+    # the next reload would then fail for the whole host.
+    install -o root -g root -m 0644 "${src}" "${CADDY_SITE}"
+    if ! runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile \
         >"${WORK_DIR}/caddy-validate.log" 2>&1; then
-        cat "${WORK_DIR}/caddy-validate.log" >&2
-        die "caddy validate rejected deploy/Caddyfile with the ${#sites[@]} file(s) it imports from ${CADDY_SITES_DIR};
-  nothing was installed and caddy was NOT reloaded"
-    fi
-    ok "caddy validate accepted deploy/Caddyfile and ${#sites[@]} file(s) from ${CADDY_SITES_DIR}"
-
-    systemctl enable caddy >/dev/null
-    if install_repo_file "${SCRIPT_DIR}/Caddyfile" /etc/caddy/Caddyfile 0644 root:root; then
-        log "installed /etc/caddy/Caddyfile"
-        if systemctl is-active --quiet caddy; then
-            # Reload, never restart: a restart drops in-flight requests and
-            # briefly frees :80, which is exactly when ACME renewal is retried.
-            systemctl reload caddy
-            ok "reloaded caddy"
+        if (( had_previous )); then
+            install -o root -g root -m 0644 "${previous}" "${CADDY_SITE}"
         else
-            systemctl start caddy
-            ok "started caddy"
+            rm -f -- "${CADDY_SITE}"
         fi
-    else
-        skip "/etc/caddy/Caddyfile already current"
-        systemctl is-active --quiet caddy || systemctl start caddy
+        cat "${WORK_DIR}/caddy-validate.log" >&2
+        die "caddy validate rejected the host config with ${CADDY_SITE};
+  the file was put back as it was and caddy was NOT reloaded"
     fi
+    ok "caddy validate accepted the host config with ${CADDY_SITE}"
+
+    # Reload, never restart: a restart drops the in-flight requests of every site on the host and
+    # briefly frees :80, which is exactly when ACME renewal is retried. A failed reload leaves the
+    # running config as it was.
+    systemctl reload caddy
+    ok "reloaded caddy"
 }
 
 setup_api_unit() {
@@ -1090,29 +728,7 @@ setup_prune_timer() {
 }
 
 # ---------------------------------------------------------------------------
-# 12. journald
-# ---------------------------------------------------------------------------
-
-setup_journald() {
-    step "journald: cap the journal at 200M"
-
-    if write_managed_file "/etc/systemd/journald.conf.d/99-${APP_NAME}.conf" 0644 root:root <<'EOF'
-# substate-admin — managed by deploy/provision.sh
-# The API logs one JSON object per line to stdout and journald is the only
-# sink, so give it a hard ceiling rather than a share of the disk.
-[Journal]
-SystemMaxUse=200M
-EOF
-    then
-        systemctl restart systemd-journald
-        ok "SystemMaxUse=200M, systemd-journald restarted"
-    else
-        skip "journald drop-in already current"
-    fi
-}
-
-# ---------------------------------------------------------------------------
-# 13. Summary
+# 9. Summary
 # ---------------------------------------------------------------------------
 
 summary() {
@@ -1123,10 +739,6 @@ summary() {
     cat <<EOF
 
   On this host now:
-    ssh                 password and keyboard-interactive auth disabled
-    ufw                 deny incoming; ssh, 80, 443 allowed
-    fail2ban            sshd jail enabled (systemd backend)
-    swap                ${SWAP_SIZE} at ${SWAP_FILE}, vm.swappiness=10
     user                ${DEPLOY_USER} (locked password, systemd-journal member)
     sudo                ${DEPLOY_USER} may start/stop/restart ${API_UNIT}, nothing else
     postgres            ${PG_MAJOR} from PGDG, cluster timezone UTC
@@ -1134,10 +746,11 @@ summary() {
     uv                  $(/usr/local/bin/uv --version 2>/dev/null || echo 'installed') in /usr/local/bin
     secrets             ${ENV_FILE} (root:${DEPLOY_USER}, 0640)
     releases            ${DEPLOY_ROOT}/{releases,shared,current}
-    caddy               /etc/caddy/Caddyfile ($(systemctl is-active caddy || true)), imports ${CADDY_SITES_DIR}/*.caddy
-    api                 ${API_UNIT} enabled, deliberately not started
+    caddy               ${CADDY_SITE} (host Caddy $(systemctl is-active caddy || true)), log /var/log/caddy/${APP_NAME}.log
+    api                 ${API_UNIT} on 127.0.0.1:${API_PORT}, enabled, deliberately not started
     reaper              ${PRUNE_TIMER} enabled and running (daily)
-    journald            SystemMaxUse=200M
+
+  Left to the host: ssh, the firewall, swap, journald and Caddy itself.
 
 EOF
 
@@ -1205,19 +818,15 @@ EOF
 
 main() {
     preflight
-    harden_ssh             # first: everything after this assumes key-only SSH
     install_base_packages
-    setup_swap
-    setup_firewall
     create_deploy_user
     setup_postgres
     install_uv
     write_env_file
     create_skeleton
-    setup_caddy
+    setup_caddy_site
     setup_api_unit
     setup_prune_timer
-    setup_journald
     summary
 }
 

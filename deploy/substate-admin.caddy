@@ -1,38 +1,53 @@
-# Caddyfile — substate-admin
+# /etc/caddy/sites/substate-admin.caddy — substate-admin
 #
 # Serves the built SPA and reverse-proxies the API from a SINGLE origin. That is
 # not a packaging convenience: same-origin is what makes the refresh cookie's
 # SameSite=Lax attribute correct, and it means the browser never sends a CORS
 # preflight to the API at all.
 #
-# Installed to /etc/caddy/Caddyfile by deploy/provision.sh.
+# The host is shared (forester). Its Caddy belongs to the host, not to this
+# project: /etc/caddy/Caddyfile is locked (chattr +i), holds no global options,
+# answers everything that is not a known site with a 404, and imports one file
+# per site from /etc/caddy/sites/. This file is ours, and it is a SITE BLOCK
+# ONLY — no global options, no :80 or :443 catch-all, no snippet definitions.
+# Any of those either fails validation or changes every other site on the host.
+# deploy/check-caddy-site.sh fails CI on them.
 #
-# ALWAYS validate before reloading — a bad config on reload takes the site down.
-# provision.sh already does this and refuses to install a file that fails:
+# Installed to /etc/caddy/sites/substate-admin.caddy by deploy/provision.sh,
+# which validates the whole host config with it before it reloads. By hand:
 #
-#     caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+#     runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile
 #     systemctl reload caddy
 #
-# This file names the product's own public domain and nothing else; other sites
-# on the host come in through the import on its last line. No server hostname,
-# no IP address, no credentials — those live in GitHub Secrets and in
+# As the caddy user, because validation opens the log file below and a log
+# created by root is one the running Caddy cannot write to. Reload, never
+# restart: a restart drops the in-flight requests of every site on the host.
+#
+# This file names the product's own public domain and nothing else. No server
+# hostname, no IP address, no credentials — those live in GitHub Secrets and in
 # /etc/substate-admin/api.env, which is never written by CI.
 
-# ── Global options ───────────────────────────────────────────────────────────
-# The access log is defined HERE, not inside the site block, and that placement
-# is the point. A logger declared inside a site is bound to that host only; the
-# catch-all block below would then fall through to the unfiltered default logger
-# and write raw client IPs for anyone who sends an unknown Host header. Defined
-# globally, the mask applies to every request Caddy serves.
-#
-# stdout, one JSON object per line, so journalctl shows Caddy's lines and the
-# API's own structured lines interleaved in a single stream.
-#
-# Caddy redacts Authorization and Cookie/Set-Cookie unless the global
-# `log_credentials` option is switched on. It is not, and must not be.
-{
+substate-admin.umbrella-at.uk {
+	root * /srv/substate-admin/current/web
+
+	encode zstd gzip
+
+	# ── Access log ───────────────────────────────────────────────────────────
+	# Inside the site block, because the host has no global options to put it
+	# in. A logger declared here is bound to this host only; requests for
+	# unknown hosts reach the host's catch-all, which logs nothing at all
+	# (Caddy marks unmapped hosts as skipped once any site has a logger).
+	#
+	# A file of its own, rolled by Caddy, like every other site on the host.
+	#
+	# Caddy redacts Authorization and Cookie/Set-Cookie unless the global
+	# `log_credentials` option is switched on. It is not, and must not be.
 	log {
-		output stdout
+		output file /var/log/caddy/substate-admin.log {
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 30d
+		}
 		format filter {
 			wrap json
 
@@ -56,12 +71,6 @@
 			}
 		}
 	}
-}
-
-substate-admin.umbrella-at.uk {
-	root * /srv/substate-admin/current/web
-
-	encode zstd gzip
 
 	# ── Security headers ─────────────────────────────────────────────────────
 	# Applied to every response, the proxied API responses included.
@@ -119,14 +128,15 @@ substate-admin.umbrella-at.uk {
 		# the limit. Landing exactly one value also makes the perennial
 		# "leftmost or rightmost entry?" question moot.
 		#
-		# So do NOT add `trusted_proxies`, here or in the global options.
+		# So do NOT add `trusted_proxies`, here or anywhere on the host.
 		# Nothing sits in front of Caddy, and trusting a hop is precisely what
 		# switches the behaviour above back to append-and-believe-the-client.
 		#
 		# uvicorn runs with --proxy-headers --forwarded-allow-ips=127.0.0.1, so
 		# it honours these headers only because they arrive from Caddy over the
-		# loopback.
-		reverse_proxy 127.0.0.1:8000
+		# loopback. 8102 is this project's port in /etc/caddy/ports.md on the
+		# host; deploy/substate-admin-api.service binds the same one.
+		reverse_proxy 127.0.0.1:8102
 	}
 
 	# ── Hashed build output ──────────────────────────────────────────────────
@@ -164,37 +174,3 @@ substate-admin.umbrella-at.uk {
 		file_server
 	}
 }
-
-# ── Everything that is not this site ─────────────────────────────────────────
-# Requests to the bare IP, stale DNS pointing here from some other domain, and
-# the steady background hum of scanners probing for /wp-login.php. They get a
-# 404 and learn nothing about what runs here.
-#
-# Two things about this block look like omissions and are not:
-#
-#   * It does not swallow http://substate-admin.umbrella-at.uk. Caddy inserts
-#     the automatic HTTP->HTTPS redirect "after your routes with a host matcher,
-#     but before a user-defined catch-all route", so the named site above is
-#     matched first and this block only ever sees what is left over. ACME
-#     HTTP-01 challenges on port 80 are handled ahead of site routes too, so
-#     certificates still issue and renew normally.
-#
-#   * There is deliberately no `tls internal`. Adding it would let the :443 half
-#     finish a handshake and return a literal 404, but there is no certificate
-#     that legitimately belongs to a bare IP, and a cert configured on a
-#     catch-all block has a history of being served for more specific sites as
-#     well (caddyserver/caddy#5933, fixed in #6712) — not a neighbourhood worth
-#     re-entering for a 404 nobody reads. Without it, an HTTPS request carrying
-#     an unknown SNI or none at all simply fails the handshake and never becomes
-#     an HTTP request, which is a strictly smaller surface than answering it.
-#     Port 80 returns the real 404.
-:80, :443 {
-	respond 404
-}
-
-# ── Other projects on this host ──────────────────────────────────────────────
-# Their site blocks, which provision.sh never writes. Deleting this line takes
-# them down with no error anywhere, so deploy/check-caddyfile.sh fails CI instead.
-# Absolute on purpose: a relative glob resolves against the importing file, and
-# provision.sh validates this file from the checkout before it is copied here.
-import /etc/caddy/sites/*.caddy
