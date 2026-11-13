@@ -16,9 +16,10 @@ from pydantic import ValidationError
 from substate import MemoryStorage, SubscriptionEngine
 
 from app.schemas import AdvanceRequest
-from app.seed.activity import FRESHEST, LIVE, QUIET_AFTER
+from app.seed.activity import FRESHEST, LIVE
 from app.seed.catalogue import USERS_PROGRAM
 from app.seed.run import HISTORY_DAYS, EventTally, Population, SeedReport, carry_on, seed_world
+from app.subscribers.query import QUIET_AFTER
 from app.worlds.clock import OffsetClock
 
 type Wound = tuple[SubscriptionEngine, OffsetClock, Population, SeedReport]
@@ -185,10 +186,13 @@ _LIVE_NAMES = frozenset(state.value for state in LIVE)
 async def test_the_threshold_is_the_panels_own(seeded: Wound) -> None:
     """One definition of quiet, not two. The seeder used to keep a private copy of the threshold,
     and a report counted against a copy is a number that can drift from the screen it explains."""
-    engine, clock, population, _ = seeded
+    engine, _, population, _ = seeded
     after = await wind(seeded, A_MONTH)
 
-    moment = clock.now()
+    # The report's own instant: a later clock.now() tips over the line anybody who arrived on the
+    # first pass, and who therefore sits exactly QUIET_AFTER back from it.
+    assert after.ended_at is not None
+    moment = after.ended_at
     counted = 0
     for user_id in population.arrived:
         subscription = await engine.get_subscription(user_id)
