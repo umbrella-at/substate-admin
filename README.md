@@ -1,5 +1,7 @@
 # substate-admin
 
+> **Status: archived.** substate-admin was built as the admin panel for [substate](https://github.com/umbrella-at/substate), which is archived too. The code stays available under the MIT license, no further development is planned, and the live demo below may be switched off at any time.
+
 [![CI](https://github.com/umbrella-at/substate-admin/actions/workflows/ci.yml/badge.svg)](https://github.com/umbrella-at/substate-admin/actions/workflows/ci.yml)
 
 An admin panel for [substate](https://github.com/umbrella-at/substate): subscriptions as states rather than invoices, for whoever has to answer what is happening to an account — and for whoever is deciding whether the library is worth building on.
